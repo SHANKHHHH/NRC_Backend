@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,7 +5,6 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  directUrl=env("DIRECT_URL")
 }
 
 enum UserRole {
@@ -20,16 +16,350 @@ enum UserRole {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
+  id        String    @id @default(cuid())
+  email     String
   password  String
   role      UserRole
   firstName String?
   lastName  String?
-  isActive  Boolean  @default(true)
+  isActive  Boolean   @default(true)
   lastLogin DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  @@map("users")
-} 
+  activityLogs   ActivityLog[]
+  jobs           Job[]           @relation("UserJobs")
+  purchaseOrders PurchaseOrder[] @relation("UserPurchaseOrders")
+}
+
+model Job {
+  id                    Int             @id @default(autoincrement())
+  nrcJobNo              String? // "00 NRC Job#"
+  styleItemSKU          String // "01 Style Item SKU"
+  customerName          String // "02 Customer Name"
+  fluteType             String? // "03 Flute Type"
+  jobStatus             String? // "04 Job Status Active/Inactive"
+  latestRate            Float? // "05 Latest Rate"
+  preRate               Float? // "06 Pre Rate"
+  length                Float? // "07 L"
+  width                 Float? // "08 W"
+  height                Float? // "09 H"
+  boxDimensions         String? // "10 Box Dimensions"
+  diePunchCode          Float? // "11 Die Punch Code"
+  boardCategory         String? // "12 Board Category"
+  noOfColor             String? // "13 No. Of  COLOR"
+  processColors         String? // "14 Process Colors"
+  specialColor1         String? // "15 Special Color 1"
+  specialColor2         String? // "16 Special Color 2"
+  specialColor3         String? // "17 Special Color 3"
+  specialColor4         String? // "18 Special Color 4"
+  overPrintFinishing    String? // "19 Over Print Finishing"
+  topFaceGSM            String? // "20 Top Face GSM"
+  flutingGSM            String? // "21 Fluting GSM"
+  bottomLinerGSM        String? // "22 Bottom Liner GSM"
+  decalBoardX           String? // "23 Decal Board X"
+  lengthBoardY          String? // "24 Length Board Y"
+  boardSize             String? // "25 BOARD SIZE"
+  noUps                 Int? // "26 NO UPS"
+  artworkReceivedDate   DateTime? // "27 Art work Recevied date"
+  artworkApprovedDate   DateTime? // "28 Art work  Approved Date"
+  shadeCardApprovalDate DateTime? // "29 Shade Card Approval Date"
+  srNo                  Float? // "Sr#"
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  purchaseOrders        PurchaseOrder[] // One-to-many relation
+  artwork               ArtWork?        @relation(fields: [artworkId], references: [id])
+  artworkId             Int?            @unique
+  user                  User?           @relation("UserJobs", fields: [userId], references: [id])
+  userId                String?
+  machine               Machine?        @relation(fields: [machineId], references: [id])
+  machineId             String?
+}
+
+model Machine {
+  id           String   @id @default(cuid())
+  name         String
+  isActive     Boolean  @default(true)
+  availability String?
+  jobs         Job[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+}
+
+model Reel {
+  id             Int                  @id @default(autoincrement())
+  reelNo         String               @unique
+  size           String
+  quality        String
+  gsm            String
+  specification  String
+  openingStock   Float
+  closingStock   Float
+  inwardEntries  RawMaterialInward[] // One-to-many relation
+  outwardEntries RawMaterialOutward[] // One-to-many relation
+  createdAt      DateTime             @default(now())
+}
+
+model RawMaterialInward {
+  id             Int      @id @default(autoincrement()) // Sr No
+  invoiceNo      String
+  invoiceDate    DateTime
+  noReelReceived Int
+  receiptDate    DateTime
+  reel           Reel     @relation(fields: [reelId], references: [id])
+  reelId         Int
+  createdAt      DateTime @default(now())
+}
+
+model RawMaterialOutward {
+  id          Int      @id @default(autoincrement()) // Sr No
+  requestedBy String
+  issuedQty   Float
+  weight      Float
+  jobName     String
+  qtySheet    Int
+  issueDate   DateTime
+  reel        Reel     @relation(fields: [reelId], references: [id])
+  reelId      Int
+  createdAt   DateTime @default(now())
+}
+
+model ArtWork {
+  id                       Int       @id @default(autoincrement())
+  jobCode                  String // Job code
+  customerName             String
+  plateJobCode             String
+  style                    String
+  productRange             String
+  productCategory          String
+  boxType                  String
+  length                   Float
+  width                    Float
+  height                   Float
+  processColor1            String?
+  processColor2            String?
+  processColor3            String?
+  processColor4            String?
+  finishing                String?
+  artworkReceived          DateTime?
+  sentForApprovalDate      DateTime?
+  approvedDate             DateTime?
+  plateOutputMachine1      String? // Plate output on machine category 1
+  plateOutputMachine2      String? // Plate output on machine category 2
+  bottomPanelColorCode     String?
+  artworkLayoutChange      Boolean // true if layout changed
+  dimensionChange          Boolean // true if dimension changed
+  jobSpecification         String? // Board substrate/specification
+  remarks                  String?
+  shadeCardToBeClosed      Boolean // true if shade card to be closed
+  dieReference             String?
+  noOfUps                  Int?
+  boardSizeKeylineCm       String?
+  dieSupplied              Boolean
+  typeOfBoard              String?
+  typeOfPunchAndDieGripper String?
+  imagesUpload             String? // Could be a URL or comma-separated URLs
+  approvalDate             DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  job                      Job?
+}
+
+model PrintingApproval {
+  id            Int      @id @default(autoincrement())
+  size          String
+  gsm           String
+  sheets        Int
+  mill          String
+  weight        Float
+  quality       String
+  machine5Color Boolean // Approval or presence for 5 color press
+  machine6Color Boolean // Approval or presence for 6 color press
+  machine8Color Boolean // Approval or presence for 8 color press
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model PurchaseOrder {
+  id                    Int       @id @default(autoincrement())
+  boardSize             String? // "Board Size"
+  customer              String // "Customer"
+  deliveryDate          DateTime? // "Delivery Date"
+  dieCode               Float? // "Die Code"
+  dispatchDate          DateTime? // "Dispatch Date"
+  dispatchQuantity      Int? // "Dispatch Quantity"
+  fluteType             String? // "Flute Type"
+  jockeyMonth           String? // "Jockey Month"
+  noOfUps               Int? // "NO.of ups"
+  nrcDeliveryDate       DateTime? // "NRC Delivery Date"
+  noOfSheets            Int? // "No. Of Sheets"
+  poDate                DateTime? // "PO Date"
+  poNumber              String? // "PO.NUMBER"
+  pendingQuantity       Int? // "Pending  Quantity"
+  pendingValidity       Float? // "Pending Validity"
+  plant                 String? // "Plant"
+  shadeCardApprovalDate DateTime? // "Shade Card Approval Date"
+  srNo                  Float? // "Sr #"
+  style                 String? // "Style"
+  totalPOQuantity       Int? // "Total PO Quantity"
+  unit                  String? // "Unit"
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  job                   Job?      @relation(fields: [jobId], references: [id])
+  jobId                 Int?
+  user                  User?     @relation("UserPurchaseOrders", fields: [userId], references: [id])
+  userId                String?
+}
+
+model PaperStore {
+  id                 Int                  @id @default(autoincrement())
+  sheetSize          String?
+  required           Int?
+  available          Int?
+  issuedDate         DateTime?
+  mill               String?
+  extraMargin        String?
+  gsm                String?
+  quality            String?
+  productionPlanning ProductionPlanning[]
+}
+
+model ProductionPlanning {
+  id                       Int                           @id @default(autoincrement())
+  corrugation              Corrugation?                  @relation(fields: [corrugationId], references: [id])
+  corrugationId            Int?
+  dieCutting               DieCutting?                   @relation(fields: [dieCuttingId], references: [id])
+  dieCuttingId             Int?
+  dispatch                 DispatchProcess?              @relation(fields: [dispatchId], references: [id])
+  dispatchId               Int?
+  fluteLaminateBoardConv   FluteLaminateBoardConversion? @relation(fields: [fluteLaminateBoardConvId], references: [id])
+  fluteLaminateBoardConvId Int?
+  printingDetails          PrintingDetails?              @relation(fields: [printingDetailsId], references: [id])
+  printingDetailsId        Int?
+  punching                 Punching?                     @relation(fields: [punchingId], references: [id])
+  punchingId               Int?
+  qualityDept              QualityDept?                  @relation(fields: [qualityDeptId], references: [id])
+  qualityDeptId            Int?
+  sideFlapPasting          SideFlapPasting?              @relation(fields: [sideFlapPastingId], references: [id])
+  sideFlapPastingId        Int?
+  paperStore               PaperStore?                   @relation(fields: [paperStoreId], references: [id])
+  paperStoreId             Int?
+  createdAt                DateTime                      @default(now())
+  updatedAt                DateTime                      @updatedAt
+}
+
+model PrintingDetails {
+  id                         Int                  @id @default(autoincrement())
+  date                       DateTime?
+  shift                      String?
+  oprName                    String? // OPR Name
+  noOfColours                Int?
+  inksUsed                   String?
+  postPrintingFinishingOkQty Int?
+  wastage                    Int?
+  coatingType                String? // Gloss or Matt
+  separateSheets             Int?
+  extraSheets                Int?
+  machine                    String? // e.g., "NEW-SM102"
+  productionPlanning         ProductionPlanning[]
+}
+
+model Corrugation {
+  id                 Int                  @id @default(autoincrement())
+  date               DateTime?
+  shift              String?
+  oprName            String? // OPR Name
+  machineNo          String? // M/c No
+  noOfSheets         Int?
+  size               String?
+  gsm1               String?
+  gsm2               String?
+  flute              String?
+  remarks            String?
+  qcCheckSignBy      String? // QC Check & Sign BY
+  productionPlanning ProductionPlanning[] // Optional: for reverse relation if needed
+}
+
+model FluteLaminateBoardConversion {
+  id                 Int                  @id @default(autoincrement())
+  date               DateTime?
+  shift              String?
+  operatorName       String?
+  film               String?
+  okQty              Int?
+  qcCheckSignBy      String?
+  adhesive           String?
+  wastage            Int?
+  productionPlanning ProductionPlanning[]
+}
+
+model Punching {
+  id                 Int                  @id @default(autoincrement())
+  date               DateTime?
+  shift              String?
+  operatorName       String?
+  okQty              Int?
+  machine            String?
+  qcCheckSignBy      String?
+  die                String?
+  wastage            Int?
+  remarks            String?
+  productionPlanning ProductionPlanning[]
+}
+
+model SideFlapPasting {
+  id                 Int                  @id @default(autoincrement())
+  machineNo          String?
+  date               DateTime?
+  shift              String?
+  operatorName       String?
+  adhesive           String?
+  quantity           Int?
+  wastage            Int?
+  qcCheckSignBy      String?
+  remarks            String?
+  productionPlanning ProductionPlanning[]
+}
+
+model QualityDept {
+  id                 Int                  @id @default(autoincrement())
+  date               DateTime?
+  shift              String?
+  operatorName       String?
+  checkedBy          String?
+  rejectedQty        Int?
+  passQty            Int?
+  reasonForRejection String?
+  remarks            String?
+  qcCheckSignBy      String?
+  productionPlanning ProductionPlanning[]
+}
+
+model DispatchProcess {
+  id                 Int                  @id @default(autoincrement())
+  date               DateTime?
+  shift              String?
+  operatorName       String?
+  noOfBoxes          Int?
+  dispatchNo         String?
+  dispatchDate       DateTime?
+  remarks            String?
+  balanceQty         Int?
+  qcCheckSignBy      String?
+  productionPlanning ProductionPlanning[]
+}
+
+model DieCutting {
+  id                 Int                  @id @default(autoincrement())
+  details            String?
+  productionPlanning ProductionPlanning[] // For reverse relation if needed
+}
