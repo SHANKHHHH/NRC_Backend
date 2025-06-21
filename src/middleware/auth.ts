@@ -10,7 +10,7 @@ declare global {
     interface Request {
       user?: {
         userId: string;
-        email: string;
+        email?: string;
         role: string;
       };
     }
@@ -40,7 +40,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
 
     req.user = {
       userId: user.id,
-      email: user.email,
+      email: user.email || undefined,
       role: user.role
     };
 
@@ -71,7 +71,7 @@ export const requireAdminJWT = async (req: Request, res: Response, next: NextFun
 
     req.user = {
       userId: user.id,
-      email: user.email,
+      email: user.email || undefined,
       role: user.role
     };
 
@@ -95,7 +95,7 @@ export const authenticateAdmin = async (req: Request, res: Response, next: NextF
       throw new AppError('Email and password are required for admin authentication', 401);
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findFirst({ where: { email } });
     if (!user) throw new AppError('Admin user not found', 401);
     if (!user.isActive) throw new AppError('Admin account is deactivated', 401);
 
@@ -105,7 +105,7 @@ export const authenticateAdmin = async (req: Request, res: Response, next: NextF
 
     req.user = {
       userId: user.id,
-      email: user.email,
+      email: user.email || undefined,
       role: user.role
     };
 
