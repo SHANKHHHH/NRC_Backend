@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { asyncHandler, requireFields, validateEmail } from '../middleware';
+import { asyncHandler, requireFields, validateEmail, validateLoginRequest } from '../middleware';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
 import * as AuthController from '../controllers/authController';
 
@@ -9,7 +9,7 @@ const router = Router();
 const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager'];
 
 // 🔐 Login - issues JWT in response (header-only token usage)
-router.post('/login', requireFields(['email', 'password', 'role']), asyncHandler(AuthController.login));
+router.post('/login', validateLoginRequest, asyncHandler(AuthController.login));
 
 // 🔒 Get current user's profile - JWT required in header
 router.get('/profile', authenticateToken, asyncHandler(AuthController.getProfile));
@@ -21,7 +21,7 @@ router.post('/logout', AuthController.logout);
 router.post(
   '/add-member',
   requireAdminJWT,
-  requireFields(['email', 'password', 'role']),
+  requireFields(['password', 'role']), // email is now optional
   asyncHandler(AuthController.addMember)
 );
 

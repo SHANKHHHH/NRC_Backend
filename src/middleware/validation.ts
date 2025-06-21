@@ -94,6 +94,35 @@ function sanitizeString(str: string): string {
     .replace(/on\w+=/gi, ''); // Remove event handlers
 }
 
+// NRC ID validation
+export const validateNrcId = (id: string): boolean => {
+  const nrcIdPattern = /^NRC\d{3}$/;
+  return nrcIdPattern.test(id);
+};
+
+// Login request validation middleware
+export const validateLoginRequest = (req: Request, res: Response, next: NextFunction) => {
+  const { id, password, role } = req.body;
+  
+  if (!id || !password || !role) {
+    return next(new AppError('Missing required fields: id, password, role', 400));
+  }
+  
+  // Validate NRC ID format
+  const nrcIdPattern = /^NRC\d{3}$/;
+  if (!nrcIdPattern.test(id)) {
+    return next(new AppError('Invalid NRC ID format. Must be in format: NRC001, NRC002, etc.', 400));
+  }
+  
+  // Validate role
+  const validRoles = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager'];
+  if (!validRoles.includes(role)) {
+    return next(new AppError(`Invalid role. Must be one of: ${validRoles.join(', ')}`, 400));
+  }
+  
+  next();
+};
+
 // Required fields validation
 export const requireFields = (fields: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -107,6 +136,11 @@ export const requireFields = (fields: string[]) => {
     
     if (missingFields.length > 0) {
       return next(new AppError(`Missing required fields: ${missingFields.join(', ')}`, 400));
+    }
+    
+    // Special validation for NRC ID if present
+    if (req.body.id && !validateNrcId(req.body.id)) {
+      return next(new AppError('Invalid NRC ID format. Must be in format: NRC001, NRC002, etc.', 400));
     }
     
     next();

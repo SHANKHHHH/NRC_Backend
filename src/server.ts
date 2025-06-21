@@ -14,6 +14,7 @@ import {
   sanitizeInput
 } from './middleware';
 import authRoutes from './routes/auth';
+import jobRoutes from './routes/job';
 
 // Load environment variables
 dotenv.config();
@@ -62,6 +63,7 @@ app.get('/health', (req: Request, res: Response) => {
 
 // API routes - Only authentication routes with admin-protected user management
 app.use('/api/auth', authRoutes);
+app.use('/api/jobs', jobRoutes);
 
 // Test error handling routes
 app.get('/api/test-error', (req: Request, res: Response, next: NextFunction) => {

@@ -17,6 +17,8 @@ export {
   validateRequest, 
   validateEmail, 
   validatePassword, 
+  validateNrcId,
+  validateLoginRequest,
   sanitizeInput, 
   requireFields, 
   validateId 

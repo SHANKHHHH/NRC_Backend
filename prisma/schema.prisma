@@ -15,9 +15,15 @@ enum UserRole {
   qc_manager
 }
 
+enum JobStatus {
+  inactive
+  active
+  hold
+}
+
 model User {
-  id        String    @id @default(cuid())
-  email     String
+  id        String    @id // Custom NRC format: NRC001, NRC002, etc.
+  email     String?
   password  String
   role      UserRole
   firstName String?
@@ -34,37 +40,37 @@ model User {
 
 model Job {
   id                    Int             @id @default(autoincrement())
-  nrcJobNo              String? // "00 NRC Job#"
-  styleItemSKU          String // "01 Style Item SKU"
-  customerName          String // "02 Customer Name"
-  fluteType             String? // "03 Flute Type"
-  jobStatus             String? // "04 Job Status Active/Inactive"
-  latestRate            Float? // "05 Latest Rate"
-  preRate               Float? // "06 Pre Rate"
-  length                Float? // "07 L"
-  width                 Float? // "08 W"
-  height                Float? // "09 H"
-  boxDimensions         String? // "10 Box Dimensions"
-  diePunchCode          Float? // "11 Die Punch Code"
-  boardCategory         String? // "12 Board Category"
-  noOfColor             String? // "13 No. Of  COLOR"
-  processColors         String? // "14 Process Colors"
-  specialColor1         String? // "15 Special Color 1"
-  specialColor2         String? // "16 Special Color 2"
-  specialColor3         String? // "17 Special Color 3"
-  specialColor4         String? // "18 Special Color 4"
-  overPrintFinishing    String? // "19 Over Print Finishing"
-  topFaceGSM            String? // "20 Top Face GSM"
-  flutingGSM            String? // "21 Fluting GSM"
-  bottomLinerGSM        String? // "22 Bottom Liner GSM"
-  decalBoardX           String? // "23 Decal Board X"
-  lengthBoardY          String? // "24 Length Board Y"
-  boardSize             String? // "25 BOARD SIZE"
-  noUps                 Int? // "26 NO UPS"
-  artworkReceivedDate   DateTime? // "27 Art work Recevied date"
-  artworkApprovedDate   DateTime? // "28 Art work  Approved Date"
-  shadeCardApprovalDate DateTime? // "29 Shade Card Approval Date"
-  srNo                  Float? // "Sr#"
+  nrcJobNo              String          @unique // "00 NRC Job#" - Auto-generated, required
+  styleItemSKU          String          // "01 Style Item SKU"
+  customerName          String          // "02 Customer Name"
+  fluteType             String?         // "03 Flute Type"
+  status                JobStatus @default(active) // "04 Job Status Active/Inactive"
+  latestRate            Float?          // "05 Latest Rate"
+  preRate               Float?          // "06 Pre Rate"
+  length                Float?          // "07 L"
+  width                 Float?          // "08 W"
+  height                Float?          // "09 H"
+  boxDimensions         String?         // "10 Box Dimensions"
+  diePunchCode          Float?          // "11 Die Punch Code"
+  boardCategory         String?         // "12 Board Category"
+  noOfColor             String?         // "13 No. Of  COLOR"
+  processColors         String?         // "14 Process Colors"
+  specialColor1         String?         // "15 Special Color 1"
+  specialColor2         String?         // "16 Special Color 2"
+  specialColor3         String?         // "17 Special Color 3"
+  specialColor4         String?         // "18 Special Color 4"
+  overPrintFinishing    String?         // "19 Over Print Finishing"
+  topFaceGSM            String?         // "20 Top Face GSM"
+  flutingGSM            String?         // "21 Fluting GSM"
+  bottomLinerGSM        String?         // "22 Bottom Liner GSM"
+  decalBoardX           String?         // "23 Decal Board X"
+  lengthBoardY          String?         // "24 Length Board Y"
+  boardSize             String?         // "25 BOARD SIZE"
+  noUps                 Int?            // "26 NO UPS"
+  artworkReceivedDate   DateTime?       // "27 Art work Recevied date"
+  artworkApprovedDate   DateTime?       // "28 Art work  Approved Date"
+  shadeCardApprovalDate DateTime?       // "29 Shade Card Approval Date"
+  srNo                  Float?          // "Sr#"
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
   purchaseOrders        PurchaseOrder[] // One-to-many relation
