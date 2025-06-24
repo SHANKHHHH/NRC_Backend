@@ -21,6 +21,11 @@ enum JobStatus {
   hold
 }
 
+enum PurchaseOrderStatus {
+  created
+  approved
+}
+
 model User {
   id        String    @id // Custom NRC format: NRC001, NRC002, etc.
   email     String?
@@ -73,7 +78,8 @@ model Job {
   srNo                  Float?          // "Sr#"
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
-  purchaseOrders        PurchaseOrder[] // One-to-many relation
+  purchaseOrder         PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId       Int
   artwork               ArtWork?        @relation(fields: [artworkId], references: [id])
   artworkId             Int?            @unique
   user                  User?           @relation("UserJobs", fields: [userId], references: [id])
@@ -218,10 +224,10 @@ model PurchaseOrder {
   style                 String? // "Style"
   totalPOQuantity       Int? // "Total PO Quantity"
   unit                  String? // "Unit"
+  status                PurchaseOrderStatus @default(created)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  job                   Job?      @relation(fields: [jobId], references: [id])
-  jobId                 Int?
+  jobs                  Job[]     // One-to-many: PurchaseOrder has many Jobs
   user                  User?     @relation("UserPurchaseOrders", fields: [userId], references: [id])
   userId                String?
 }
