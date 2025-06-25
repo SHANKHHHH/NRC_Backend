@@ -79,6 +79,12 @@ export const updatePurchaseOrderStatus = async (req: Request, res: Response) => 
         nrcJobNo: generatedNrcJobNo,
         styleItemSKU: po.style || '',
         customerName: po.customer,
+        fluteType: po.fluteType || undefined,
+        boardSize: po.boardSize || undefined,
+        noUps: po.noOfUps || undefined,
+        srNo: po.srNo || undefined,
+        shadeCardApprovalDate: po.shadeCardApprovalDate || undefined,
+        diePunchCode: po.dieCode || undefined,
         purchaseOrder: { connect: { id: po.id } },
       },
     });
