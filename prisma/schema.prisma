@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum UserRole {
@@ -13,6 +14,7 @@ enum UserRole {
   production_head
   dispatch_executive
   qc_manager
+  printer
 }
 
 enum JobStatus {
@@ -41,10 +43,10 @@ enum MachineStatus {
 model User {
   id        String    @id // Custom NRC format: NRC001, NRC002, etc.
   email     String?
+  phoneNumber String?
   password  String
   role      UserRole
-  firstName String?
-  lastName  String?
+  name      String?
   isActive  Boolean   @default(true)
   lastLogin DateTime?
   createdAt DateTime  @default(now())
@@ -423,5 +425,5 @@ model DispatchProcess {
 model DieCutting {
   id                 Int                  @id @default(autoincrement())
   details            String?
-  productionPlanning ProductionPlanning[] // For reverse relation if needed
+  productionPlanning ProductionPlanning[] 
 }
