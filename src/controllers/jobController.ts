@@ -46,7 +46,7 @@ export const createJob = async (req: Request, res: Response) => {
 
   const job = await prisma.job.create({
     data: {
-      nrcJobNo: generatedNrcJobNo,
+      nrcJobNo: generatedNrcJobNo,  
       styleItemSKU,
       customerName,
       ...rest,
