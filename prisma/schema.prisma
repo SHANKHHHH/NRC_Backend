@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum UserRole {
@@ -13,6 +14,7 @@ enum UserRole {
   production_head
   dispatch_executive
   qc_manager
+  printer
 }
 
 enum JobStatus {
@@ -21,13 +23,30 @@ enum JobStatus {
   hold
 }
 
+enum PurchaseOrderStatus {
+  created
+  approved
+}
+
+enum StepStatus {
+  reject
+  accept
+  hold
+  in_progress
+}
+
+enum MachineStatus {
+  available
+  busy
+}
+
 model User {
   id        String    @id // Custom NRC format: NRC001, NRC002, etc.
   email     String?
+  phoneNumber String?
   password  String
   role      UserRole
-  firstName String?
-  lastName  String?
+  name      String?
   isActive  Boolean   @default(true)
   lastLogin DateTime?
   createdAt DateTime  @default(now())
@@ -73,20 +92,34 @@ model Job {
   srNo                  Float?          // "Sr#"
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
-  purchaseOrders        PurchaseOrder[] // One-to-many relation
-  artwork               ArtWork?        @relation(fields: [artworkId], references: [id])
-  artworkId             Int?            @unique
+  purchaseOrder         PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId       Int
   user                  User?           @relation("UserJobs", fields: [userId], references: [id])
   userId                String?
   machine               Machine?        @relation(fields: [machineId], references: [id])
   machineId             String?
+  paperStores           PaperStore[]    @relation("JobToPaperStore")
+  printingDetails       PrintingDetails[] @relation("JobToPrintingDetails")
+  corrugations          Corrugation[]   @relation("JobToCorrugation")
+  fluteLaminateBoardConversions FluteLaminateBoardConversion[] @relation("JobToFluteLaminateBoardConversion")
+  punchings             Punching[]       @relation("JobToPunching")
+  sideFlapPastings      SideFlapPasting[] @relation("JobToSideFlapPasting")
+  qualityDepts          QualityDept[]    @relation("JobToQualityDept")
+  dispatchProcesses     DispatchProcess[] @relation("JobToDispatchProcess")
+  artworks              ArtWork[]         @relation("JobArtworksByNrcJobNo")
 }
 
 model Machine {
   id           String   @id @default(cuid())
-  name         String
+  unit         String   // e.g., NR1, MK, DG, etc.
+  machineCode  String   @unique // e.g., PR01, CR01, FL01, etc.
+  machineType  String   // e.g., Printing, Corrugation, Flute Laminator, etc.
+  description  String   // e.g., Heidelberg Printing Machine, Corrugation Machine 1, etc.
+  type         String   // e.g., Automatic, Manual, Semi Auto
+  capacity     Int      // Capacity (8 Hours), e.g., 27000
+  remarks      String?  // Remarks, e.g., "Up to 8 color with varnish"
+  status       MachineStatus @default(available)
   isActive     Boolean  @default(true)
-  availability String?
   jobs         Job[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -140,44 +173,45 @@ model RawMaterialOutward {
 }
 
 model ArtWork {
-  id                       Int       @id @default(autoincrement())
-  jobCode                  String // Job code
-  customerName             String
-  plateJobCode             String
-  style                    String
-  productRange             String
-  productCategory          String
-  boxType                  String
-  length                   Float
-  width                    Float
-  height                   Float
-  processColor1            String?
-  processColor2            String?
-  processColor3            String?
-  processColor4            String?
-  finishing                String?
-  artworkReceived          DateTime?
-  sentForApprovalDate      DateTime?
-  approvedDate             DateTime?
-  plateOutputMachine1      String? // Plate output on machine category 1
-  plateOutputMachine2      String? // Plate output on machine category 2
-  bottomPanelColorCode     String?
-  artworkLayoutChange      Boolean // true if layout changed
-  dimensionChange          Boolean // true if dimension changed
-  jobSpecification         String? // Board substrate/specification
-  remarks                  String?
-  shadeCardToBeClosed      Boolean // true if shade card to be closed
-  dieReference             String?
-  noOfUps                  Int?
-  boardSizeKeylineCm       String?
-  dieSupplied              Boolean
-  typeOfBoard              String?
+  id                    Int             @id @default(autoincrement())
+  nrcJobNo              String
+  job                   Job             @relation("JobArtworksByNrcJobNo", fields: [nrcJobNo], references: [nrcJobNo])
+  jobCode                 String // Job code
+  customerName            String
+  plateJobCode            String
+  style                   String
+  productRange            String
+  productCategory         String
+  boxType                 String
+  length                  Float
+  width                   Float
+  height                  Float
+  processColor1           String?
+  processColor2           String?
+  processColor3           String?
+  processColor4           String?
+  finishing               String?
+  artworkReceived         DateTime?
+  sentForApprovalDate     DateTime?
+  approvedDate            DateTime?
+  plateOutputMachine1     String? // Plate output on machine category 1
+  plateOutputMachine2     String? // Plate output on machine category 2
+  bottomPanelColorCode    String?
+  artworkLayoutChange     Boolean // true if layout changed
+  dimensionChange         Boolean // true if dimension changed
+  jobSpecification        String? // Board substrate/specification
+  remarks                 String?
+  shadeCardToBeClosed     Boolean // true if shade card to be closed
+  dieReference            String?
+  noOfUps                 Int?
+  boardSizeKeylineCm      String?
+  dieSupplied             Boolean
+  typeOfBoard             String?
   typeOfPunchAndDieGripper String?
-  imagesUpload             String? // Could be a URL or comma-separated URLs
-  approvalDate             DateTime?
-  createdAt                DateTime  @default(now())
-  updatedAt                DateTime  @updatedAt
-  job                      Job?
+  imagesUpload            String? // Could be a URL or comma-separated URLs
+  approvalDate            DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 }
 
 model PrintingApproval {
@@ -218,16 +252,19 @@ model PurchaseOrder {
   style                 String? // "Style"
   totalPOQuantity       Int? // "Total PO Quantity"
   unit                  String? // "Unit"
+  status                PurchaseOrderStatus @default(created)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  job                   Job?      @relation(fields: [jobId], references: [id])
-  jobId                 Int?
+  jobs                  Job[]     // One-to-many: PurchaseOrder has many Jobs
   user                  User?     @relation("UserPurchaseOrders", fields: [userId], references: [id])
   userId                String?
 }
 
 model PaperStore {
   id                 Int                  @id @default(autoincrement())
+  jobNrcJobNo        String
+  job                Job                  @relation("JobToPaperStore", fields: [jobNrcJobNo], references: [nrcJobNo])
+  status             StepStatus           @default(in_progress)
   sheetSize          String?
   required           Int?
   available          Int?
@@ -236,51 +273,57 @@ model PaperStore {
   extraMargin        String?
   gsm                String?
   quality            String?
-  productionPlanning ProductionPlanning[]
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPaperStore")
 }
 
 model ProductionPlanning {
   id                       Int                           @id @default(autoincrement())
-  corrugation              Corrugation?                  @relation(fields: [corrugationId], references: [id])
+  corrugation              Corrugation?                  @relation("ProductionPlanningToCorrugation", fields: [corrugationId], references: [id])
   corrugationId            Int?
   dieCutting               DieCutting?                   @relation(fields: [dieCuttingId], references: [id])
   dieCuttingId             Int?
-  dispatch                 DispatchProcess?              @relation(fields: [dispatchId], references: [id])
+  dispatch                 DispatchProcess?              @relation("ProductionPlanningToDispatchProcess", fields: [dispatchId], references: [id])
   dispatchId               Int?
-  fluteLaminateBoardConv   FluteLaminateBoardConversion? @relation(fields: [fluteLaminateBoardConvId], references: [id])
+  fluteLaminateBoardConv   FluteLaminateBoardConversion? @relation("ProductionPlanningToFluteLaminateBoardConversion", fields: [fluteLaminateBoardConvId], references: [id])
   fluteLaminateBoardConvId Int?
-  printingDetails          PrintingDetails?              @relation(fields: [printingDetailsId], references: [id])
+  printingDetails          PrintingDetails?              @relation("ProductionPlanningToPrintingDetails", fields: [printingDetailsId], references: [id])
   printingDetailsId        Int?
-  punching                 Punching?                     @relation(fields: [punchingId], references: [id])
+  punching                 Punching?                     @relation("ProductionPlanningToPunching", fields: [punchingId], references: [id])
   punchingId               Int?
-  qualityDept              QualityDept?                  @relation(fields: [qualityDeptId], references: [id])
+  qualityDept              QualityDept?                  @relation("ProductionPlanningToQualityDept", fields: [qualityDeptId], references: [id])
   qualityDeptId            Int?
-  sideFlapPasting          SideFlapPasting?              @relation(fields: [sideFlapPastingId], references: [id])
+  sideFlapPasting          SideFlapPasting?              @relation("ProductionPlanningToSideFlapPasting", fields: [sideFlapPastingId], references: [id])
   sideFlapPastingId        Int?
-  paperStore               PaperStore?                   @relation(fields: [paperStoreId], references: [id])
+  paperStore               PaperStore?                   @relation("ProductionPlanningToPaperStore", fields: [paperStoreId], references: [id])
   paperStoreId             Int?
   createdAt                DateTime                      @default(now())
   updatedAt                DateTime                      @updatedAt
 }
 
 model PrintingDetails {
-  id                         Int                  @id @default(autoincrement())
-  date                       DateTime?
-  shift                      String?
-  oprName                    String? // OPR Name
-  noOfColours                Int?
-  inksUsed                   String?
+  id                 Int                  @id @default(autoincrement())
+  jobNrcJobNo        String
+  job                Job                  @relation("JobToPrintingDetails", fields: [jobNrcJobNo], references: [nrcJobNo])
+  status             StepStatus           @default(in_progress)
+  date               DateTime?
+  shift              String?
+  oprName            String? // OPR Name
+  noOfColours        Int?
+  inksUsed           String?
   postPrintingFinishingOkQty Int?
-  wastage                    Int?
-  coatingType                String? // Gloss or Matt
-  separateSheets             Int?
-  extraSheets                Int?
-  machine                    String? // e.g., "NEW-SM102"
-  productionPlanning         ProductionPlanning[]
+  wastage             Int?
+  coatingType         String? // Gloss or Matt
+  separateSheets       Int?
+  extraSheets          Int?
+  machine            String? // e.g., "NEW-SM102"
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPrintingDetails")
 }
 
 model Corrugation {
   id                 Int                  @id @default(autoincrement())
+  jobNrcJobNo        String
+  job                Job                  @relation("JobToCorrugation", fields: [jobNrcJobNo], references: [nrcJobNo])
+  status             StepStatus           @default(in_progress)
   date               DateTime?
   shift              String?
   oprName            String? // OPR Name
@@ -292,24 +335,30 @@ model Corrugation {
   flute              String?
   remarks            String?
   qcCheckSignBy      String? // QC Check & Sign BY
-  productionPlanning ProductionPlanning[] // Optional: for reverse relation if needed
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToCorrugation")
 }
 
 model FluteLaminateBoardConversion {
   id                 Int                  @id @default(autoincrement())
+  jobNrcJobNo        String
+  job                Job                  @relation("JobToFluteLaminateBoardConversion", fields: [jobNrcJobNo], references: [nrcJobNo])
+  status             StepStatus           @default(in_progress)
   date               DateTime?
   shift              String?
   operatorName       String?
   film               String?
   okQty              Int?
   qcCheckSignBy      String?
-  adhesive           String?
-  wastage            Int?
-  productionPlanning ProductionPlanning[]
+  adhesive          String?
+  wastage             Int?
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToFluteLaminateBoardConversion")
 }
 
 model Punching {
   id                 Int                  @id @default(autoincrement())
+  jobNrcJobNo        String
+  job                Job                  @relation("JobToPunching", fields: [jobNrcJobNo], references: [nrcJobNo])
+  status             StepStatus           @default(in_progress)
   date               DateTime?
   shift              String?
   operatorName       String?
@@ -317,27 +366,33 @@ model Punching {
   machine            String?
   qcCheckSignBy      String?
   die                String?
-  wastage            Int?
+  wastage             Int?
   remarks            String?
-  productionPlanning ProductionPlanning[]
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPunching")
 }
 
 model SideFlapPasting {
   id                 Int                  @id @default(autoincrement())
+  jobNrcJobNo        String
+  job                Job                  @relation("JobToSideFlapPasting", fields: [jobNrcJobNo], references: [nrcJobNo])
+  status             StepStatus           @default(in_progress)
   machineNo          String?
   date               DateTime?
   shift              String?
   operatorName       String?
-  adhesive           String?
+  adhesive          String?
   quantity           Int?
-  wastage            Int?
+  wastage             Int?
   qcCheckSignBy      String?
   remarks            String?
-  productionPlanning ProductionPlanning[]
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToSideFlapPasting")
 }
 
 model QualityDept {
   id                 Int                  @id @default(autoincrement())
+  jobNrcJobNo        String
+  job                Job                  @relation("JobToQualityDept", fields: [jobNrcJobNo], references: [nrcJobNo])
+  status             StepStatus           @default(in_progress)
   date               DateTime?
   shift              String?
   operatorName       String?
@@ -347,11 +402,14 @@ model QualityDept {
   reasonForRejection String?
   remarks            String?
   qcCheckSignBy      String?
-  productionPlanning ProductionPlanning[]
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToQualityDept")
 }
 
 model DispatchProcess {
   id                 Int                  @id @default(autoincrement())
+  jobNrcJobNo        String
+  job                Job                  @relation("JobToDispatchProcess", fields: [jobNrcJobNo], references: [nrcJobNo])
+  status             StepStatus           @default(in_progress)
   date               DateTime?
   shift              String?
   operatorName       String?
@@ -361,11 +419,11 @@ model DispatchProcess {
   remarks            String?
   balanceQty         Int?
   qcCheckSignBy      String?
-  productionPlanning ProductionPlanning[]
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToDispatchProcess")
 }
 
 model DieCutting {
   id                 Int                  @id @default(autoincrement())
   details            String?
-  productionPlanning ProductionPlanning[] // For reverse relation if needed
+  productionPlanning ProductionPlanning[] 
 }

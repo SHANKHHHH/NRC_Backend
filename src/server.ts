@@ -13,8 +13,9 @@ import {
   requestSizeLimiter,
   sanitizeInput
 } from './middleware';
-import authRoutes from './routes/auth';
-import jobRoutes from './routes/job';
+import authRoutes from './routes/authRoute';
+import jobRoutes from './routes/jobRoute';
+import purchaseOrderRoutes from './routes/purchaseOrderRoute';
 
 // Load environment variables
 dotenv.config();
@@ -45,9 +46,7 @@ app.use(sanitizeInput);
 // Routes
 app.get('/', (req: Request, res: Response) => {
   res.send({
-    message: "Hello World",
-    timestamp: new Date().toISOString(),
-    status: 'running'
+    message: "Hello World"
   });
 });
 
@@ -64,6 +63,7 @@ app.get('/health', (req: Request, res: Response) => {
 // API routes - Only authentication routes with admin-protected user management
 app.use('/api/auth', authRoutes);
 app.use('/api/jobs', jobRoutes);
+app.use('/api/purchase-orders', purchaseOrderRoutes);
 
 // Test error handling routes
 app.get('/api/test-error', (req: Request, res: Response, next: NextFunction) => {
@@ -86,7 +86,6 @@ app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
   console.log(`Health check available at http://localhost:${PORT}/health`);
-  console.log(` Authentication API available at http://localhost:${PORT}/api/auth`);
   console.log(` Test error handling at http://localhost:${PORT}/api/test-error`);
 });
 

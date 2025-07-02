@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
-import { AppError } from './errorHandler';
+import { AppError } from '../utils/errorHandler';
 
 // Extend Express Request interface to include user
 declare global {
