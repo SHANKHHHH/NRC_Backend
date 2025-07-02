@@ -9,7 +9,7 @@ import { generateAccessToken } from '../../utils/jwtService';
 import { PhoneNumber } from 'libphonenumber-js';
 import { error } from 'console';
 
-const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager','printing'];
+const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager','printer'];
 
 export const login = async (req: Request, res: Response, next: NextFunction) => {
 
@@ -52,7 +52,8 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
     });
 
   }catch(err){
-    console.log(error,500)
+    // console.log(error,500)
+     console.error('Login error:', err);
     return next(new AppError('An error occurred during login', 500 ))
   }
 };
@@ -117,7 +118,8 @@ export const addMember = async (req: Request, res: Response) => {
       email,
       password: hashedPassword,
       role,
-      isActive: true
+      isActive: true,
+      name: `${firstName} ${lastName}`,
     }
   });
 

@@ -40,6 +40,12 @@ enum MachineStatus {
   busy
 }
 
+enum JobDemand {
+  high
+  medium
+  low
+}
+
 model User {
   id        String    @id // Custom NRC format: NRC001, NRC002, etc.
   email     String?
@@ -90,6 +96,7 @@ model Job {
   artworkApprovedDate   DateTime?       // "28 Art work  Approved Date"
   shadeCardApprovalDate DateTime?       // "29 Shade Card Approval Date"
   srNo                  Float?          // "Sr#"
+  jobDemand             JobDemand       @default(medium) // High, Medium, Low
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
   purchaseOrder         PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id])

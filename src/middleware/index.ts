@@ -25,7 +25,5 @@ export {
 } from './validation';
 
 // Authentication
-export {  
-  requireRole, 
-  requireAdmin, 
-} from './auth'; 
+// (Removed invalid exports for requireRole and requireAdmin)
+// ... existing code ... 
