@@ -12,9 +12,9 @@ import {
   requestSizeLimiter,
   sanitizeInput
 } from './middleware';
-import authRoutes from './routes/auth';
-import jobRoutes from './routes/job';
-import purchaseOrderRoutes from './routes/purchaseOrder';
+import authRoutes from './routes/authRoute';
+import jobRoutes from './routes/jobRoute';
+import purchaseOrderRoutes from './routes/purchaseOrderRoute';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,9 +42,7 @@ app.use(sanitizeInput);
 // Routes
 app.get('/', (req: Request, res: Response) => {
   res.send({
-    message: "Hello World",
-    timestamp: new Date().toISOString(),
-    status: 'running'
+    message: "Hello World"
   });
 });
 
@@ -84,7 +82,6 @@ app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
   console.log(`Health check available at http://localhost:${PORT}/health`);
-  console.log(` Authentication API available at http://localhost:${PORT}/api/auth`);
   console.log(` Test error handling at http://localhost:${PORT}/api/test-error`);
 });
 

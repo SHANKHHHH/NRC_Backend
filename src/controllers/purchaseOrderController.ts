@@ -2,9 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 
-// @desc    Create a new purchase order
-// @route   POST /api/purchase-orders/create
-// @access  Private
+
 export const createPurchaseOrder = async (req: Request, res: Response) => {
   const data = req.body;
   // Validate required field
@@ -32,9 +30,7 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
   });
 };
 
-// @desc    Update purchase order status by ID (admin only)
-// @route   PATCH /api/purchase-orders/:id/status
-// @access  Private (Admin only)
+
 export const updatePurchaseOrderStatus = async (req: Request, res: Response) => {
   const { id } = req.params;
   const { status } = req.body;

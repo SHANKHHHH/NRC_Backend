@@ -1,61 +1,60 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../lib/prisma';
-import { validateEmail } from '../middleware';
-import { AppError } from '../middleware/errorHandler';
+import { prisma } from '../../lib/prisma';
+import { validateEmail } from '../../middleware';
+import  AppError  from '../../utils/AppErrors';
+import { loginSchema } from '../../validator/authValidator';
+import { generateAccessToken } from '../../utils/jwtService';
+import { PhoneNumber } from 'libphonenumber-js';
+import { error } from 'console';
 
-const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager'];
+const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager','printing'];
 
-export const login = async (req: Request, res: Response) => {
-  const { id, password, role } = req.body;
-  
-  // Validate NRC ID format (NRC followed by 3 digits)
-  const nrcIdPattern = /^NRC\d{3}$/;
-  if (!nrcIdPattern.test(id)) {
-    throw new AppError('Invalid NRC ID format. Must be in format: NRC001, NRC002, etc.', 400);
-  }
-  
-  if (!VALID_ROLES.includes(role)) {
-    throw new AppError(`Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`, 400);
-  }
+export const login = async (req: Request, res: Response, next: NextFunction) => {
 
-  const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) throw new AppError('NRC ID not found in database', 401);
-  if (!user.isActive) throw new AppError('Account is deactivated', 401);
+  try{
+    const loginValidator = loginSchema.parse(req.body)
+    const { id, password } = loginValidator;
+    
+    
+    const user = await prisma.user.findFirst({ where: { id } });
 
-  const isPasswordValid = await bcrypt.compare(password, user.password);
-  if (!isPasswordValid) throw new AppError('Password does not match', 401);
-  if (user.role !== role) {
-    throw new AppError(`Role mismatch. Expected: ${user.role}, Provided: ${role}`, 401);
-  }
 
-  await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
-
-  const token = jwt.sign(
-    { userId: user.id, email: user.email || null, role: user.role },
-    process.env.JWT_SECRET!,
-    { expiresIn: '7d' }
-  );
-
-  res.json({
-    success: true,
-    message: 'Login successful',
-    data: {
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        isActive: user.isActive,
-        lastLogin: user.lastLogin,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt
-      },
-      token
+    if(!user){
+      return res.status(401).json({
+        message: "User not found"
+      })
     }
-  });
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+ 
+    if(!isPasswordValid){
+
+      return res.status(401).json({
+        message: "Invalid Password"
+      })
+    }
+
+    await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
+
+    const accessToken = generateAccessToken(id);
+    const userActive = user.isActive === true;
+    // if (!user.isActive) throw new AppError('Account is deactivated', 401);
+
+    return res.status(200).json({
+      success: true,
+      acessToken: accessToken,
+      data: {
+        id: user.id,
+        userActive,
+      }
+    });
+
+  }catch(err){
+    console.log(error,500)
+    return next(new AppError('An error occurred during login', 500 ))
+  }
 };
 
 export const logout = (_req: Request, res: Response) => {
@@ -74,8 +73,6 @@ export const getProfile = async (req: Request, res: Response) => {
       id: user.id,
       email: user.email,
       role: user.role,
-      firstName: user.firstName,
-      lastName: user.lastName,
       isActive: user.isActive,
       lastLogin: user.lastLogin,
       createdAt: user.createdAt,
@@ -120,9 +117,7 @@ export const addMember = async (req: Request, res: Response) => {
       email,
       password: hashedPassword,
       role,
-      isActive: true,
-      firstName,
-      lastName
+      isActive: true
     }
   });
 
@@ -156,8 +151,7 @@ export const getUserById = async (req: Request, res: Response) => {
       id: user.id,
       email: user.email,
       role: user.role,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      name: user.name,
       isActive: user.isActive,
       lastLogin: user.lastLogin,
       createdAt: user.createdAt,
@@ -168,11 +162,11 @@ export const getUserById = async (req: Request, res: Response) => {
 
 export const updateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { email, role, firstName, lastName, isActive } = req.body;
+  const { email, role, name, isActive } = req.body;
 
   const user = await prisma.user.update({
     where: { id },
-    data: { email, role, firstName, lastName, isActive }
+    data: { email, role, name , isActive }
   });
 
   res.json({

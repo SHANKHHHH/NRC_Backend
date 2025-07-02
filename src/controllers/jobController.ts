@@ -2,9 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 
-// @desc    Create a new job
-// @route   POST /api/jobs
-// @access  Private (Admin or Planner)
+
 export const createJob = async (req: Request, res: Response) => {
   // Authorization Check
   const userRole = req.user?.role;
@@ -12,7 +10,7 @@ export const createJob = async (req: Request, res: Response) => {
     throw new AppError('You are not authorized to perform this action', 403);
   }
 
-  const { nrcJobNo, styleItemSKU, customerName, ...rest } = req.body;
+  const { nrcJobNo, styleItemSKU, customerName, ...rest } = req.body; //datasets
 
   if (!styleItemSKU || !customerName) {
     throw new AppError('Style Item SKU and Customer Name are required', 400);
@@ -62,9 +60,8 @@ export const createJob = async (req: Request, res: Response) => {
   });
 };
 
-// @desc    Get all jobs
-// @route   GET /api/jobs
-// @access  Private
+
+//get all jobs
 export const getAllJobs = async (req: Request, res: Response) => {
   const jobs = await prisma.job.findMany({
     orderBy: { createdAt: 'desc' },
@@ -77,9 +74,7 @@ export const getAllJobs = async (req: Request, res: Response) => {
   });
 };
 
-// @desc    Get a single job by NRC Job No
-// @route   GET /api/jobs/:nrcJobNo
-// @access  Private
+
 export const getJobByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
   
@@ -97,9 +92,7 @@ export const getJobByNrcJobNo = async (req: Request, res: Response) => {
   });
 };
 
-// @desc    Update a job by NRC Job No
-// @route   PUT /api/jobs/:nrcJobNo
-// @access  Private
+
 export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
 
   const userRole = req.user?.role;
@@ -125,9 +118,7 @@ export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
   });
 };
 
-// @desc    Deactivate a job by NRC Job No (set status to inactive)
-// @route   DELETE /api/jobs/:nrcJobNo
-// @access  Private (Admin or Planner)
+
 export const deleteJobByNrcJobNo = async (req: Request, res: Response) => {
   const userRole = req.user?.role;
   if (userRole !== 'admin' && userRole !== 'planner') {

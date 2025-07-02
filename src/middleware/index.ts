@@ -1,5 +1,5 @@
 // Error handling
-export { errorHandler, asyncHandler, AppError } from './errorHandler';
+export { errorHandler, asyncHandler, AppError } from '../utils/errorHandler';
 
 // Logging
 export { requestLogger, performanceMonitor, simpleLogger } from './logger';
