@@ -1,5 +1,4 @@
 import express, { Request, Response, NextFunction } from 'express';
-import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
 import {
   errorHandler,
@@ -16,9 +15,6 @@ import {
 import authRoutes from './routes/authRoute';
 import jobRoutes from './routes/jobRoute';
 import purchaseOrderRoutes from './routes/purchaseOrderRoute';
-
-// Load environment variables
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
