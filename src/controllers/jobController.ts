@@ -121,7 +121,7 @@ export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
 
 export const deleteJobByNrcJobNo = async (req: Request, res: Response) => {
   const userRole = req.user?.role;
-  if (userRole !== 'admin' && userRole !== 'planner') {
+  if (userRole !== 'admin') {
     throw new AppError('You are not authorized to perform this action', 403);
   }
 
@@ -136,5 +136,25 @@ export const deleteJobByNrcJobNo = async (req: Request, res: Response) => {
     success: true,
     data: job,
     message: 'Job deactivated successfully',
+  });
+};
+
+export const holdJobByNrcJobNo = async (req: Request, res: Response) => {
+
+  const { nrcJobNo } = req.params;
+
+  const job = await prisma.job.update({
+    where: { nrcJobNo },
+    data: { status: 'hold' },
+  });
+
+  if (!job) {
+    throw new AppError('Job not found with that NRC Job No', 404);
+  }
+
+  res.status(200).json({
+    success: true,
+    data: job,
+    message: 'Job put on hold successfully',
   });
 }; 

@@ -123,7 +123,7 @@ model Machine {
   jobs         Job[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
-}
+} 
 
 model ActivityLog {
   id        String   @id @default(cuid())
