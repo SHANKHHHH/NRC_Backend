@@ -7,6 +7,7 @@ import {
   getJobByNrcJobNo,
   updateJobByNrcJobNo,
   deleteJobByNrcJobNo,
+  holdJobByNrcJobNo,
 } from '../controllers/jobController';
 
 const router = Router();
@@ -23,5 +24,9 @@ router
   .get(authenticateToken, asyncHandler(getJobByNrcJobNo))
   .put(requireAdminJWT, asyncHandler(updateJobByNrcJobNo))
   .delete(requireAdminJWT, asyncHandler(deleteJobByNrcJobNo));
+
+router
+  .route('/:nrcJobNo/hold')
+  .patch(authenticateToken, asyncHandler(holdJobByNrcJobNo));
 
 export default router; 
