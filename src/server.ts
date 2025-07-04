@@ -17,6 +17,7 @@ import {
 import authRoutes from './routes/authRoute';
 import jobRoutes from './routes/jobRoute';
 import purchaseOrderRoutes from './routes/purchaseOrderRoute';
+import jobPlanningRoutes from './routes/jobPlanningRoute';
 
 // Load environment variables
 
@@ -65,6 +66,7 @@ app.get('/health', (req: Request, res: Response) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
+app.use('/api/job-planning', jobPlanningRoutes);
 
 // Test error handling routes
 app.get('/api/test-error', (req: Request, res: Response, next: NextFunction) => {

@@ -99,8 +99,6 @@ model Job {
   jobDemand             JobDemand       @default(medium) // High, Medium, Low
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
-  purchaseOrder         PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id])
-  purchaseOrderId       Int
   user                  User?           @relation("UserJobs", fields: [userId], references: [id])
   userId                String?
   machine               Machine?        @relation(fields: [machineId], references: [id])
@@ -114,6 +112,7 @@ model Job {
   qualityDepts          QualityDept[]    @relation("JobToQualityDept")
   dispatchProcesses     DispatchProcess[] @relation("JobToDispatchProcess")
   artworks              ArtWork[]         @relation("JobArtworksByNrcJobNo")
+  purchaseOrders        PurchaseOrder[]   @relation("JobToPurchaseOrders")
 }
 
 model Machine {
@@ -262,7 +261,8 @@ model PurchaseOrder {
   status                PurchaseOrderStatus @default(created)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  jobs                  Job[]     // One-to-many: PurchaseOrder has many Jobs
+  jobNrcJobNo           String?   // Optional foreign key to Job.nrcJobNo
+  job                   Job?      @relation("JobToPurchaseOrders", fields: [jobNrcJobNo], references: [nrcJobNo])
   user                  User?     @relation("UserPurchaseOrders", fields: [userId], references: [id])
   userId                String?
 }
@@ -433,4 +433,20 @@ model DieCutting {
   id                 Int                  @id @default(autoincrement())
   details            String?
   productionPlanning ProductionPlanning[] 
+}
+
+model JobPlanning {
+  jobPlanId   Int        @id @default(autoincrement())
+  nrcJobNo    String     // Foreign key to Job.nrcJobNo
+  jobDemand   JobDemand
+  steps       JobStep[]
+}
+
+model JobStep {
+  id            Int          @id @default(autoincrement())
+  stepNo        Int
+  stepName      String
+  machineDetail String
+  jobPlanning   JobPlanning  @relation(fields: [jobPlanningId], references: [jobPlanId])
+  jobPlanningId Int
 }
