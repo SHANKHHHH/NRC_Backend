@@ -77,6 +77,9 @@ app.get('/api/test-async-error', asyncHandler(async (req: Request, res: Response
   throw new AppError('This is an async test error', 500);
 }));
 
+// Handle favicon.ico requests to prevent 500 errors on Vercel
+app.get('/favicon.ico', (req: Request, res: Response) => res.status(204).end());
+
 // 404 handler
 app.use('*', (req: Request, res: Response, next: NextFunction) => {
   next(new AppError(`Route not found: ${req.originalUrl}`, 404));
