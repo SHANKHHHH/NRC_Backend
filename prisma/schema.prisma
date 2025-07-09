@@ -281,6 +281,8 @@ model PaperStore {
   gsm                String?
   quality            String?
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPaperStore")
+  jobStepId          Int? @unique
+  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
 }
 
 model ProductionPlanning {
@@ -324,6 +326,8 @@ model PrintingDetails {
   extraSheets          Int?
   machine            String? // e.g., "NEW-SM102"
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPrintingDetails")
+  jobStepId          Int? @unique
+  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
 }
 
 model Corrugation {
@@ -343,6 +347,8 @@ model Corrugation {
   remarks            String?
   qcCheckSignBy      String? // QC Check & Sign BY
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToCorrugation")
+  jobStepId          Int? @unique
+  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
 }
 
 model FluteLaminateBoardConversion {
@@ -359,6 +365,8 @@ model FluteLaminateBoardConversion {
   adhesive          String?
   wastage             Int?
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToFluteLaminateBoardConversion")
+  jobStepId          Int? @unique
+  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
 }
 
 model Punching {
@@ -376,6 +384,8 @@ model Punching {
   wastage             Int?
   remarks            String?
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPunching")
+  jobStepId          Int? @unique
+  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
 }
 
 model SideFlapPasting {
@@ -393,6 +403,8 @@ model SideFlapPasting {
   qcCheckSignBy      String?
   remarks            String?
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToSideFlapPasting")
+  jobStepId          Int? @unique
+  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
 }
 
 model QualityDept {
@@ -410,6 +422,8 @@ model QualityDept {
   remarks            String?
   qcCheckSignBy      String?
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToQualityDept")
+  jobStepId          Int? @unique
+  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
 }
 
 model DispatchProcess {
@@ -427,6 +441,8 @@ model DispatchProcess {
   balanceQty         Int?
   qcCheckSignBy      String?
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToDispatchProcess")
+  jobStepId          Int? @unique
+  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
 }
 
 model DieCutting {
@@ -440,6 +456,8 @@ model JobPlanning {
   nrcJobNo    String     // Foreign key to Job.nrcJobNo
   jobDemand   JobDemand
   steps       JobStep[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 }
 
 model JobStep {
@@ -449,4 +467,16 @@ model JobStep {
   machineDetail String
   jobPlanning   JobPlanning  @relation(fields: [jobPlanningId], references: [jobPlanId])
   jobPlanningId Int
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Centralized optional relations to step detail models
+  paperStore          PaperStore?
+  printingDetails     PrintingDetails?
+  corrugation         Corrugation?
+  flutelam            FluteLaminateBoardConversion?
+  punching            Punching?
+  sideFlapPasting     SideFlapPasting?
+  qualityDept         QualityDept?
+  dispatchProcess     DispatchProcess?
 }
