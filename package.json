@@ -4,7 +4,7 @@
   "description": "A basic Node.js server with TypeScript",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc",
+    "build": "prisma generate && tsc",
     "start": "node dist/server.js",
     "dev": "ts-node -r ./src/preload-env.ts src/server.ts",
     "dev:watch": "nodemon src/server.ts",
@@ -12,7 +12,8 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "postinstall": "prisma generate"
   },
   "keywords": [
     "nodejs",
