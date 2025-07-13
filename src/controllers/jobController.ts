@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 
 
 export const createJob = async (req: Request, res: Response) => {
@@ -52,6 +53,17 @@ export const createJob = async (req: Request, res: Response) => {
       ...rest,
     },
   });
+
+  // Log the job creation action
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOB_CREATED,
+      `Customer: ${customerName}, Style Item SKU: ${styleItemSKU}`,
+      'Job',
+      generatedNrcJobNo
+    );
+  }
 
   res.status(201).json({
     success: true,
@@ -111,6 +123,17 @@ export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
     throw new AppError('Job not found with that NRC Job No', 404);
   }
 
+  // Log the job update action
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOB_UPDATED,
+      `Updated fields: ${Object.keys(req.body).join(', ')}`,
+      'Job',
+      nrcJobNo
+    );
+  }
+
   res.status(200).json({
     success: true,
     data: job,
@@ -129,8 +152,19 @@ export const deleteJobByNrcJobNo = async (req: Request, res: Response) => {
   
   const job = await prisma.job.update({
     where: { nrcJobNo },
-    data: { status: 'inactive' },
+    data: { status: 'INACTIVE' },
   });
+
+  // Log the job deletion action
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOB_DELETED,
+      'Job deactivated',
+      'Job',
+      nrcJobNo
+    );
+  }
 
   res.status(200).json({
     success: true,
@@ -145,11 +179,22 @@ export const holdJobByNrcJobNo = async (req: Request, res: Response) => {
 
   const job = await prisma.job.update({
     where: { nrcJobNo },
-    data: { status: 'hold' },
+    data: { status: 'HOLD' },
   });
 
   if (!job) {
     throw new AppError('Job not found with that NRC Job No', 404);
+  }
+
+  // Log the job hold action
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOB_HOLD,
+      'Job put on hold',
+      'Job',
+      nrcJobNo
+    );
   }
 
   res.status(200).json({

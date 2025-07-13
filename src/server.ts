@@ -14,6 +14,7 @@ import {
   requestSizeLimiter,
   sanitizeInput
 } from './middleware';
+import { activityLogger } from './middleware/activityLogger';
 import authRoutes from './routes/authRoute';
 import jobRoutes from './routes/jobRoute';
 import purchaseOrderRoutes from './routes/purchaseOrderRoute';
@@ -26,6 +27,8 @@ import punchingRoute from './routes/punchingRoute';
 import sideFlapPastingRoute from './routes/sideFlapPastingRoute';
 import qualityDeptRoute from './routes/qualityDeptRoute';
 import dispatchProcessRoute from './routes/dispatchProcessRoute';
+import activityLogRoutes from './routes/activityLogRoute';
+import machineRoutes from './routes/machineRoute';
 
 // Load environment variables
 
@@ -49,6 +52,7 @@ app.use(cookieParser());
 // Logging and monitoring middleware
 app.use(requestLogger);
 app.use(performanceMonitor);
+app.use(activityLogger); // Add activity logging middleware
 
 // Input sanitization
 app.use(sanitizeInput);
@@ -83,6 +87,8 @@ app.use('/api/punching', punchingRoute);
 app.use('/api/side-flap-pasting', sideFlapPastingRoute);
 app.use('/api/quality-dept', qualityDeptRoute);
 app.use('/api/dispatch-process', dispatchProcessRoute);
+app.use('/api/activity-logs', activityLogRoutes);
+app.use('/api/machines', machineRoutes);
 
 // Test error handling routes
 app.get('/api/test-error', (req: Request, res: Response, next: NextFunction) => {

@@ -8,6 +8,7 @@ import { loginSchema } from '../../validator/authValidator';
 import { generateAccessToken } from '../../utils/jwtService';
 import { PhoneNumber } from 'libphonenumber-js';
 import { error } from 'console';
+import { logUserAction, logUserActionWithResource, ActionTypes } from '../../lib/logger';
 
 const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager','printer'];
 
@@ -38,6 +39,9 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
 
+    // Log the login action
+    await logUserAction(user.id, ActionTypes.USER_LOGIN, `Login successful from IP: ${req.ip}`);
+
     const accessToken = generateAccessToken(id);
     const userActive = user.isActive === true;
     // if (!user.isActive) throw new AppError('Account is deactivated', 401);
@@ -58,7 +62,12 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
   }
 };
 
-export const logout = (_req: Request, res: Response) => {
+export const logout = async (req: Request, res: Response) => {
+  // Log the logout action if user is authenticated
+  if (req.user?.userId) {
+    await logUserAction(req.user.userId, ActionTypes.USER_LOGOUT, `Logout from IP: ${req.ip}`);
+  }
+
   res.json({
     success: true,
     message: 'Logout successful. (Token can now be discarded client-side)'
@@ -122,6 +131,17 @@ export const addMember = async (req: Request, res: Response) => {
       name: `${firstName} ${lastName}`,
     }
   });
+
+  // Log the user creation action
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.USER_CREATED,
+      `Created user: ${customId} with role: ${role}`,
+      'User',
+      customId
+    );
+  }
 
   res.status(201).json({
     success: true,

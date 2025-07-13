@@ -18,9 +18,9 @@ enum UserRole {
 }
 
 enum JobStatus {
-  inactive
-  active
-  hold
+  INACTIVE
+  ACTIVE
+  HOLD
 }
 
 enum PurchaseOrderStatus {
@@ -69,7 +69,7 @@ model Job {
   styleItemSKU          String          // "01 Style Item SKU"
   customerName          String          // "02 Customer Name"
   fluteType             String?         // "03 Flute Type"
-  status                JobStatus @default(active) // "04 Job Status Active/Inactive"
+  status                JobStatus @default(ACTIVE) // "04 Job Status Active/Inactive"
   latestRate            Float?          // "05 Latest Rate"
   preRate               Float?          // "06 Pre Rate"
   length                Float?          // "07 L"
@@ -91,7 +91,7 @@ model Job {
   decalBoardX           String?         // "23 Decal Board X"
   lengthBoardY          String?         // "24 Length Board Y"
   boardSize             String?         // "25 BOARD SIZE"
-  noUps                 Int?            // "26 NO UPS"
+  noUps                 String?            // "26 NO UPS"
   artworkReceivedDate   DateTime?       // "27 Art work Recevied date"
   artworkApprovedDate   DateTime?       // "28 Art work  Approved Date"
   shadeCardApprovalDate DateTime?       // "29 Shade Card Approval Date"
@@ -118,7 +118,7 @@ model Job {
 model Machine {
   id           String   @id @default(cuid())
   unit         String   // e.g., NR1, MK, DG, etc.
-  machineCode  String   @unique // e.g., PR01, CR01, FL01, etc.
+  machineCode  String   // e.g., PR01, CR01, FL01, etc.
   machineType  String   // e.g., Printing, Corrugation, Flute Laminator, etc.
   description  String   // e.g., Heidelberg Printing Machine, Corrugation Machine 1, etc.
   type         String   // e.g., Automatic, Manual, Semi Auto
