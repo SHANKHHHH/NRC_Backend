@@ -34,7 +34,7 @@ import machineRoutes from './routes/machineRoute';
 
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Security middleware (apply first)
 app.use(securityHeaders);
@@ -111,10 +111,9 @@ app.use('*', (req: Request, res: Response, next: NextFunction) => {
 app.use(errorHandler);
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-  console.log(`Health check available at http://localhost:${PORT}/health`);
-  console.log(` Test error handling at http://localhost:${PORT}/api/test-error`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running on http://0.0.0.0:${PORT}`);
+  console.log(`Health check available at http://0.0.0.0:${PORT}/health`);
+  console.log(` Test error handling at http://0.0.0.0:${PORT}/api/test-error`);
 });
-
 export default app; 
