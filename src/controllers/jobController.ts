@@ -11,10 +11,15 @@ export const createJob = async (req: Request, res: Response) => {
     throw new AppError('You are not authorized to perform this action', 403);
   }
 
-  const { nrcJobNo, styleItemSKU, customerName, ...rest } = req.body; //datasets
+  const { nrcJobNo, styleItemSKU, customerName, imageURL, ...rest } = req.body; //datasets
 
   if (!styleItemSKU || !customerName) {
     throw new AppError('Style Item SKU and Customer Name are required', 400);
+  }
+
+  // Optional: Validate imageURL if present
+  if (imageURL && typeof imageURL !== 'string') {
+    throw new AppError('imageURL must be a string', 400);
   }
 
   // Always generate nrcJobNo (ignore if provided in request)
@@ -50,6 +55,7 @@ export const createJob = async (req: Request, res: Response) => {
       nrcJobNo: generatedNrcJobNo,  
       styleItemSKU,
       customerName,
+      imageURL: imageURL || null,
       ...rest,
     },
   });
@@ -59,7 +65,12 @@ export const createJob = async (req: Request, res: Response) => {
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.JOB_CREATED,
-      `Customer: ${customerName}, Style Item SKU: ${styleItemSKU}`,
+      JSON.stringify({
+        message: 'Job created',
+        jobNo: generatedNrcJobNo,
+        customerName,
+        styleItemSKU
+      }),
       'Job',
       generatedNrcJobNo
     );
@@ -113,10 +124,19 @@ export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
   }
 
   const { nrcJobNo } = req.params;
-  
+  const { imageURL, ...rest } = req.body;
+
+  // Optional: Validate imageURL if present
+  if (imageURL && typeof imageURL !== 'string') {
+    throw new AppError('imageURL must be a string', 400);
+  }
+
   const job = await prisma.job.update({
     where: { nrcJobNo },
-    data: req.body,
+    data: {
+      ...rest,
+      ...(imageURL !== undefined ? { imageURL } : {}),
+    },
   });
 
   if (!job) {
@@ -128,7 +148,11 @@ export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.JOB_UPDATED,
-      `Updated fields: ${Object.keys(req.body).join(', ')}`,
+      JSON.stringify({
+        message: 'Job updated',
+        jobNo: nrcJobNo,
+        updatedFields: Object.keys(req.body)
+      }),
       'Job',
       nrcJobNo
     );
@@ -160,7 +184,10 @@ export const deleteJobByNrcJobNo = async (req: Request, res: Response) => {
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.JOB_DELETED,
-      'Job deactivated',
+      JSON.stringify({
+        message: 'Job deactivated',
+        jobNo: nrcJobNo
+      }),
       'Job',
       nrcJobNo
     );
@@ -191,7 +218,10 @@ export const holdJobByNrcJobNo = async (req: Request, res: Response) => {
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.JOB_HOLD,
-      'Job put on hold',
+      JSON.stringify({
+        message: 'Job put on hold',
+        jobNo: nrcJobNo
+      }),
       'Job',
       nrcJobNo
     );

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 
 export const createFluteLaminateBoardConversion = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -44,9 +45,20 @@ export const createFluteLaminateBoardConversion = async (req: Request, res: Resp
       throw new AppError('Previous step must be accepted before creating this step', 400);
     }
   }
-  const flutelam = await prisma.fluteLaminateBoardConversion.create({ data: { ...data, jobStepId } });
-  await prisma.jobStep.update({ where: { id: jobStepId }, data: { flutelam: { connect: { id: flutelam.id } } } });
-  res.status(201).json({ success: true, data: flutelam, message: 'FluteLaminateBoardConversion step created' });
+  const fluteLaminateBoardConversion = await prisma.fluteLaminateBoardConversion.create({ data: { ...data, jobStepId } });
+  await prisma.jobStep.update({ where: { id: jobStepId }, data: { flutelam: { connect: { id: fluteLaminateBoardConversion.id } } } });
+
+  // Log FluteLaminateBoardConversion step creation
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_CREATED,
+      `Created FluteLaminateBoardConversion step for jobStepId: ${jobStepId}`,
+      'FluteLaminateBoardConversion',
+      fluteLaminateBoardConversion.id.toString()
+    );
+  }
+  res.status(201).json({ success: true, data: fluteLaminateBoardConversion, message: 'FluteLaminateBoardConversion step created' });
 };
 
 export const getFluteLaminateBoardConversionById = async (req: Request, res: Response) => {
@@ -63,12 +75,34 @@ export const getAllFluteLaminateBoardConversions = async (_req: Request, res: Re
 
 export const updateFluteLaminateBoardConversion = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const flutelam = await prisma.fluteLaminateBoardConversion.update({ where: { id: Number(id) }, data: req.body });
-  res.status(200).json({ success: true, data: flutelam, message: 'FluteLaminateBoardConversion updated' });
+  const fluteLaminateBoardConversion = await prisma.fluteLaminateBoardConversion.update({ where: { id: Number(id) }, data: req.body });
+
+  // Log FluteLaminateBoardConversion step update
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated FluteLaminateBoardConversion step with id: ${id}`,
+      'FluteLaminateBoardConversion',
+      id
+    );
+  }
+  res.status(200).json({ success: true, data: fluteLaminateBoardConversion, message: 'FluteLaminateBoardConversion updated' });
 };
 
 export const deleteFluteLaminateBoardConversion = async (req: Request, res: Response) => {
   const { id } = req.params;
   await prisma.fluteLaminateBoardConversion.delete({ where: { id: Number(id) } });
+
+  // Log FluteLaminateBoardConversion step deletion
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_DELETED,
+      `Deleted FluteLaminateBoardConversion step with id: ${id}`,
+      'FluteLaminateBoardConversion',
+      id
+    );
+  }
   res.status(200).json({ success: true, message: 'FluteLaminateBoardConversion deleted' });
 }; 

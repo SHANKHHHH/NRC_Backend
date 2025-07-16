@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 
 export const createQualityDept = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -46,6 +47,17 @@ export const createQualityDept = async (req: Request, res: Response) => {
   }
   const qualityDept = await prisma.qualityDept.create({ data: { ...data, jobStepId } });
   await prisma.jobStep.update({ where: { id: jobStepId }, data: { qualityDept: { connect: { id: qualityDept.id } } } });
+
+  // Log QualityDept step creation
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_CREATED,
+      `Created QualityDept step for jobStepId: ${jobStepId}`,
+      'QualityDept',
+      qualityDept.id.toString()
+    );
+  }
   res.status(201).json({ success: true, data: qualityDept, message: 'QualityDept step created' });
 };
 
@@ -64,11 +76,33 @@ export const getAllQualityDepts = async (_req: Request, res: Response) => {
 export const updateQualityDept = async (req: Request, res: Response) => {
   const { id } = req.params;
   const qualityDept = await prisma.qualityDept.update({ where: { id: Number(id) }, data: req.body });
+
+  // Log QualityDept step update
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated QualityDept step with id: ${id}`,
+      'QualityDept',
+      id
+    );
+  }
   res.status(200).json({ success: true, data: qualityDept, message: 'QualityDept updated' });
 };
 
 export const deleteQualityDept = async (req: Request, res: Response) => {
   const { id } = req.params;
   await prisma.qualityDept.delete({ where: { id: Number(id) } });
+
+  // Log QualityDept step deletion
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_DELETED,
+      `Deleted QualityDept step with id: ${id}`,
+      'QualityDept',
+      id
+    );
+  }
   res.status(200).json({ success: true, message: 'QualityDept deleted' });
 }; 

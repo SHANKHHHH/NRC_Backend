@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 
 export const createSideFlapPasting = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -46,6 +47,17 @@ export const createSideFlapPasting = async (req: Request, res: Response) => {
   }
   const sideFlapPasting = await prisma.sideFlapPasting.create({ data: { ...data, jobStepId } });
   await prisma.jobStep.update({ where: { id: jobStepId }, data: { sideFlapPasting: { connect: { id: sideFlapPasting.id } } } });
+
+  // Log SideFlapPasting step creation
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_CREATED,
+      `Created SideFlapPasting step for jobStepId: ${jobStepId}`,
+      'SideFlapPasting',
+      sideFlapPasting.id.toString()
+    );
+  }
   res.status(201).json({ success: true, data: sideFlapPasting, message: 'SideFlapPasting step created' });
 };
 
@@ -64,11 +76,33 @@ export const getAllSideFlapPastings = async (_req: Request, res: Response) => {
 export const updateSideFlapPasting = async (req: Request, res: Response) => {
   const { id } = req.params;
   const sideFlapPasting = await prisma.sideFlapPasting.update({ where: { id: Number(id) }, data: req.body });
+
+  // Log SideFlapPasting step update
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated SideFlapPasting step with id: ${id}`,
+      'SideFlapPasting',
+      id
+    );
+  }
   res.status(200).json({ success: true, data: sideFlapPasting, message: 'SideFlapPasting updated' });
 };
 
 export const deleteSideFlapPasting = async (req: Request, res: Response) => {
   const { id } = req.params;
   await prisma.sideFlapPasting.delete({ where: { id: Number(id) } });
+
+  // Log SideFlapPasting step deletion
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_DELETED,
+      `Deleted SideFlapPasting step with id: ${id}`,
+      'SideFlapPasting',
+      id
+    );
+  }
   res.status(200).json({ success: true, message: 'SideFlapPasting deleted' });
 }; 

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 
 // Create PaperStore step detail, only if previous step is accepted
 export const createPaperStore = async (req: Request, res: Response) => {
@@ -52,6 +53,17 @@ export const createPaperStore = async (req: Request, res: Response) => {
   const paperStore = await prisma.paperStore.create({ data: { ...data, jobStepId } });
   // Link to JobStep
   await prisma.jobStep.update({ where: { id: jobStepId }, data: { paperStore: { connect: { id: paperStore.id } } } });
+
+  // Log PaperStore step creation
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_CREATED,
+      `Created PaperStore step for jobStepId: ${jobStepId}`,
+      'PaperStore',
+      paperStore.id.toString()
+    );
+  }
   res.status(201).json({ success: true, data: paperStore, message: 'PaperStore step created' });
 };
 
@@ -70,11 +82,33 @@ export const getAllPaperStores = async (_req: Request, res: Response) => {
 export const updatePaperStore = async (req: Request, res: Response) => {
   const { id } = req.params;
   const paperStore = await prisma.paperStore.update({ where: { id: Number(id) }, data: req.body });
+
+  // Log PaperStore step update
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated PaperStore step with id: ${id}`,
+      'PaperStore',
+      id
+    );
+  }
   res.status(200).json({ success: true, data: paperStore, message: 'PaperStore updated' });
 };
 
 export const deletePaperStore = async (req: Request, res: Response) => {
   const { id } = req.params;
   await prisma.paperStore.delete({ where: { id: Number(id) } });
+
+  // Log PaperStore step deletion
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_DELETED,
+      `Deleted PaperStore step with id: ${id}`,
+      'PaperStore',
+      id
+    );
+  }
   res.status(200).json({ success: true, message: 'PaperStore deleted' });
 }; 

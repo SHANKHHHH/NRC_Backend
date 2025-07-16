@@ -78,7 +78,7 @@ model Job {
   boxDimensions         String?         // "10 Box Dimensions"
   diePunchCode          Float?          // "11 Die Punch Code"
   boardCategory         String?         // "12 Board Category"
-  noOfColor             String?         // "13 No. Of  COLOR"
+  noOfColor             String?            // "13 No. Of  COLOR"
   processColors         String?         // "14 Process Colors"
   specialColor1         String?         // "15 Special Color 1"
   specialColor2         String?         // "16 Special Color 2"
@@ -97,6 +97,7 @@ model Job {
   shadeCardApprovalDate DateTime?       // "29 Shade Card Approval Date"
   srNo                  Float?          // "Sr#"
   jobDemand             JobDemand       @default(medium) // High, Medium, Low
+  imageURL              String?         // New field for job image URL
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
   user                  User?           @relation("UserJobs", fields: [userId], references: [id])
@@ -464,11 +465,17 @@ model JobStep {
   id            Int          @id @default(autoincrement())
   stepNo        Int
   stepName      String
-  machineDetail String
+  machineDetails Json[]     // Array of JSON objects for machine details
   jobPlanning   JobPlanning  @relation(fields: [jobPlanningId], references: [jobPlanId])
   jobPlanningId Int
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
+
+  // New fields
+  status        JobStepStatus @default(planned)
+  user          String?       // User ID from request header
+  startDate     DateTime?     // Date when job step is started
+  endDate       DateTime?     // Date when job step is ended
 
   // Centralized optional relations to step detail models
   paperStore          PaperStore?
@@ -479,4 +486,10 @@ model JobStep {
   sideFlapPasting     SideFlapPasting?
   qualityDept         QualityDept?
   dispatchProcess     DispatchProcess?
+}
+
+enum JobStepStatus {
+  planned
+  start
+  stop
 }

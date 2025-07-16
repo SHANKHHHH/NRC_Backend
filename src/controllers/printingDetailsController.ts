@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 
 export const createPrintingDetails = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -46,6 +47,17 @@ export const createPrintingDetails = async (req: Request, res: Response) => {
   }
   const printingDetails = await prisma.printingDetails.create({ data: { ...data, jobStepId } });
   await prisma.jobStep.update({ where: { id: jobStepId }, data: { printingDetails: { connect: { id: printingDetails.id } } } });
+
+  // Log PrintingDetails step creation
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_CREATED,
+      `Created PrintingDetails step for jobStepId: ${jobStepId}`,
+      'PrintingDetails',
+      printingDetails.id.toString()
+    );
+  }
   res.status(201).json({ success: true, data: printingDetails, message: 'PrintingDetails step created' });
 };
 
@@ -64,11 +76,33 @@ export const getAllPrintingDetails = async (_req: Request, res: Response) => {
 export const updatePrintingDetails = async (req: Request, res: Response) => {
   const { id } = req.params;
   const printingDetails = await prisma.printingDetails.update({ where: { id: Number(id) }, data: req.body });
+
+  // Log PrintingDetails step update
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated PrintingDetails step with id: ${id}`,
+      'PrintingDetails',
+      id
+    );
+  }
   res.status(200).json({ success: true, data: printingDetails, message: 'PrintingDetails updated' });
 };
 
 export const deletePrintingDetails = async (req: Request, res: Response) => {
   const { id } = req.params;
   await prisma.printingDetails.delete({ where: { id: Number(id) } });
+
+  // Log PrintingDetails step deletion
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_DELETED,
+      `Deleted PrintingDetails step with id: ${id}`,
+      'PrintingDetails',
+      id
+    );
+  }
   res.status(200).json({ success: true, message: 'PrintingDetails deleted' });
 }; 

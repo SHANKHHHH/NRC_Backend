@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 
 export const createDispatchProcess = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -46,6 +47,17 @@ export const createDispatchProcess = async (req: Request, res: Response) => {
   }
   const dispatchProcess = await prisma.dispatchProcess.create({ data: { ...data, jobStepId } });
   await prisma.jobStep.update({ where: { id: jobStepId }, data: { dispatchProcess: { connect: { id: dispatchProcess.id } } } });
+
+  // Log DispatchProcess step creation
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_CREATED,
+      `Created DispatchProcess step for jobStepId: ${jobStepId}`,
+      'DispatchProcess',
+      dispatchProcess.id.toString()
+    );
+  }
   res.status(201).json({ success: true, data: dispatchProcess, message: 'DispatchProcess step created' });
 };
 
@@ -64,11 +76,33 @@ export const getAllDispatchProcesses = async (_req: Request, res: Response) => {
 export const updateDispatchProcess = async (req: Request, res: Response) => {
   const { id } = req.params;
   const dispatchProcess = await prisma.dispatchProcess.update({ where: { id: Number(id) }, data: req.body });
+
+  // Log DispatchProcess step update
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated DispatchProcess step with id: ${id}`,
+      'DispatchProcess',
+      id
+    );
+  }
   res.status(200).json({ success: true, data: dispatchProcess, message: 'DispatchProcess updated' });
 };
 
 export const deleteDispatchProcess = async (req: Request, res: Response) => {
   const { id } = req.params;
   await prisma.dispatchProcess.delete({ where: { id: Number(id) } });
+
+  // Log DispatchProcess step deletion
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_DELETED,
+      `Deleted DispatchProcess step with id: ${id}`,
+      'DispatchProcess',
+      id
+    );
+  }
   res.status(200).json({ success: true, message: 'DispatchProcess deleted' });
 }; 

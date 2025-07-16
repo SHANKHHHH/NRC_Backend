@@ -229,6 +229,39 @@ export const getActivitySummary = async (req: Request, res: Response) => {
     take: 10
   });
 
+  // Get recent logs for job creation and status updates
+  const recentLogs = await prisma.activityLog.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 100
+  });
+
+  const jobCreations = [];
+  const jobStatusUpdates = [];
+
+  for (const log of recentLogs) {
+    if (log.action === 'Job Created') {
+      try {
+        const details = JSON.parse(log.details || '{}');
+        jobCreations.push({
+          nrcJobNo: details.jobNo || details.nrcJobNo || 'Unknown',
+          userId: log.userId || 'Unknown',
+          date: log.createdAt
+        });
+      } catch {}
+    }
+    if (log.action === 'Job Updated') {
+      try {
+        const details = JSON.parse(log.details || '{}');
+        jobStatusUpdates.push({
+          nrcJobNo: details.jobNo || details.nrcJobNo || 'Unknown',
+          status: details.updatedFields?.includes('status') ? details.status || 'Updated' : 'Other',
+          userId: log.userId || 'Unknown',
+          date: log.createdAt
+        });
+      } catch {}
+    }
+  }
+
   res.status(200).json({
     success: true,
     data: {
@@ -239,7 +272,9 @@ export const getActivitySummary = async (req: Request, res: Response) => {
         total: totalCount
       },
       topActions,
-      topUsers
+      topUsers,
+      jobCreations,
+      jobStatusUpdates
     }
   });
 }; 

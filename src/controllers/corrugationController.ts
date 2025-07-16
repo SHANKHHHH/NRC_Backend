@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 
 export const createCorrugation = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -46,6 +47,17 @@ export const createCorrugation = async (req: Request, res: Response) => {
   }
   const corrugation = await prisma.corrugation.create({ data: { ...data, jobStepId } });
   await prisma.jobStep.update({ where: { id: jobStepId }, data: { corrugation: { connect: { id: corrugation.id } } } });
+
+  // Log Corrugation step creation
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_CREATED,
+      `Created Corrugation step for jobStepId: ${jobStepId}`,
+      'Corrugation',
+      corrugation.id.toString()
+    );
+  }
   res.status(201).json({ success: true, data: corrugation, message: 'Corrugation step created' });
 };
 
@@ -64,11 +76,33 @@ export const getAllCorrugations = async (_req: Request, res: Response) => {
 export const updateCorrugation = async (req: Request, res: Response) => {
   const { id } = req.params;
   const corrugation = await prisma.corrugation.update({ where: { id: Number(id) }, data: req.body });
+
+  // Log Corrugation step update
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated Corrugation step with id: ${id}`,
+      'Corrugation',
+      id
+    );
+  }
   res.status(200).json({ success: true, data: corrugation, message: 'Corrugation updated' });
 };
 
 export const deleteCorrugation = async (req: Request, res: Response) => {
   const { id } = req.params;
   await prisma.corrugation.delete({ where: { id: Number(id) } });
+
+  // Log Corrugation step deletion
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_DELETED,
+      `Deleted Corrugation step with id: ${id}`,
+      'Corrugation',
+      id
+    );
+  }
   res.status(200).json({ success: true, message: 'Corrugation deleted' });
 }; 

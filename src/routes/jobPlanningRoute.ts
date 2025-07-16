@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo } from '../controllers/jobPlanningController';
+import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus } from '../controllers/jobPlanningController';
 
 const router = Router();
 
@@ -12,5 +12,8 @@ router.get('/', authenticateToken, getAllJobPlannings);
 
 // Get a job planning by nrcJobNo
 router.get('/:nrcJobNo', authenticateToken, getJobPlanningByNrcJobNo);
+
+// Update a specific job step's status, startDate, endDate, and user
+router.patch('/:nrcJobNo/:jobPlanId/steps/:jobStepId/status', authenticateToken, updateJobStepStatus);
 
 export default router; 

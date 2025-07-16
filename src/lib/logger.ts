@@ -71,6 +71,14 @@ export const ActionTypes = {
   MACHINE_UPDATED: 'Machine Updated',
   MACHINE_DELETED: 'Machine Deleted',
   MACHINE_STATUS_UPDATED: 'Machine Status Updated',
+
+  // JobPlanning and JobStep actions
+  JOBPLANNING_CREATED: 'JobPlanning Created',
+  JOBPLANNING_UPDATED: 'JobPlanning Updated',
+  JOBPLANNING_DELETED: 'JobPlanning Deleted',
+  JOBSTEP_CREATED: 'JobStep Created',
+  JOBSTEP_UPDATED: 'JobStep Updated',
+  JOBSTEP_DELETED: 'JobStep Deleted',
   
   // User actions
   USER_LOGIN: 'User Login',

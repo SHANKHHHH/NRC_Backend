@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 
 export const createPunching = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -46,6 +47,17 @@ export const createPunching = async (req: Request, res: Response) => {
   }
   const punching = await prisma.punching.create({ data: { ...data, jobStepId } });
   await prisma.jobStep.update({ where: { id: jobStepId }, data: { punching: { connect: { id: punching.id } } } });
+
+  // Log Punching step creation
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_CREATED,
+      `Created Punching step for jobStepId: ${jobStepId}`,
+      'Punching',
+      punching.id.toString()
+    );
+  }
   res.status(201).json({ success: true, data: punching, message: 'Punching step created' });
 };
 
@@ -64,11 +76,33 @@ export const getAllPunchings = async (_req: Request, res: Response) => {
 export const updatePunching = async (req: Request, res: Response) => {
   const { id } = req.params;
   const punching = await prisma.punching.update({ where: { id: Number(id) }, data: req.body });
+
+  // Log Punching step update
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated Punching step with id: ${id}`,
+      'Punching',
+      id
+    );
+  }
   res.status(200).json({ success: true, data: punching, message: 'Punching updated' });
 };
 
 export const deletePunching = async (req: Request, res: Response) => {
   const { id } = req.params;
   await prisma.punching.delete({ where: { id: Number(id) } });
+
+  // Log Punching step deletion
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_DELETED,
+      `Deleted Punching step with id: ${id}`,
+      'Punching',
+      id
+    );
+  }
   res.status(200).json({ success: true, message: 'Punching deleted' });
 }; 
