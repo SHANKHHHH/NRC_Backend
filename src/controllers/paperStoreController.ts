@@ -80,6 +80,10 @@ export const getAllPaperStores = async (_req: Request, res: Response) => {
 };
 
 export const getPaperStoreByNrcJobNo = async (req: Request, res: Response) => {
+  console.log('Route hit: getPaperStoreByNrcJobNo');
+  console.log('nrcJobNo:', req.params.nrcJobNo);
+  console.log('Full URL:', req.originalUrl);
+  
   const { nrcJobNo } = req.params;
   const paperStores = await prisma.paperStore.findMany({ where: { jobNrcJobNo: nrcJobNo } });
   res.status(200).json({ success: true, data: paperStores });
