@@ -17,6 +17,8 @@ services:
       - key: JWT_EXPIRES_IN
         sync: false
       - key: DIRECT_URL
-        sync: false   
+        sync: false
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
     autoDeploy: true
     healthCheckPath: /health
