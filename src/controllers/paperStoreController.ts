@@ -79,6 +79,12 @@ export const getAllPaperStores = async (_req: Request, res: Response) => {
   res.status(200).json({ success: true, count: paperStores.length, data: paperStores });
 };
 
+export const getPaperStoreByNrcJobNo = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const paperStores = await prisma.paperStore.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  res.status(200).json({ success: true, data: paperStores });
+};
+
 export const updatePaperStore = async (req: Request, res: Response) => {
   const { id } = req.params;
   const paperStore = await prisma.paperStore.update({ where: { id: Number(id) }, data: req.body });

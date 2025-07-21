@@ -73,6 +73,12 @@ export const getAllDispatchProcesses = async (_req: Request, res: Response) => {
   res.status(200).json({ success: true, count: dispatchProcesses.length, data: dispatchProcesses });
 };
 
+export const getDispatchProcessByNrcJobNo = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const dispatchProcesses = await prisma.dispatchProcess.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  res.status(200).json({ success: true, data: dispatchProcesses });
+};
+
 export const updateDispatchProcess = async (req: Request, res: Response) => {
   const { id } = req.params;
   const dispatchProcess = await prisma.dispatchProcess.update({ where: { id: Number(id) }, data: req.body });

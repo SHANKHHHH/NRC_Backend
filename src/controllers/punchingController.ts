@@ -105,4 +105,10 @@ export const deletePunching = async (req: Request, res: Response) => {
     );
   }
   res.status(200).json({ success: true, message: 'Punching deleted' });
+};
+
+export const getPunchingByNrcJobNo = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const punchings = await prisma.punching.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  res.status(200).json({ success: true, data: punchings });
 }; 

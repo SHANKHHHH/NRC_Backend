@@ -73,6 +73,12 @@ export const getAllQualityDepts = async (_req: Request, res: Response) => {
   res.status(200).json({ success: true, count: qualityDepts.length, data: qualityDepts });
 };
 
+export const getQualityDeptByNrcJobNo = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const qualityDepts = await prisma.qualityDept.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  res.status(200).json({ success: true, data: qualityDepts });
+};
+
 export const updateQualityDept = async (req: Request, res: Response) => {
   const { id } = req.params;
   const qualityDept = await prisma.qualityDept.update({ where: { id: Number(id) }, data: req.body });

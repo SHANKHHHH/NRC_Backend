@@ -105,4 +105,10 @@ export const deletePrintingDetails = async (req: Request, res: Response) => {
     );
   }
   res.status(200).json({ success: true, message: 'PrintingDetails deleted' });
+};
+
+export const getPrintingDetailsByNrcJobNo = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const printingDetails = await prisma.printingDetails.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  res.status(200).json({ success: true, data: printingDetails });
 }; 

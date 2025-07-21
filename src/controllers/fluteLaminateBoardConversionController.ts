@@ -73,6 +73,12 @@ export const getAllFluteLaminateBoardConversions = async (_req: Request, res: Re
   res.status(200).json({ success: true, count: flutelams.length, data: flutelams });
 };
 
+export const getFluteLaminateBoardConversionByNrcJobNo = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const flutes = await prisma.fluteLaminateBoardConversion.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  res.status(200).json({ success: true, data: flutes });
+};
+
 export const updateFluteLaminateBoardConversion = async (req: Request, res: Response) => {
   const { id } = req.params;
   const fluteLaminateBoardConversion = await prisma.fluteLaminateBoardConversion.update({ where: { id: Number(id) }, data: req.body });

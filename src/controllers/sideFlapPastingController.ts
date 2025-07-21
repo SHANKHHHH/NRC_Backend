@@ -73,6 +73,12 @@ export const getAllSideFlapPastings = async (_req: Request, res: Response) => {
   res.status(200).json({ success: true, count: sideFlapPastings.length, data: sideFlapPastings });
 };
 
+export const getSideFlapPastingByNrcJobNo = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const sideFlaps = await prisma.sideFlapPasting.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  res.status(200).json({ success: true, data: sideFlaps });
+};
+
 export const updateSideFlapPasting = async (req: Request, res: Response) => {
   const { id } = req.params;
   const sideFlapPasting = await prisma.sideFlapPasting.update({ where: { id: Number(id) }, data: req.body });

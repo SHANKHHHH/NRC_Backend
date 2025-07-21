@@ -73,6 +73,12 @@ export const getAllCorrugations = async (_req: Request, res: Response) => {
   res.status(200).json({ success: true, count: corrugations.length, data: corrugations });
 };
 
+export const getCorrugationByNrcJobNo = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const corrugations = await prisma.corrugation.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  res.status(200).json({ success: true, data: corrugations });
+};
+
 export const updateCorrugation = async (req: Request, res: Response) => {
   const { id } = req.params;
   const corrugation = await prisma.corrugation.update({ where: { id: Number(id) }, data: req.body });
