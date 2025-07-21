@@ -5,9 +5,10 @@ import { createFluteLaminateBoardConversion, getFluteLaminateBoardConversionById
 const router = Router();
 
 router.post('/', authenticateToken, createFluteLaminateBoardConversion);
+router.get('/by-job/:nrcJobNo', authenticateToken, getFluteLaminateBoardConversionByNrcJobNo);
 router.get('/:id', authenticateToken, getFluteLaminateBoardConversionById);
 router.get('/', authenticateToken, getAllFluteLaminateBoardConversions);
-router.get('/by-job/:nrcJobNo', authenticateToken, getFluteLaminateBoardConversionByNrcJobNo);
+
 router.put('/:id', requireAdminJWT, updateFluteLaminateBoardConversion);
 router.delete('/:id', requireAdminJWT, deleteFluteLaminateBoardConversion);
 

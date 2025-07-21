@@ -5,9 +5,10 @@ import { createPrintingDetails, getPrintingDetailsById, getAllPrintingDetails, u
 const router = Router();
 
 router.post('/', authenticateToken, createPrintingDetails);
+router.get('/by-job/:nrcJobNo', authenticateToken, getPrintingDetailsByNrcJobNo);
 router.get('/:id', authenticateToken, getPrintingDetailsById);
 router.get('/', authenticateToken, getAllPrintingDetails);
-router.get('/by-job/:nrcJobNo', authenticateToken, getPrintingDetailsByNrcJobNo);
+
 router.put('/:id', requireAdminJWT, updatePrintingDetails);
 router.delete('/:id', requireAdminJWT, deletePrintingDetails);
 

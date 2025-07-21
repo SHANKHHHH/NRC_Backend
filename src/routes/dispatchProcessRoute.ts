@@ -5,9 +5,10 @@ import { createDispatchProcess, getDispatchProcessById, getAllDispatchProcesses,
 const router = Router();
 
 router.post('/', authenticateToken, createDispatchProcess);
+router.get('/by-job/:nrcJobNo', authenticateToken, getDispatchProcessByNrcJobNo);
 router.get('/:id', authenticateToken, getDispatchProcessById);
 router.get('/', authenticateToken, getAllDispatchProcesses);
-router.get('/by-job/:nrcJobNo', authenticateToken, getDispatchProcessByNrcJobNo);
+
 router.put('/:id', requireAdminJWT, updateDispatchProcess);
 router.delete('/:id', requireAdminJWT, deleteDispatchProcess);
 

@@ -5,9 +5,10 @@ import { createCorrugation, getCorrugationById, getAllCorrugations, updateCorrug
 const router = Router();
 
 router.post('/', authenticateToken, createCorrugation);
+router.get('/by-job/:nrcJobNo', authenticateToken, getCorrugationByNrcJobNo);
 router.get('/:id', authenticateToken, getCorrugationById);
 router.get('/', authenticateToken, getAllCorrugations);
-router.get('/by-job/:nrcJobNo', authenticateToken, getCorrugationByNrcJobNo);
+
 router.put('/:id', requireAdminJWT, updateCorrugation);
 router.delete('/:id', requireAdminJWT, deleteCorrugation);
 

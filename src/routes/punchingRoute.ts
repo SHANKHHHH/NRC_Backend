@@ -5,9 +5,10 @@ import { createPunching, getPunchingById, getAllPunchings, updatePunching, delet
 const router = Router();
 
 router.post('/', authenticateToken, createPunching);
+router.get('/by-job/:nrcJobNo', authenticateToken, getPunchingByNrcJobNo);
 router.get('/:id', authenticateToken, getPunchingById);
 router.get('/', authenticateToken, getAllPunchings);
-router.get('/by-job/:nrcJobNo', authenticateToken, getPunchingByNrcJobNo);
+
 router.put('/:id', requireAdminJWT, updatePunching);
 router.delete('/:id', requireAdminJWT, deletePunching);
 

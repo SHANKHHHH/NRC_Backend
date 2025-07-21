@@ -5,9 +5,10 @@ import { createSideFlapPasting, getSideFlapPastingById, getAllSideFlapPastings, 
 const router = Router();
 
 router.post('/', authenticateToken, createSideFlapPasting);
+router.get('/by-job/:nrcJobNo', authenticateToken, getSideFlapPastingByNrcJobNo);
 router.get('/:id', authenticateToken, getSideFlapPastingById);
 router.get('/', authenticateToken, getAllSideFlapPastings);
-router.get('/by-job/:nrcJobNo', authenticateToken, getSideFlapPastingByNrcJobNo);
+
 router.put('/:id', requireAdminJWT, updateSideFlapPasting);
 router.delete('/:id', requireAdminJWT, deleteSideFlapPasting);
 

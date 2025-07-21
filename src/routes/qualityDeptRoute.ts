@@ -5,9 +5,10 @@ import { createQualityDept, getQualityDeptById, getAllQualityDepts, updateQualit
 const router = Router();
 
 router.post('/', authenticateToken, createQualityDept);
+router.get('/by-job/:nrcJobNo', authenticateToken, getQualityDeptByNrcJobNo);
 router.get('/:id', authenticateToken, getQualityDeptById);
 router.get('/', authenticateToken, getAllQualityDepts);
-router.get('/by-job/:nrcJobNo', authenticateToken, getQualityDeptByNrcJobNo);
+
 router.put('/:id', requireAdminJWT, updateQualityDept);
 router.delete('/:id', requireAdminJWT, deleteQualityDept);
 
