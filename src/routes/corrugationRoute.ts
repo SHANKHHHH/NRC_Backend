@@ -9,7 +9,7 @@ router.get('/by-job/:nrcJobNo', authenticateToken, getCorrugationByNrcJobNo);
 router.get('/:id', authenticateToken, getCorrugationById);
 router.get('/', authenticateToken, getAllCorrugations);
 
-router.put('/:id', requireAdminJWT, updateCorrugation);
+router.put('/:nrcJobNo', requireAdminJWT, updateCorrugation);
 router.delete('/:id', requireAdminJWT, deleteCorrugation);
 
 export default router; 

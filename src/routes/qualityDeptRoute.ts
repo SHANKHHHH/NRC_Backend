@@ -9,7 +9,7 @@ router.get('/by-job/:nrcJobNo', authenticateToken, getQualityDeptByNrcJobNo);
 router.get('/:id', authenticateToken, getQualityDeptById);
 router.get('/', authenticateToken, getAllQualityDepts);
 
-router.put('/:id', requireAdminJWT, updateQualityDept);
+router.put('/:nrcJobNo', requireAdminJWT, updateQualityDept);
 router.delete('/:id', requireAdminJWT, deleteQualityDept);
 
 export default router; 

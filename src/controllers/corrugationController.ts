@@ -79,22 +79,55 @@ export const getCorrugationByNrcJobNo = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: corrugations });
 };
 
-export const updateCorrugation = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const corrugation = await prisma.corrugation.update({ where: { id: Number(id) }, data: req.body });
 
-  // Log Corrugation step update
-  if (req.user?.userId) {
-    await logUserActionWithResource(
-      req.user.userId,
-      ActionTypes.JOBSTEP_UPDATED,
-      `Updated Corrugation step with id: ${id}`,
-      'Corrugation',
-      id
-    );
+export const updateCorrugation = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+
+  try {
+    // Step 1: Find the Corrugation record by jobNrcJobNo
+    const existingCorrugation = await prisma.corrugation.findFirst({
+      where: { jobNrcJobNo: nrcJobNo },
+    });
+
+    if (!existingCorrugation) {
+      throw new AppError('Corrugation record not found', 404);
+    }
+
+    // Step 2: Update using the unique id
+    const corrugation = await prisma.corrugation.update({
+      where: { id: existingCorrugation.id },
+      data: req.body,
+    });
+
+    // Step 3: Optional logging
+    if (req.user?.userId) {
+      await logUserActionWithResource(
+        req.user.userId,
+        ActionTypes.JOBSTEP_UPDATED,
+        `Updated Corrugation step with jobNrcJobNo: ${nrcJobNo}`,
+        'Corrugation',
+        nrcJobNo
+      );
+    }
+
+    // Step 4: Respond with success
+    res.status(200).json({
+      success: true,
+      data: corrugation,
+      message: 'Corrugation updated',
+    });
+
+  } catch (error: unknown) {
+    console.error('Update Corrugation error:', error);
+
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ success: false, message: error.message });
+    } else {
+      res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
   }
-  res.status(200).json({ success: true, data: corrugation, message: 'Corrugation updated' });
 };
+
 
 export const deleteCorrugation = async (req: Request, res: Response) => {
   const { id } = req.params;

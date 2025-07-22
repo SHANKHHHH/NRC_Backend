@@ -79,22 +79,55 @@ export const getQualityDeptByNrcJobNo = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: qualityDepts });
 };
 
-export const updateQualityDept = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const qualityDept = await prisma.qualityDept.update({ where: { id: Number(id) }, data: req.body });
 
-  // Log QualityDept step update
-  if (req.user?.userId) {
-    await logUserActionWithResource(
-      req.user.userId,
-      ActionTypes.JOBSTEP_UPDATED,
-      `Updated QualityDept step with id: ${id}`,
-      'QualityDept',
-      id
-    );
+
+export const updateQualityDept = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+
+  try {
+    // Step 1: Find the existing QualityDept record using jobNrcJobNo
+    const existingQualityDept = await prisma.qualityDept.findFirst({
+      where: { jobNrcJobNo: nrcJobNo },
+    });
+
+    if (!existingQualityDept) {
+      throw new AppError('QualityDept record not found', 404);
+    }
+
+    // Step 2: Update using its unique id
+    const qualityDept = await prisma.qualityDept.update({
+      where: { id: existingQualityDept.id },
+      data: req.body,
+    });
+
+    // Optional Logging
+    if (req.user?.userId) {
+      await logUserActionWithResource(
+        req.user.userId,
+        ActionTypes.JOBSTEP_UPDATED,
+        `Updated QualityDept step with jobNrcJobNo: ${nrcJobNo}`,
+        'QualityDept',
+        nrcJobNo
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      data: qualityDept,
+      message: 'QualityDept updated',
+    });
+
+  } catch (error: unknown) {
+    console.error('Update QualityDept error:', error);
+
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ success: false, message: error.message });
+    } else {
+      res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
   }
-  res.status(200).json({ success: true, data: qualityDept, message: 'QualityDept updated' });
 };
+
 
 export const deleteQualityDept = async (req: Request, res: Response) => {
   const { id } = req.params;

@@ -79,22 +79,56 @@ export const getSideFlapPastingByNrcJobNo = async (req: Request, res: Response) 
   res.status(200).json({ success: true, data: sideFlaps });
 };
 
-export const updateSideFlapPasting = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const sideFlapPasting = await prisma.sideFlapPasting.update({ where: { id: Number(id) }, data: req.body });
 
-  // Log SideFlapPasting step update
-  if (req.user?.userId) {
-    await logUserActionWithResource(
-      req.user.userId,
-      ActionTypes.JOBSTEP_UPDATED,
-      `Updated SideFlapPasting step with id: ${id}`,
-      'SideFlapPasting',
-      id
-    );
+
+export const updateSideFlapPasting = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+
+  try {
+    // Step 1: Find the existing SideFlapPasting record
+    const existingSideFlap = await prisma.sideFlapPasting.findFirst({
+      where: { jobNrcJobNo: nrcJobNo },
+    });
+
+    if (!existingSideFlap) {
+      throw new AppError('SideFlapPasting record not found', 404);
+    }
+
+    // Step 2: Update using its unique `id`
+    const sideFlapPasting = await prisma.sideFlapPasting.update({
+      where: { id: existingSideFlap.id },
+      data: req.body,
+    });
+
+    // Step 3: Optional logging
+    if (req.user?.userId) {
+      await logUserActionWithResource(
+        req.user.userId,
+        ActionTypes.JOBSTEP_UPDATED,
+        `Updated SideFlapPasting step with jobNrcJobNo: ${nrcJobNo}`,
+        'SideFlapPasting',
+        nrcJobNo
+      );
+    }
+
+    // Step 4: Respond with updated data
+    res.status(200).json({
+      success: true,
+      data: sideFlapPasting,
+      message: 'SideFlapPasting updated',
+    });
+
+  } catch (error: unknown) {
+    console.error('Update SideFlapPasting error:', error);
+
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ success: false, message: error.message });
+    } else {
+      res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
   }
-  res.status(200).json({ success: true, data: sideFlapPasting, message: 'SideFlapPasting updated' });
 };
+
 
 export const deleteSideFlapPasting = async (req: Request, res: Response) => {
   const { id } = req.params;

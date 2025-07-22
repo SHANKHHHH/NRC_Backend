@@ -73,22 +73,43 @@ export const getAllPrintingDetails = async (_req: Request, res: Response) => {
   res.status(200).json({ success: true, count: printingDetails.length, data: printingDetails });
 };
 
-export const updatePrintingDetails = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const printingDetails = await prisma.printingDetails.update({ where: { id: Number(id) }, data: req.body });
 
-  // Log PrintingDetails step update
+export const updatePrintingDetails = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+
+  
+  const existingPrintingDetails = await prisma.printingDetails.findFirst({
+    where: { jobNrcJobNo: nrcJobNo },
+  });
+
+  if (!existingPrintingDetails)
+    throw new AppError('PrintingDetails not found', 404);
+
+  const printingDetails = await prisma.printingDetails.update({
+    where: { id: existingPrintingDetails.id },
+    data: req.body, 
+  });
+
+  // Log update
   if (req.user?.userId) {
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.JOBSTEP_UPDATED,
-      `Updated PrintingDetails step with id: ${id}`,
+      `Updated PrintingDetails step with jobNrcJobNo: ${nrcJobNo}`,
       'PrintingDetails',
-      id
+      nrcJobNo
     );
   }
-  res.status(200).json({ success: true, data: printingDetails, message: 'PrintingDetails updated' });
+
+  res.status(200).json({
+    success: true,
+    data: printingDetails,
+    message: 'PrintingDetails updated',
+  });
 };
+
+
+
 
 export const deletePrintingDetails = async (req: Request, res: Response) => {
   const { id } = req.params;

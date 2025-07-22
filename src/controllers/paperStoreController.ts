@@ -80,30 +80,56 @@ export const getAllPaperStores = async (_req: Request, res: Response) => {
 };
 
 export const getPaperStoreByNrcJobNo = async (req: Request, res: Response) => {
-  console.log('Route hit: getPaperStoreByNrcJobNo');
-  console.log('nrcJobNo:', req.params.nrcJobNo);
-  console.log('Full URL:', req.originalUrl);
-  
   const { nrcJobNo } = req.params;
   const paperStores = await prisma.paperStore.findMany({ where: { jobNrcJobNo: nrcJobNo } });
   res.status(200).json({ success: true, data: paperStores });
 };
 
 export const updatePaperStore = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const paperStore = await prisma.paperStore.update({ where: { id: Number(id) }, data: req.body });
+  // const { nrcJobNo } = req.params;
+  // const paperStore = await prisma.paperStore.update({ where: { jobNrcJobNo: nrcJobNo }, data: req.body });
 
-  // Log PaperStore step update
-  if (req.user?.userId) {
-    await logUserActionWithResource(
-      req.user.userId,
-      ActionTypes.JOBSTEP_UPDATED,
-      `Updated PaperStore step with id: ${id}`,
-      'PaperStore',
-      id
-    );
-  }
-  res.status(200).json({ success: true, data: paperStore, message: 'PaperStore updated' });
+  // // Log PaperStore step update
+  // if (req.user?.userId) {
+  //   await logUserActionWithResource(
+  //     req.user.userId,
+  //     ActionTypes.JOBSTEP_UPDATED,
+  //     `Updated PaperStore step with id: ${nrcJobNo}`,
+  //     'PaperStore',
+  //     nrcJobNo
+  //   );
+  // }
+  // res.status(200).json({ success: true, data: paperStore, message: 'PaperStore updated' });
+  const { nrcJobNo } = req.params;
+
+// Step 1: Find the PaperStore by jobNrcJobNo
+const existing = await prisma.paperStore.findFirst({
+  where: { jobNrcJobNo: nrcJobNo },
+});
+
+if (!existing) {
+  return res.status(404).json({ success: false, message: 'PaperStore not found' });
+}
+
+// Step 2: Use its ID to update (since ID is unique)
+const updated = await prisma.paperStore.update({
+  where: { id: existing.id },
+  data: req.body,
+});
+
+// Log action
+if (req.user?.userId) {
+  await logUserActionWithResource(
+    req.user.userId,
+    ActionTypes.JOBSTEP_UPDATED,
+    `Updated PaperStore step with jobNrcJobNo: ${nrcJobNo}`,
+    'PaperStore',
+    nrcJobNo
+  );
+}
+
+res.status(200).json({ success: true, data: updated, message: 'PaperStore updated' });
+
 };
 
 export const deletePaperStore = async (req: Request, res: Response) => {

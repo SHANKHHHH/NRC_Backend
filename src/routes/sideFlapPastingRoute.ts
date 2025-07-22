@@ -9,7 +9,7 @@ router.get('/by-job/:nrcJobNo', authenticateToken, getSideFlapPastingByNrcJobNo)
 router.get('/:id', authenticateToken, getSideFlapPastingById);
 router.get('/', authenticateToken, getAllSideFlapPastings);
 
-router.put('/:id', requireAdminJWT, updateSideFlapPasting);
+router.put('/:nrcJobNo', requireAdminJWT, updateSideFlapPasting);
 router.delete('/:id', requireAdminJWT, deleteSideFlapPasting);
 
 export default router; 

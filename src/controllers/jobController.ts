@@ -103,6 +103,22 @@ export const getJobByNrcJobNo = async (req: Request, res: Response) => {
   
   const job = await prisma.job.findUnique({
     where: { nrcJobNo },
+    include: {
+      purchaseOrders: {
+        select: {
+          id: true,
+          customer: true,
+          style: true,
+          plant: true,
+          unit: true,
+          totalPOQuantity: true,
+          status: true,
+          shadeCardApprovalDate: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      }
+    }
   });
 
   if (!job) {
@@ -111,7 +127,10 @@ export const getJobByNrcJobNo = async (req: Request, res: Response) => {
 
   res.status(200).json({
     success: true,
-    data: job,
+    data: {
+      ...job,
+      hasPurchaseOrders: job.purchaseOrders.length > 0,
+    },
   });
 };
 

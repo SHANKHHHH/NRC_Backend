@@ -79,22 +79,54 @@ export const getFluteLaminateBoardConversionByNrcJobNo = async (req: Request, re
   res.status(200).json({ success: true, data: flutes });
 };
 
-export const updateFluteLaminateBoardConversion = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const fluteLaminateBoardConversion = await prisma.fluteLaminateBoardConversion.update({ where: { id: Number(id) }, data: req.body });
 
-  // Log FluteLaminateBoardConversion step update
-  if (req.user?.userId) {
-    await logUserActionWithResource(
-      req.user.userId,
-      ActionTypes.JOBSTEP_UPDATED,
-      `Updated FluteLaminateBoardConversion step with id: ${id}`,
-      'FluteLaminateBoardConversion',
-      id
-    );
+export const updateFluteLaminateBoardConversion = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+
+  try {
+    // Step 1: Find the record using jobNrcJobNo
+    const existingRecord = await prisma.fluteLaminateBoardConversion.findFirst({
+      where: { jobNrcJobNo: nrcJobNo },
+    });
+
+    if (!existingRecord) {
+      throw new AppError('FluteLaminateBoardConversion record not found', 404);
+    }
+
+    // Step 2: Update using the unique ID
+    const fluteLaminateBoardConversion = await prisma.fluteLaminateBoardConversion.update({
+      where: { id: existingRecord.id },
+      data: req.body,
+    });
+
+    // Step 3: Log update
+    if (req.user?.userId) {
+      await logUserActionWithResource(
+        req.user.userId,
+        ActionTypes.JOBSTEP_UPDATED,
+        `Updated FluteLaminateBoardConversion step with jobNrcJobNo: ${nrcJobNo}`,
+        'FluteLaminateBoardConversion',
+        nrcJobNo
+      );
+    }
+
+    // Step 4: Respond
+    res.status(200).json({
+      success: true,
+      data: fluteLaminateBoardConversion,
+      message: 'FluteLaminateBoardConversion updated',
+    });
+  } catch (error: unknown) {
+    console.error('Update FluteLaminateBoardConversion error:', error);
+
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ success: false, message: error.message });
+    } else {
+      res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
   }
-  res.status(200).json({ success: true, data: fluteLaminateBoardConversion, message: 'FluteLaminateBoardConversion updated' });
 };
+
 
 export const deleteFluteLaminateBoardConversion = async (req: Request, res: Response) => {
   const { id } = req.params;

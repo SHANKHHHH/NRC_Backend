@@ -9,7 +9,7 @@ router.get('/by-job/:nrcJobNo', authenticateToken, getDispatchProcessByNrcJobNo)
 router.get('/:id', authenticateToken, getDispatchProcessById);
 router.get('/', authenticateToken, getAllDispatchProcesses);
 
-router.put('/:id', requireAdminJWT, updateDispatchProcess);
+router.put('/:nrcJobNo', requireAdminJWT, updateDispatchProcess);
 router.delete('/:id', requireAdminJWT, deleteDispatchProcess);
 
 export default router; 

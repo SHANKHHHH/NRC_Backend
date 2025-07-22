@@ -79,22 +79,55 @@ export const getDispatchProcessByNrcJobNo = async (req: Request, res: Response) 
   res.status(200).json({ success: true, data: dispatchProcesses });
 };
 
-export const updateDispatchProcess = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const dispatchProcess = await prisma.dispatchProcess.update({ where: { id: Number(id) }, data: req.body });
 
-  // Log DispatchProcess step update
-  if (req.user?.userId) {
-    await logUserActionWithResource(
-      req.user.userId,
-      ActionTypes.JOBSTEP_UPDATED,
-      `Updated DispatchProcess step with id: ${id}`,
-      'DispatchProcess',
-      id
-    );
+export const updateDispatchProcess = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+
+  try {
+    // Step 1: Find the DispatchProcess record by jobNrcJobNo
+    const existingDispatchProcess = await prisma.dispatchProcess.findFirst({
+      where: { jobNrcJobNo: nrcJobNo },
+    });
+
+    if (!existingDispatchProcess) {
+      throw new AppError('DispatchProcess record not found', 404);
+    }
+
+    // Step 2: Update using its unique id
+    const dispatchProcess = await prisma.dispatchProcess.update({
+      where: { id: existingDispatchProcess.id },
+      data: req.body,
+    });
+
+    // Step 3: Log update
+    if (req.user?.userId) {
+      await logUserActionWithResource(
+        req.user.userId,
+        ActionTypes.JOBSTEP_UPDATED,
+        `Updated DispatchProcess step with jobNrcJobNo: ${nrcJobNo}`,
+        'DispatchProcess',
+        nrcJobNo
+      );
+    }
+
+    // Step 4: Respond
+    res.status(200).json({
+      success: true,
+      data: dispatchProcess,
+      message: 'DispatchProcess updated',
+    });
+
+  } catch (error: unknown) {
+    console.error('Update DispatchProcess error:', error);
+
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ success: false, message: error.message });
+    } else {
+      res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
   }
-  res.status(200).json({ success: true, data: dispatchProcess, message: 'DispatchProcess updated' });
 };
+
 
 export const deleteDispatchProcess = async (req: Request, res: Response) => {
   const { id } = req.params;

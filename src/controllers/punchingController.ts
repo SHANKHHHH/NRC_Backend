@@ -73,22 +73,56 @@ export const getAllPunchings = async (_req: Request, res: Response) => {
   res.status(200).json({ success: true, count: punchings.length, data: punchings });
 };
 
-export const updatePunching = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const punching = await prisma.punching.update({ where: { id: Number(id) }, data: req.body });
 
-  // Log Punching step update
-  if (req.user?.userId) {
-    await logUserActionWithResource(
-      req.user.userId,
-      ActionTypes.JOBSTEP_UPDATED,
-      `Updated Punching step with id: ${id}`,
-      'Punching',
-      id
-    );
-  }
-  res.status(200).json({ success: true, data: punching, message: 'Punching updated' });
+export const updatePunching = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+
+  try {
+    // Step 1: Find punching record using jobNrcJobNo
+    const existingPunching = await prisma.punching.findFirst({
+      where: { jobNrcJobNo: nrcJobNo },
+    });
+
+    if (!existingPunching) {
+      throw new AppError('Punching record not found', 404);
+    }
+
+    // Step 2: Update using its unique `id`
+    const punching = await prisma.punching.update({
+      where: { id: existingPunching.id },
+      data: req.body,
+    });
+
+    // Optional logging
+    if (req.user?.userId) {
+      await logUserActionWithResource(
+        req.user.userId,
+        ActionTypes.JOBSTEP_UPDATED,
+        `Updated Punching step with jobNrcJobNo: ${nrcJobNo}`,
+        'Punching',
+        nrcJobNo
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      data: punching,
+      message: 'Punching step updated',
+    });
+  } catch (error) {
+  console.error('Update punching error:', error);
+
+  const status = (error instanceof AppError && error.statusCode) || 500;
+  const message = (error instanceof Error && error.message) || 'Internal Server Error';
+
+  res.status(status).json({
+    success: false,
+    message,
+  });
+}
+  
 };
+
 
 export const deletePunching = async (req: Request, res: Response) => {
   const { id } = req.params;
