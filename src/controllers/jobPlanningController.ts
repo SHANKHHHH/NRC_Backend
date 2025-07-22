@@ -75,7 +75,7 @@ export const getJobPlanningByNrcJobNo = async (req: Request, res: Response) => {
 
 // Update a specific job step's status, startDate, endDate, and user
 export const updateJobStepStatus = async (req: Request, res: Response) => {
-  const { nrcJobNo, jobPlanId, jobStepId } = req.params;
+  const { nrcJobNo, jobPlanId, jobStepNo } = req.params;
   const { status } = req.body;
   let userId = req.user?.userId || req.headers['user-id'];
   if (Array.isArray(userId)) userId = userId[0];
@@ -87,7 +87,7 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
   // Find the job step
   const jobStep = await prisma.jobStep.findFirst({
     where: {
-      id: Number(jobStepId),
+      id: Number(jobStepNo),
       jobPlanningId: Number(jobPlanId),
       jobPlanning: { nrcJobNo: nrcJobNo },
     },
@@ -107,7 +107,7 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
   }
 
   const updatedStep = await prisma.jobStep.update({
-    where: { id: Number(jobStepId) },
+    where: { id: Number(jobStepNo) },
     data: updateData,
     select: {
       id: true,
@@ -133,13 +133,13 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
         message: `Job step status updated to ${status}`,
         nrcJobNo,
         jobPlanId,
-        jobStepId,
+        jobStepNo,
         status,
         startDate: updatedStep.startDate,
         endDate: updatedStep.endDate
       }),
       'JobStep',
-      jobStepId
+      jobStepNo
     );
   }
 

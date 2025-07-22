@@ -14,6 +14,6 @@ router.get('/', authenticateToken, getAllJobPlannings);
 router.get('/:nrcJobNo', authenticateToken, getJobPlanningByNrcJobNo);
 
 // Update a specific job step's status, startDate, endDate, and user
-router.patch('/:nrcJobNo/:jobPlanId/steps/:jobStepId/status', authenticateToken, updateJobStepStatus);
+router.patch('/:nrcJobNo/:jobPlanId/steps/:jobStepNo/status', authenticateToken, updateJobStepStatus);
 
 export default router; 
