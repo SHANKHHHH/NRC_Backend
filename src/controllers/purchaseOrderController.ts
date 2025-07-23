@@ -14,7 +14,7 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
     'boardSize', 'customer', 'deliveryDate', 'dieCode', 'dispatchDate', 'dispatchQuantity',
     'fluteType', 'jockeyMonth', 'noOfUps', 'nrcDeliveryDate', 'noOfSheets', 'poDate',
     'poNumber', 'pendingQuantity', 'pendingValidity', 'plant', 'shadeCardApprovalDate',
-    'srNo', 'style', 'totalPOQuantity', 'unit', 'userId'
+    'srNo', 'style', 'totalPOQuantity', 'unit', 'userId', 'jobNrcJobNo'
   ];
   const createData: any = { status: 'created' };
   for (const field of allowedFields) {

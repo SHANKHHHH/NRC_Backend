@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus } from '../controllers/jobPlanningController';
+import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo } from '../controllers/jobPlanningController';
 
 const router = Router();
 
@@ -9,6 +9,12 @@ router.post('/', authenticateToken, createJobPlanning);
 
 // Get all job plannings
 router.get('/', authenticateToken, getAllJobPlannings);
+
+// Get all steps for a given nrcJobNo
+router.get('/:nrcJobNo/steps', authenticateToken, getStepsByNrcJobNo);
+
+// Get a specific step for a given nrcJobNo and stepNo
+router.get('/:nrcJobNo/steps/:stepNo', authenticateToken, getStepByNrcJobNoAndStepNo);
 
 // Get a job planning by nrcJobNo
 router.get('/:nrcJobNo', authenticateToken, getJobPlanningByNrcJobNo);
