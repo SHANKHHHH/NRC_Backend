@@ -198,4 +198,37 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
     data: updatedStep,
     message: `Job step status updated to ${status}`,
   });
+};
+
+// Update any field of a specific step for a given nrcJobNo and stepNo
+export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
+  const { nrcJobNo, stepNo } = req.params;
+  // Find the job planning for the given nrcJobNo
+  const jobPlanning = await prisma.jobPlanning.findFirst({
+    where: { nrcJobNo },
+    select: { jobPlanId: true },
+  });
+  if (!jobPlanning) {
+    throw new AppError('JobPlanning not found for that NRC Job No', 404);
+  }
+  // Find the specific step for the jobPlanning
+  const step = await prisma.jobStep.findFirst({
+    where: {
+      jobPlanningId: jobPlanning.jobPlanId,
+      stepNo: Number(stepNo),
+    },
+  });
+  if (!step) {
+    throw new AppError('Step not found for that NRC Job No and step number', 404);
+  }
+  // Update the step with the provided fields
+  const updatedStep = await prisma.jobStep.update({
+    where: { id: step.id },
+    data: req.body,
+  });
+  res.status(200).json({
+    success: true,
+    data: updatedStep,
+    message: 'Step updated successfully',
+  });
 }; 

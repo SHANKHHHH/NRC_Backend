@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo } from '../controllers/jobPlanningController';
+import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo } from '../controllers/jobPlanningController';
 
 const router = Router();
 
@@ -15,6 +15,9 @@ router.get('/:nrcJobNo/steps', authenticateToken, getStepsByNrcJobNo);
 
 // Get a specific step for a given nrcJobNo and stepNo
 router.get('/:nrcJobNo/steps/:stepNo', authenticateToken, getStepByNrcJobNoAndStepNo);
+
+// Update any field of a specific step for a given nrcJobNo and stepNo
+router.patch('/:nrcJobNo/steps/:stepNo', authenticateToken, updateStepByNrcJobNoAndStepNo);
 
 // Get a job planning by nrcJobNo
 router.get('/:nrcJobNo', authenticateToken, getJobPlanningByNrcJobNo);
