@@ -52,6 +52,7 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
       data: {
         id: user.id,
         userActive,
+        role: user.role
       }
     });
 

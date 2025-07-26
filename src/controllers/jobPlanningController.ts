@@ -3,14 +3,13 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 
-// Create a new JobPlanning with steps
 export const createJobPlanning = async (req: Request, res: Response) => {
   const { nrcJobNo, jobDemand, steps } = req.body;
   if (!nrcJobNo || !jobDemand || !Array.isArray(steps) || steps.length === 0) {
     throw new AppError('nrcJobNo, jobDemand, and steps are required', 400);
   }
 
-  // Create JobPlanning and related JobSteps in a transaction
+
   const jobPlanning = await prisma.jobPlanning.create({
     data: {
       nrcJobNo,
@@ -26,7 +25,7 @@ export const createJobPlanning = async (req: Request, res: Response) => {
     include: { steps: true },
   });
 
-  // Log the job planning creation action
+// Log the job planning creation action
   if (req.user?.userId) {
     await logUserActionWithResource(
       req.user.userId,
