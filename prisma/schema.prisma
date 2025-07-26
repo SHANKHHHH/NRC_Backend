@@ -57,6 +57,11 @@ model User {
   lastLogin DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  
+  // Relations
+  jobs          Job[]           @relation("UserJobs")
+  activityLogs  ActivityLog[]   @relation("UserActivityLogs")
+  purchaseOrders PurchaseOrder[] @relation("UserPurchaseOrders")
 }
 
 
@@ -132,7 +137,7 @@ model Machine {
 
 model ActivityLog {
   id        String   @id @default(cuid())
-  user      User?    @relation(fields: [userId], references: [id])
+  user      User?    @relation("UserActivityLogs", fields: [userId], references: [id])
   userId    String?
   action    String
   details   String?
