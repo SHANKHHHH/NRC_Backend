@@ -7,7 +7,7 @@ export const createJobPlanning = async (req: Request, res: Response) => {
   const { nrcJobNo, jobDemand, steps } = req.body;
   if (!nrcJobNo || !jobDemand || !Array.isArray(steps) || steps.length === 0) {
     throw new AppError('nrcJobNo, jobDemand, and steps are required', 400);
-  }
+}
 
 
   const jobPlanning = await prisma.jobPlanning.create({
@@ -53,6 +53,24 @@ export const getAllJobPlannings = async (_req: Request, res: Response) => {
     success: true,
     count: jobPlannings.length,
     data: jobPlannings,
+  });
+};
+
+// Get all JobPlannings with steps
+export const getAllJobPlanningsSimple = async (req: Request, res: Response) => {
+  const jobPlannings = await prisma.jobPlanning.findMany({
+    select: {
+      jobPlanId: true,
+      nrcJobNo: true,
+      jobDemand: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+  res.status(200).json({
+    success: true,
+    data: jobPlannings
   });
 };
 

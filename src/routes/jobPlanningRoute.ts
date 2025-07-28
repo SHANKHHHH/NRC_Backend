@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo } from '../controllers/jobPlanningController';
+import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, getAllJobPlanningsSimple } from '../controllers/jobPlanningController';
 
 const router = Router();
+
+// Place summary route BEFORE any parameterized routes
+router.get('/summary', getAllJobPlanningsSimple);
 
 // Create a new job planning
 router.post('/', authenticateToken, createJobPlanning);
