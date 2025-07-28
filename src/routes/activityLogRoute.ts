@@ -9,13 +9,13 @@ import {
 
 const router = express.Router();
 
-// All routes require authentication
-router.use(authenticateToken);
 
-// Get all activity logs (admin only)
+router.use(authenticateToken);
+//checking the route file 
+
 router.get('/',  getActivityLogs);
 
-// Get activity summary (admin only)
+
 router.get('/summary', getActivitySummary);
 
 // Get activity logs for a specific user
