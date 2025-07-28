@@ -56,12 +56,25 @@ export const createPaperStore = async (req: Request, res: Response) => {
 
   // Log PaperStore step creation
   if (req.user?.userId) {
+    // Get the nrcJobNo from the jobStep
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: jobStepId },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true
+          }
+        }
+      }
+    });
+
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.JOBSTEP_CREATED,
       `Created PaperStore step for jobStepId: ${jobStepId}`,
       'PaperStore',
-      paperStore.id.toString()
+      paperStore.id.toString(),
+      jobStep?.jobPlanning?.nrcJobNo
     );
   }
   res.status(201).json({ success: true, data: paperStore, message: 'PaperStore step created' });

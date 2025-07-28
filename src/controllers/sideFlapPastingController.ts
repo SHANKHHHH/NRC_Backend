@@ -50,12 +50,25 @@ export const createSideFlapPasting = async (req: Request, res: Response) => {
 
   // Log SideFlapPasting step creation
   if (req.user?.userId) {
+    // Get the nrcJobNo from the jobStep
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: jobStepId },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true
+          }
+        }
+      }
+    });
+
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.JOBSTEP_CREATED,
       `Created SideFlapPasting step for jobStepId: ${jobStepId}`,
       'SideFlapPasting',
-      sideFlapPasting.id.toString()
+      sideFlapPasting.id.toString(),
+      jobStep?.jobPlanning?.nrcJobNo
     );
   }
   res.status(201).json({ success: true, data: sideFlapPasting, message: 'SideFlapPasting step created' });

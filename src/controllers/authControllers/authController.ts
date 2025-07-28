@@ -115,10 +115,46 @@ export const addMember = async (req: Request, res: Response) => {
     }
   }
 
-  // Generate custom id in NRC format
-  const existingUsers = await prisma.user.count();
-  const serialNumber = (existingUsers + 1).toString().padStart(3, '0');
-  const customId = `NRC${serialNumber}`;
+  // Generate unique custom id in NRC format
+  let customId: string;
+  let attempts = 0;
+  const maxAttempts = 10;
+  
+  do {
+    attempts++;
+    if (attempts > maxAttempts) {
+      throw new AppError('Unable to generate unique user ID after multiple attempts', 500);
+    }
+    
+    // Get the highest existing NRC ID
+    const highestUser = await prisma.user.findFirst({
+      where: {
+        id: {
+          startsWith: 'NRC'
+        }
+      },
+      orderBy: {
+        id: 'desc'
+      }
+    });
+    
+    let nextNumber = 1;
+    if (highestUser) {
+      const lastNumber = parseInt(highestUser.id.replace('NRC', ''));
+      nextNumber = lastNumber + 1;
+    }
+    
+    customId = `NRC${nextNumber.toString().padStart(3, '0')}`;
+    
+    // Check if this ID already exists (double-check for race conditions)
+    const existingUser = await prisma.user.findUnique({
+      where: { id: customId }
+    });
+    
+    if (!existingUser) {
+      break; // Found a unique ID
+    }
+  } while (true);
 
   const hashedPassword = await bcrypt.hash(password, 12);
 

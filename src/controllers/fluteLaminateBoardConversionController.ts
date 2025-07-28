@@ -50,12 +50,25 @@ export const createFluteLaminateBoardConversion = async (req: Request, res: Resp
 
   // Log FluteLaminateBoardConversion step creation
   if (req.user?.userId) {
+    // Get the nrcJobNo from the jobStep
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: jobStepId },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true
+          }
+        }
+      }
+    });
+
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.JOBSTEP_CREATED,
       `Created FluteLaminateBoardConversion step for jobStepId: ${jobStepId}`,
       'FluteLaminateBoardConversion',
-      fluteLaminateBoardConversion.id.toString()
+      fluteLaminateBoardConversion.id.toString(),
+      jobStep?.jobPlanning?.nrcJobNo
     );
   }
   res.status(201).json({ success: true, data: fluteLaminateBoardConversion, message: 'FluteLaminateBoardConversion step created' });

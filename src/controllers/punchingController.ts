@@ -50,12 +50,25 @@ export const createPunching = async (req: Request, res: Response) => {
 
   // Log Punching step creation
   if (req.user?.userId) {
+    // Get the nrcJobNo from the jobStep
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: jobStepId },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true
+          }
+        }
+      }
+    });
+
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.JOBSTEP_CREATED,
       `Created Punching step for jobStepId: ${jobStepId}`,
       'Punching',
-      punching.id.toString()
+      punching.id.toString(),
+      jobStep?.jobPlanning?.nrcJobNo
     );
   }
   res.status(201).json({ success: true, data: punching, message: 'Punching step created' });

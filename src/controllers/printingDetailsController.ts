@@ -50,12 +50,25 @@ export const createPrintingDetails = async (req: Request, res: Response) => {
 
   // Log PrintingDetails step creation
   if (req.user?.userId) {
+    // Get the nrcJobNo from the jobStep
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: jobStepId },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true
+          }
+        }
+      }
+    });
+
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.JOBSTEP_CREATED,
       `Created PrintingDetails step for jobStepId: ${jobStepId}`,
       'PrintingDetails',
-      printingDetails.id.toString()
+      printingDetails.id.toString(),
+      jobStep?.jobPlanning?.nrcJobNo
     );
   }
   res.status(201).json({ success: true, data: printingDetails, message: 'PrintingDetails step created' });

@@ -5,20 +5,22 @@ import { prisma } from './prisma';
  * @param userId - The ID of the user performing the action.
  * @param action - A short description of the action.
  * @param details - Optional details about the action.
+ * @param nrcJobNo - Optional NRC job number associated with the action.
  */
-export async function logUserAction(userId: string, action: string, details?: string) {
+export async function logUserAction(userId: string, action: string, details?: string, nrcJobNo?: string) {
   try {
     await prisma.activityLog.create({
       data: {
         userId,
         action,
         details,
+        nrcJobNo,
       },
     });
   } catch (error) {
     // Log to console if database logging fails
     console.error('Failed to log user action to database:', error);
-    console.log(`User Action Log: ${new Date().toISOString()} - User: ${userId} - Action: ${action} - Details: ${details || 'N/A'}`);
+    console.log(`User Action Log: ${new Date().toISOString()} - User: ${userId} - Action: ${action} - Details: ${details || 'N/A'} - NRC Job No: ${nrcJobNo || 'N/A'}`);
   }
 }
 
@@ -29,20 +31,22 @@ export async function logUserAction(userId: string, action: string, details?: st
  * @param details - Optional details about the action.
  * @param resourceType - Type of resource being acted upon (e.g., 'Job', 'PurchaseOrder').
  * @param resourceId - ID of the resource being acted upon.
+ * @param nrcJobNo - Optional NRC job number associated with the action.
  */
 export async function logUserActionWithResource(
   userId: string, 
   action: string, 
   details?: string, 
   resourceType?: string, 
-  resourceId?: string
+  resourceId?: string,
+  nrcJobNo?: string
 ) {
   const enhancedDetails = [
     details,
     resourceType && resourceId ? `Resource: ${resourceType} (${resourceId})` : null
   ].filter(Boolean).join(' | ');
 
-  await logUserAction(userId, action, enhancedDetails || undefined);
+  await logUserAction(userId, action, enhancedDetails || undefined, nrcJobNo);
 }
 
 /**

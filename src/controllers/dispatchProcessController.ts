@@ -50,12 +50,25 @@ export const createDispatchProcess = async (req: Request, res: Response) => {
 
   // Log DispatchProcess step creation
   if (req.user?.userId) {
+    // Get the nrcJobNo from the jobStep
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: jobStepId },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true
+          }
+        }
+      }
+    });
+
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.JOBSTEP_CREATED,
       `Created DispatchProcess step for jobStepId: ${jobStepId}`,
       'DispatchProcess',
-      dispatchProcess.id.toString()
+      dispatchProcess.id.toString(),
+      jobStep?.jobPlanning?.nrcJobNo
     );
   }
   res.status(201).json({ success: true, data: dispatchProcess, message: 'DispatchProcess step created' });
