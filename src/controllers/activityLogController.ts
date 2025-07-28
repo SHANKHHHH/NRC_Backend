@@ -6,10 +6,7 @@ import { AppError } from '../middleware';
  * Get all activity logs with pagination and filtering
  */
 export const getActivityLogs = async (req: Request, res: Response) => {
-  const userRole = req.user?.role;
-  if (userRole !== 'admin') {
-    throw new AppError('You are not authorized to view activity logs', 403);
-  }
+  // Removed permission check - all users can view activity logs
 
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 50;
@@ -83,13 +80,7 @@ export const getActivityLogs = async (req: Request, res: Response) => {
  */
 export const getUserActivityLogs = async (req: Request, res: Response) => {
   const { userId } = req.params;
-  const requestingUserId = req.user?.userId;
-  const requestingUserRole = req.user?.role;
-
-  // Users can only view their own logs unless they're admin
-  if (requestingUserRole !== 'admin' && requestingUserId !== userId) {
-    throw new AppError('You can only view your own activity logs', 403);
-  }
+  // Removed permission check - all users can view any user's activity logs
 
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 50;
@@ -166,10 +157,7 @@ export const getJobActivityLogs = async (req: Request, res: Response) => {
  * Get activity summary (dashboard stats)
  */
 export const getActivitySummary = async (req: Request, res: Response) => {
-  const userRole = req.user?.role;
-  if (userRole !== 'admin') {
-    throw new AppError('You are not authorized to view activity summary', 403);
-  }
+  // Removed permission check - all users can view activity summary
 
   const today = new Date();
   const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
