@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
+import { Machine } from '@prisma/client';
 
 export const createJobPlanning = async (req: Request, res: Response) => {
   const { nrcJobNo, jobDemand, steps } = req.body;
@@ -43,12 +44,89 @@ export const createJobPlanning = async (req: Request, res: Response) => {
   });
 };
 
+// Helper to serialize a Machine object for JSON
+function serializeMachine(machine: Machine) {
+  return {
+    ...machine,
+    createdAt: machine.createdAt.toISOString(),
+    updatedAt: machine.updatedAt.toISOString(),
+  };
+}
+
 // Get all JobPlannings with steps
 export const getAllJobPlannings = async (_req: Request, res: Response) => {
+  // 1. Fetch all job plannings and their steps
   const jobPlannings = await prisma.jobPlanning.findMany({
-    include: { steps: true },
+    include: {
+      steps: {
+        select: {
+          id: true,
+          stepNo: true,
+          stepName: true,
+          machineDetails: true,
+          status: true,
+          startDate: true,
+          endDate: true,
+          user: true,
+          createdAt: true,
+          updatedAt: true,
+        }
+      }
+    },
     orderBy: { jobPlanId: 'desc' },
   });
+
+  // 2. Collect all unique machineIds from all steps
+  const machineIdSet = new Set<string>();
+  for (const planning of jobPlannings) {
+    for (const step of planning.steps) {
+      if (Array.isArray(step.machineDetails)) {
+        for (const md of step.machineDetails) {
+          if (
+            md &&
+            typeof md === 'object' &&
+            !Array.isArray(md) &&
+            'machineId' in md &&
+            typeof md.machineId === 'string'
+          ) {
+            machineIdSet.add(md.machineId);
+          }
+        }
+      }
+    }
+  }
+  const machineIds: string[] = Array.from(machineIdSet);
+
+  // 3. Fetch all machines from the DB for those IDs
+  let machines: Machine[] = [];
+  if (machineIds.length > 0) {
+    machines = await prisma.machine.findMany({
+      where: { id: { in: machineIds } },
+    });
+  }
+  const machineMap = Object.fromEntries(machines.map(m => [m.id, m]));
+
+  // 4. Replace machineId in each step's machineDetails with the full machine object (serialized)
+  for (const planning of jobPlannings) {
+    for (const step of planning.steps) {
+      if (Array.isArray(step.machineDetails)) {
+        step.machineDetails = step.machineDetails.map(md => {
+          if (
+            md &&
+            typeof md === 'object' &&
+            !Array.isArray(md) &&
+            'machineId' in md &&
+            typeof md.machineId === 'string' &&
+            machineMap[md.machineId]
+          ) {
+            return { ...md, machine: serializeMachine(machineMap[md.machineId]) };
+          }
+          return md;
+        });
+      }
+    }
+  }
+
   res.status(200).json({
     success: true,
     count: jobPlannings.length,
