@@ -13,10 +13,10 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Get all activity logs (admin only)
-router.get('/', requireAdminJWT, getActivityLogs);
+router.get('/',  getActivityLogs);
 
 // Get activity summary (admin only)
-router.get('/summary', requireAdminJWT, getActivitySummary);
+router.get('/summary', getActivitySummary);
 
 // Get activity logs for a specific user
 router.get('/user/:userId', getUserActivityLogs);
