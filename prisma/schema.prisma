@@ -497,3 +497,21 @@ enum JobStepStatus {
   start
   stop
 }
+
+model CompletedJob {
+  id                    Int             @id @default(autoincrement())
+  nrcJobNo              String          // Original job number
+  jobPlanId             Int             // Original job planning ID
+  jobDemand             JobDemand       // Original job demand
+  jobDetails            Json            // Complete job details from Job table
+  purchaseOrderDetails  Json?           // Complete PO details if any
+  allSteps              Json            // All job steps with their details
+  allStepDetails        Json            // All production step details (corrugation, printing, etc.)
+  completedAt           DateTime        @default(now())
+  completedBy           String?         // User who marked as completed
+  totalDuration         Int?            // Total duration in hours/days
+  finalStatus           String          @default("completed")
+  remarks               String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+}

@@ -83,6 +83,7 @@ export const ActionTypes = {
   JOBSTEP_CREATED: 'JobStep Created',
   JOBSTEP_UPDATED: 'JobStep Updated',
   JOBSTEP_DELETED: 'JobStep Deleted',
+  JOB_COMPLETED: 'Job Completed',
   
   // User actions
   USER_LOGIN: 'User Login',
