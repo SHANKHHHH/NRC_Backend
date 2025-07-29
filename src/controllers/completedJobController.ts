@@ -97,16 +97,14 @@ export const completeJob = async (req: Request, res: Response) => {
       throw new AppError('Job planning not found', 404);
     }
 
-    // Check completion criteria
-    const jobStep = jobPlanning.steps.find(step => step.status === 'stop');
+    // Find a step where status is 'stop' and dispatchProcess.status is 'accept'
+    const jobStep = jobPlanning.steps.find(
+      step => step.status === 'stop' && step.dispatchProcess && step.dispatchProcess.status === 'accept'
+    );
     if (!jobStep) {
-      throw new AppError('Job step status must be "stop" to complete', 400);
+      throw new AppError('No step with status "stop" and dispatch process accepted', 400);
     }
-
     const dispatchProcess = jobStep.dispatchProcess;
-    if (!dispatchProcess || dispatchProcess.status !== 'accept') {
-      throw new AppError('Dispatch process must be accepted to complete', 400);
-    }
 
     // Get job details
     const job = await prisma.job.findUnique({
@@ -164,6 +162,24 @@ export const completeJob = async (req: Request, res: Response) => {
         totalDuration,
         remarks,
         finalStatus: 'completed'
+      }
+    });
+
+    // Delete all JobStep records for this job planning
+    await prisma.jobStep.deleteMany({ where: { jobPlanningId: jobPlanning.jobPlanId } });
+
+    // Delete the JobPlanning record
+    await prisma.jobPlanning.delete({ where: { jobPlanId: jobPlanning.jobPlanId } });
+
+    // Update the Job record: set status to INACTIVE and specified fields to NULL
+    await prisma.job.update({
+      where: { nrcJobNo },
+      data: {
+        status: 'INACTIVE',
+        shadeCardApprovalDate: null,
+        artworkApprovedDate: null,
+        artworkReceivedDate: null,
+        imageURL: null
       }
     });
 
