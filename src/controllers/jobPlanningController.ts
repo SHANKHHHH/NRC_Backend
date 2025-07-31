@@ -324,10 +324,23 @@ export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   if (!step) {
     throw new AppError('Step not found for that NRC Job No and step number', 404);
   }
-  // Update the step with the provided fields
+  // Process machine details if provided
+  const updateData = { ...req.body };
+  
+  // If machineDetails is provided, process it to match the format
+  if (req.body.machineDetails) {
+    updateData.machineDetails = req.body.machineDetails.map((machine: any) => ({
+      id: machine.machineId || machine.id,
+      unit: machine.unit,
+      machineCode: machine.machineCode,
+      machineType: machine.machineType
+    }));
+  }
+
+  // Update the step with the processed fields
   const updatedStep = await prisma.jobStep.update({
     where: { id: step.id },
-    data: req.body,
+    data: updateData,
   });
   res.status(200).json({
     success: true,

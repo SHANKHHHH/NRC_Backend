@@ -4,6 +4,11 @@ import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, update
 
 const router = Router();
 
+// Test route to verify router is working
+router.get('/test', (req, res) => {
+  res.json({ message: 'Job planning router is working' });
+});
+
 // Place summary route BEFORE any parameterized routes
 router.get('/summary', getAllJobPlanningsSimple);
 
@@ -20,12 +25,15 @@ router.get('/:nrcJobNo/steps', authenticateToken, getStepsByNrcJobNo);
 router.get('/:nrcJobNo/steps/:stepNo', authenticateToken, getStepByNrcJobNoAndStepNo);
 
 // Update any field of a specific step for a given nrcJobNo and stepNo
-router.patch('/:nrcJobNo/steps/:stepNo', authenticateToken, updateStepByNrcJobNoAndStepNo);
-
-// Get a job planning by nrcJobNo
-router.get('/:nrcJobNo', authenticateToken, getJobPlanningByNrcJobNo);
+router.patch('/:nrcJobNo/steps/:stepNo', authenticateToken, (req, res) => {
+  console.log('PATCH route hit:', req.params);
+  updateStepByNrcJobNoAndStepNo(req, res);
+});
 
 // Update a specific job step's status, startDate, endDate, and user
 router.patch('/:nrcJobNo/:jobPlanId/steps/:jobStepNo/status', authenticateToken, updateJobStepStatus);
+
+// Get a job planning by nrcJobNo (must be LAST to avoid conflicts)
+router.get('/:nrcJobNo', authenticateToken, getJobPlanningByNrcJobNo);
 
 export default router; 
