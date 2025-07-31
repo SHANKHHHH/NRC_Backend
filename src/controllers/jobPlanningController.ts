@@ -53,9 +53,9 @@ function serializeMachine(machine: Machine) {
   };
 }
 
-// Get all JobPlannings with steps
+// Get all JobPlannings with steps - Optimized version
 export const getAllJobPlannings = async (_req: Request, res: Response) => {
-  // 1. Fetch all job plannings and their steps
+  // Use a single optimized query with proper includes and selects
   const jobPlannings = await prisma.jobPlanning.findMany({
     include: {
       steps: {
@@ -70,38 +70,38 @@ export const getAllJobPlannings = async (_req: Request, res: Response) => {
           user: true,
           createdAt: true,
           updatedAt: true,
-        }
+        },
+        orderBy: { stepNo: 'asc' } // Add ordering for consistent results
       }
     },
     orderBy: { jobPlanId: 'desc' },
   });
 
-  // 2. Collect all unique machineIds from all steps
-  const machineIdSet = new Set<string>();
-  for (const planning of jobPlannings) {
-    for (const step of planning.steps) {
+  // Extract machine IDs more efficiently
+  const machineIds = new Set<string>();
+  jobPlannings.forEach(planning => {
+    planning.steps.forEach(step => {
       if (Array.isArray(step.machineDetails)) {
-        for (const md of step.machineDetails) {
-          if (
-            md &&
-            typeof md === 'object' &&
-            !Array.isArray(md) &&
-            'machineId' in md &&
-            typeof md.machineId === 'string'
-          ) {
-            machineIdSet.add(md.machineId);
+        step.machineDetails.forEach((md: any) => {
+          if (md?.machineId && typeof md.machineId === 'string') {
+            machineIds.add(md.machineId);
           }
-        }
+        });
       }
-    }
-  }
-  const machineIds: string[] = Array.from(machineIdSet);
+    });
+  });
 
-  // 3. Fetch all machines from the DB for those IDs
-  let machines: Machine[] = [];
-  if (machineIds.length > 0) {
+  // Fetch machines in a single query if needed
+  let machines: any[] = [];
+  if (machineIds.size > 0) {
     machines = await prisma.machine.findMany({
-      where: { id: { in: machineIds } },
+      where: { id: { in: Array.from(machineIds) } },
+      select: {
+        id: true,
+        description: true,
+        status: true,
+        capacity: true
+      }
     });
   }
   const machineMap = Object.fromEntries(machines.map(m => [m.id, m]));
@@ -119,7 +119,7 @@ export const getAllJobPlannings = async (_req: Request, res: Response) => {
             typeof md.machineId === 'string' &&
             machineMap[md.machineId]
           ) {
-            return { ...md, machine: serializeMachine(machineMap[md.machineId]) };
+            return { ...md, machine: machineMap[md.machineId] };
           }
           return md;
         });

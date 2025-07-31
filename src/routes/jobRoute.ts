@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
+import { cacheMiddleware } from '../middleware/cache';
 import {
   createJob,
   getAllJobs,
@@ -15,13 +16,13 @@ const router = Router();
 // Chain routes for getting all jobs and creating a new job
 router
   .route('/')
-  .get(authenticateToken, asyncHandler(getAllJobs))
+  .get(authenticateToken, cacheMiddleware(2 * 60 * 1000), asyncHandler(getAllJobs)) // Cache for 2 minutes
   .post(authenticateToken, asyncHandler(createJob));
 
 // Chain routes for getting, updating, and deleting a specific job by NRC Job No
 router
   .route('/:nrcJobNo')
-  .get(authenticateToken, asyncHandler(getJobByNrcJobNo))
+  .get(authenticateToken, cacheMiddleware(5 * 60 * 1000), asyncHandler(getJobByNrcJobNo)) // Cache for 5 minutes
   .put(requireAdminJWT, asyncHandler(updateJobByNrcJobNo))
   .delete(requireAdminJWT, asyncHandler(deleteJobByNrcJobNo));
 
