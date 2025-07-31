@@ -8,7 +8,10 @@ export const createJobPlanning = async (req: Request, res: Response) => {
   const { nrcJobNo, jobDemand, steps } = req.body;
   if (!nrcJobNo || !jobDemand || !Array.isArray(steps) || steps.length === 0) {
     throw new AppError('nrcJobNo, jobDemand, and steps are required', 400);
-}
+  }
+
+  // Debug: Log the incoming data
+  console.log('Creating job planning with steps:', JSON.stringify(steps, null, 2));
 
 
   const jobPlanning = await prisma.jobPlanning.create({
@@ -19,7 +22,12 @@ export const createJobPlanning = async (req: Request, res: Response) => {
         create: steps.map((step: any) => ({
           stepNo: step.stepNo,
           stepName: step.stepName,
-          machineDetail: step.machineDetail,
+          machineDetails: step.machineDetails ? step.machineDetails.map((machine: any) => ({
+            id: machine.machineId || machine.id,
+            unit: machine.unit,
+            machineCode: machine.machineCode,
+            machineType: machine.machineType
+          })) : [],
         })),
       },
     },
