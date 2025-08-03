@@ -278,8 +278,8 @@ model PaperStore {
   job                Job                  @relation("JobToPaperStore", fields: [jobNrcJobNo], references: [nrcJobNo])
   status             StepStatus           @default(in_progress)
   sheetSize          String?
-  required           Int?
-  available          Int?
+  quantity           Int?                 // Standardized quantity field (was: required)
+  available          Int?                 // Available quantity
   issuedDate         DateTime?
   mill               String?
   extraMargin        String?
@@ -324,7 +324,7 @@ model PrintingDetails {
   oprName            String? // OPR Name
   noOfColours        Int?
   inksUsed           String?
-  postPrintingFinishingOkQty Int?
+  quantity           Int?                 // Standardized quantity field (was: postPrintingFinishingOkQty)
   wastage             Int?
   coatingType         String? // Gloss or Matt
   separateSheets       Int?
@@ -344,7 +344,7 @@ model Corrugation {
   shift              String?
   oprName            String? // OPR Name
   machineNo          String? // M/c No
-  noOfSheets         Int?
+  quantity           Int?                 // Standardized quantity field (was: noOfSheets)
   size               String?
   gsm1               String?
   gsm2               String?
@@ -365,7 +365,7 @@ model FluteLaminateBoardConversion {
   shift              String?
   operatorName       String?
   film               String?
-  okQty              Int?
+  quantity           Int?                 // Standardized quantity field (was: okQty)
   qcCheckSignBy      String?
   adhesive          String?
   wastage             Int?
@@ -382,7 +382,7 @@ model Punching {
   date               DateTime?
   shift              String?
   operatorName       String?
-  okQty              Int?
+  quantity           Int?                 // Standardized quantity field (was: okQty)
   machine            String?
   qcCheckSignBy      String?
   die                String?
@@ -403,7 +403,7 @@ model SideFlapPasting {
   shift              String?
   operatorName       String?
   adhesive          String?
-  quantity           Int?
+  quantity           Int?                 // Already standardized
   wastage             Int?
   qcCheckSignBy      String?
   remarks            String?
@@ -421,8 +421,8 @@ model QualityDept {
   shift              String?
   operatorName       String?
   checkedBy          String?
-  rejectedQty        Int?
-  passQty            Int?
+  quantity           Int?                 // Standardized quantity field (was: passQty - represents passed quantity)
+  rejectedQty        Int?                 // Keep rejected quantity separate
   reasonForRejection String?
   remarks            String?
   qcCheckSignBy      String?
@@ -439,11 +439,11 @@ model DispatchProcess {
   date               DateTime?
   shift              String?
   operatorName       String?
-  noOfBoxes          Int?
+  quantity           Int?                 // Standardized quantity field (was: noOfBoxes)
   dispatchNo         String?
   dispatchDate       DateTime?
   remarks            String?
-  balanceQty         Int?
+  balanceQty         Int?                 // Keep balance quantity separate
   qcCheckSignBy      String?
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToDispatchProcess")
   jobStepId          Int? @unique

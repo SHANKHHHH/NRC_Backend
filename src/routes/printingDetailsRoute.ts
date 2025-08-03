@@ -12,4 +12,4 @@ router.get('/', authenticateToken, getAllPrintingDetails);
 router.put('/:nrcJobNo', requireAdminJWT, updatePrintingDetails);
 router.delete('/:id', requireAdminJWT, deletePrintingDetails);
 
-export default router; 
+export default router;    
