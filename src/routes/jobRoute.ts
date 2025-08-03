@@ -9,6 +9,7 @@ import {
   updateJobByNrcJobNo,
   deleteJobByNrcJobNo,
   holdJobByNrcJobNo,
+  checkJobPlanningStatus,
 } from '../controllers/jobController';
 
 const router = Router();
@@ -29,5 +30,10 @@ router
 router
   .route('/:nrcJobNo/hold')
   .patch(authenticateToken, asyncHandler(holdJobByNrcJobNo));
+
+// Check job planning status
+router
+  .route('/:nrcJobNo/planning-status')
+  .get(authenticateToken, asyncHandler(checkJobPlanningStatus));
 
 export default router; 

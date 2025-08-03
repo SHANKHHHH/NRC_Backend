@@ -252,3 +252,98 @@ export const holdJobByNrcJobNo = async (req: Request, res: Response) => {
     message: 'Job put on hold successfully',
   });
 }; 
+
+// Check if job has job planning and machine details
+export const checkJobPlanningStatus = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+
+  try {
+    // Check if job exists
+    const job = await prisma.job.findUnique({
+      where: { nrcJobNo },
+      select: {
+        nrcJobNo: true,
+        customerName: true,
+        status: true
+      }
+    });
+
+    if (!job) {
+      throw new AppError('Job not found', 404);
+    }
+
+    // Check if job planning exists for this job
+    const jobPlanning = await prisma.jobPlanning.findFirst({
+      where: { nrcJobNo },
+      include: {
+        steps: {
+          orderBy: { stepNo: 'asc' },
+          select: {
+            id: true,
+            stepNo: true,
+            stepName: true,
+            status: true,
+            machineDetails: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }
+      }
+    });
+
+    const hasJobPlanning = !!jobPlanning;
+
+    // Analyze machine details for each step
+    const stepsWithMachineDetails = jobPlanning?.steps.map(step => {
+      const hasMachineDetails = step.machineDetails && 
+        Array.isArray(step.machineDetails) && 
+        step.machineDetails.length > 0;
+      
+      return {
+        stepNo: step.stepNo,
+        stepName: step.stepName,
+        status: step.status,
+        hasMachineDetails,
+        machineDetailsCount: hasMachineDetails ? step.machineDetails.length : 0,
+        machineDetails: hasMachineDetails ? step.machineDetails : null,
+        createdAt: step.createdAt,
+        updatedAt: step.updatedAt
+      };
+    }) || [];
+
+    const totalSteps = stepsWithMachineDetails.length;
+    const stepsWithMachines = stepsWithMachineDetails.filter(step => step.hasMachineDetails).length;
+    const stepsWithoutMachines = totalSteps - stepsWithMachines;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        job: {
+          nrcJobNo: job.nrcJobNo,
+          customerName: job.customerName,
+          status: job.status
+        },
+        hasJobPlanning,
+        jobPlanning: hasJobPlanning ? {
+          jobPlanId: jobPlanning.jobPlanId,
+          jobDemand: jobPlanning.jobDemand,
+          totalSteps,
+          stepsWithMachines,
+          stepsWithoutMachines,
+          createdAt: jobPlanning.createdAt,
+          updatedAt: jobPlanning.updatedAt,
+          steps: stepsWithMachineDetails
+        } : null
+      },
+      message: hasJobPlanning 
+        ? `Job planning exists with ${totalSteps} steps (${stepsWithMachines} with machines, ${stepsWithoutMachines} without machines)` 
+        : 'No job planning found for this job'
+    });
+
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    throw new AppError('Failed to check job planning status', 500);
+  }
+}; 
