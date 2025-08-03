@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { Machine } from '@prisma/client';
+import { getWorkflowStatus } from '../utils/workflowValidator';
 
 export const createJobPlanning = async (req: Request, res: Response) => {
   const { nrcJobNo, jobDemand, steps } = req.body;
@@ -347,4 +348,23 @@ export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     data: updatedStep,
     message: 'Step updated successfully',
   });
+}; 
+
+// Get workflow status for a job
+export const getJobWorkflowStatus = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  
+  try {
+    const workflowStatus = await getWorkflowStatus(nrcJobNo);
+    
+    res.status(200).json({
+      success: true,
+      data: workflowStatus
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    throw new AppError('Failed to get workflow status', 500);
+  }
 }; 
