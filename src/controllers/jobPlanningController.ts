@@ -4,6 +4,7 @@ import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { Machine } from '@prisma/client';
 import { getWorkflowStatus } from '../utils/workflowValidator';
+import { updateJobMachineDetailsFlag } from '../utils/machineDetailsTracker';
 
 export const createJobPlanning = async (req: Request, res: Response) => {
   const { nrcJobNo, jobDemand, steps } = req.body;
@@ -343,6 +344,12 @@ export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     where: { id: step.id },
     data: updateData,
   });
+
+  // If machineDetails were updated, automatically update the job's machine details flag
+  if (req.body.machineDetails !== undefined) {
+    await updateJobMachineDetailsFlag(nrcJobNo);
+  }
+
   res.status(200).json({
     success: true,
     data: updatedStep,
@@ -367,4 +374,6 @@ export const getJobWorkflowStatus = async (req: Request, res: Response) => {
     }
     throw new AppError('Failed to get workflow status', 500);
   }
-}; 
+};
+
+ 
