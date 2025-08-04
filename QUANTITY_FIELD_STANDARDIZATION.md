@@ -82,7 +82,7 @@ All endpoints return the standardized quantity field:
 }
 ```
 
-## Endpoints
+<-- ## Endpoints
 
 All existing endpoints remain the same, only the field names have been standardized:
 
@@ -93,7 +93,7 @@ All existing endpoints remain the same, only the field names have been standardi
 - `POST /api/punching` - Create Punching step
 - `POST /api/side-flap-pasting` - Create SideFlapPasting step
 - `POST /api/quality-dept` - Create QualityDept step
-- `POST /api/dispatch-process` - Create DispatchProcess step
+- `POST /api/dispatch-process` - Create DispatchProcess step -->
 
 ## Migration Notes
 

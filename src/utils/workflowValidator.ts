@@ -60,6 +60,12 @@ export const validateWorkflowStep = async (
     return await validateBothCorrugationAndPrintingAccepted(jobStep.jobPlanning.nrcJobNo);
   }
 
+  // Special handling for PrintingDetails and Corrugation - they can run in parallel
+  // They only need PaperStore to be completed (not necessarily accepted)
+  if (currentStepName === 'PrintingDetails' || currentStepName === 'Corrugation') {
+    return await validatePaperStoreCompleted(jobStep.jobPlanning.nrcJobNo);
+  }
+
   // For other steps, check if the previous step is accepted
   const prevStep = steps[currentStepIndex - 1];
   return await validatePreviousStepAccepted(prevStep);
@@ -115,6 +121,31 @@ export const validateBothCorrugationAndPrintingAccepted = async (
     canProceed,
     message: message.trim(),
     requiredSteps: requiredSteps.length > 0 ? requiredSteps : undefined
+  };
+};
+
+/**
+ * Validate that PaperStore is completed (for PrintingDetails and Corrugation)
+ */
+export const validatePaperStoreCompleted = async (
+  nrcJobNo: string
+): Promise<WorkflowValidationResult> => {
+  const paperStore = await prisma.paperStore.findFirst({
+    where: { jobNrcJobNo: nrcJobNo }
+  });
+
+  if (!paperStore) {
+    return {
+      canProceed: false,
+      message: 'PaperStore step must be completed first.',
+      requiredSteps: ['PaperStore']
+    };
+  }
+
+  // PaperStore just needs to exist, doesn't need to be accepted for parallel processing
+  return {
+    canProceed: true,
+    message: 'PaperStore step is completed.'
   };
 };
 
