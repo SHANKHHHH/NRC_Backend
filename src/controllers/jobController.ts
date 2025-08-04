@@ -130,6 +130,7 @@ export const getJobByNrcJobNo = async (req: Request, res: Response) => {
     data: {
       ...job,
       hasPurchaseOrders: job.purchaseOrders.length > 0,
+      noOfSheets: job.noOfSheets || 0, // Include noOfSheets in response
     },
   });
 };

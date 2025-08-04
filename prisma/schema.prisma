@@ -101,6 +101,7 @@ model Job {
   srNo                  Float?          // "Sr#"
   jobDemand             JobDemand       @default(medium) // High, Medium, Low
   imageURL              String?         // New field for job image URL
+  noOfSheets            Int?            // Number of sheets for the job
   isMachineDetailsFilled Boolean        @default(false) // Track if any step has machine details filled
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
