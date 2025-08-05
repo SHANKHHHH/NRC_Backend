@@ -28,6 +28,11 @@ const getTokenFromHeader = (req: Request): string | null => {
 
 // JWT Authentication middleware
 export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
+  // Skip authentication for OPTIONS requests (CORS preflight)
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+  
   try {
     const token = getTokenFromHeader(req);
     if (!token) throw new AppError('Access token required', 401);
