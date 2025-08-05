@@ -9,7 +9,6 @@ interface CacheEntry {
 class MemoryCache {
   private cache = new Map<string, CacheEntry>();
   private readonly defaultTTL = 5 * 60 * 1000; // 5 minutes
-
   set(key: string, data: any, ttl: number = this.defaultTTL): void {
     this.cache.set(key, {
       data,
