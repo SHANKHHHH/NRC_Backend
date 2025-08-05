@@ -305,6 +305,91 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
   });
 };
 
+// Update step status for a given nrcJobNo and stepNo (frontend URL pattern)
+export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
+  const { nrcJobNo, stepNo } = req.params;
+  const { status } = req.body;
+  let userId = req.user?.userId || req.headers['user-id'];
+  if (Array.isArray(userId)) userId = userId[0];
+
+  if (!['planned', 'start', 'stop'].includes(status)) {
+    throw new AppError('Invalid status value. Must be one of: planned, start, stop', 400);
+  }
+
+  // Find the job planning for the given nrcJobNo
+  const jobPlanning = await prisma.jobPlanning.findFirst({
+    where: { nrcJobNo },
+    select: { jobPlanId: true },
+  });
+  if (!jobPlanning) {
+    throw new AppError('JobPlanning not found for that NRC Job No', 404);
+  }
+
+  // Find the specific step for the jobPlanning
+  const step = await prisma.jobStep.findFirst({
+    where: {
+      jobPlanningId: jobPlanning.jobPlanId,
+      stepNo: Number(stepNo),
+    },
+  });
+  if (!step) {
+    throw new AppError('Step not found for that NRC Job No and step number', 404);
+  }
+
+  // Prepare update data
+  const updateData: any = { status };
+  const now = new Date();
+  if (status === 'start') {
+    updateData.startDate = now;
+    updateData.user = userId || null;
+  } else if (status === 'stop') {
+    updateData.endDate = now;
+  }
+
+  const updatedStep = await prisma.jobStep.update({
+    where: { id: step.id },
+    data: updateData,
+    select: {
+      id: true,
+      stepNo: true,
+      stepName: true,
+      machineDetails: true,
+      jobPlanningId: true,
+      createdAt: true,
+      updatedAt: true,
+      status: true,
+      user: true,
+      startDate: true,
+      endDate: true,
+    },
+  });
+
+  // Log the job step status update action
+  if (userId && typeof userId === 'string') {
+    await logUserActionWithResource(
+      userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      JSON.stringify({
+        message: `Job step status updated to ${status}`,
+        nrcJobNo,
+        jobPlanId: jobPlanning.jobPlanId,
+        stepNo,
+        status,
+        startDate: updatedStep.startDate,
+        endDate: updatedStep.endDate
+      }),
+      'JobStep',
+      stepNo
+    );
+  }
+
+  res.status(200).json({
+    success: true,
+    data: updatedStep,
+    message: `Job step status updated to ${status}`,
+  });
+};
+
 // Update any field of a specific step for a given nrcJobNo and stepNo
 export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
