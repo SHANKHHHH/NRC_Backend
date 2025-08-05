@@ -40,6 +40,12 @@ router.patch('/:nrcJobNo/steps/:stepNo', authenticateToken, (req, res) => {
   }
 });
 
+// Add a test route to verify CORS is working
+router.options('/:nrcJobNo/steps/:stepNo', (req, res) => {
+  console.log('OPTIONS request received for step status update');
+  res.status(200).end();
+});
+
 // Get a job planning by nrcJobNo (must be LAST to avoid conflicts)
 router.get('/:nrcJobNo', authenticateToken, getJobPlanningByNrcJobNo);
 

@@ -5,13 +5,15 @@ export const securityHeaders = (req: Request, res: Response, next: NextFunction)
   // Remove X-Powered-By header
   res.removeHeader('X-Powered-By');
   
-  // Security headers
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  // More permissive CSP for development
-  res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* https://nrc-backend-his4.onrender.com;");
+  // Security headers - but skip for OPTIONS to avoid conflicts
+  if (req.method !== 'OPTIONS') {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    // More permissive CSP for development
+    res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* https://nrc-backend-his4.onrender.com;");
+  }
   
   next();
 };
@@ -32,37 +34,27 @@ export const corsMiddleware = (req: Request, res: Response, next: NextFunction) 
     method: req.method,
     origin,
     allowedOrigins,
-    isAllowed: origin && allowedOrigins.includes(origin)
+    isAllowed: origin && allowedOrigins.includes(origin),
+    url: req.url,
+    headers: req.headers
   });
   
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    // Set CORS headers for preflight
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-    } else if (origin) {
-      // For development, allow any origin
-      res.setHeader('Access-Control-Allow-Origin', origin);
-    }
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
-    res.status(200).end();
-    return;
-  }
-  
-  // Handle actual requests
-  if (origin && allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  } else if (origin) {
-    // For development, allow any origin
+  // Always set CORS headers for both preflight and actual requests
+  if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
   
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    console.log('OPTIONS preflight request handled');
+    res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+    res.status(200).end();
+    return;
+  }
   
   next();
 };
