@@ -27,9 +27,9 @@ router.get('/:nrcJobNo/steps', authenticateToken, getStepsByNrcJobNo);
 // Get a specific step for a given nrcJobNo and stepNo
 router.get('/:nrcJobNo/steps/:stepNo', authenticateToken, getStepByNrcJobNoAndStepNo);
 
-// Update step status (matches frontend URL pattern)
-router.patch('/:nrcJobNo/steps/:stepNo', authenticateToken, (req, res) => {
-  console.log('PATCH route hit for step status update:', req.params);
+// Update step status (matches frontend URL pattern) - Changed to PUT
+router.put('/:nrcJobNo/steps/:stepNo', authenticateToken, (req, res) => {
+  console.log('PUT route hit for step status update:', req.params);
   // Check if this is a status update
   if (req.body && req.body.status) {
     // Call the status update function
