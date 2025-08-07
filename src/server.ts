@@ -66,7 +66,7 @@ app.use(batchRequestsMiddleware);
 // Routes
 app.get('/', (req: Request, res: Response) => {
   res.send({
-    message: "Hello World"
+    message: "Hello World:aws"
   });
 });
 
