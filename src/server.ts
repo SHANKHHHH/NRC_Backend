@@ -120,8 +120,8 @@ app.use(errorHandler);
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on http://0.0.0.0:${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
   console.log(`Health check available at http://0.0.0.0:${PORT}/health`);
   console.log(` Test error handling at http://0.0.0.0:${PORT}/api/test-error`);
 });
-export default app; 
+export default app;
