@@ -1,0 +1,63 @@
+name: Build & Push ARM64 to ECR
+
+# 1. Trigger on pushes to main or staging
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+# Prevents concurrent deployments from the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 2. Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v4 # Fetches your code into the runner environment
+
+      # 3. Configure AWS credentials for subsequent AWS CLI/ECR steps
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4 # Exports AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      # 4. Log in to Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 5. Set up QEMU for building multi‑arch images
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3 # Enables cross‑platform emulation
+
+      # 6. Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3 # Creates a multi‑arch builder instance
+
+      # 7. Determine image tag based on branch
+      - name: Determine image tag
+        run: |
+          if [[ "${GITHUB_REF##*/}" == "main" ]]; then
+            echo "TAG=production" >> $GITHUB_ENV
+          else
+            echo "TAG=staging"    >> $GITHUB_ENV
+          fi
+
+      # 8. Build and push Docker image to ECR
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v6 # Supports buildx, multi‑platform and direct push
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/nrc:${{ env.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
