@@ -64,20 +64,12 @@ app.use(sanitizeInput);
 app.use(batchRequestsMiddleware);
 
 // Routes
-app.get('/', (req: Request, res: Response) => {
-  res.send({
-    message: "Hello World:aws"
-  });
+app.get("/", (req, res) => {
+  res.status(200).send("ALB is working!");
 });
 
-app.get('/health', (req: Request, res: Response) => {
-  res.json({
-    status: 'healthy',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString(),
-    memory: process.memoryUsage(),
-    environment: process.env.NODE_ENV || 'development'
-  });
+app.get("/health", (req, res) => {
+  res.status(200).send("OK");
 });
 
 // API routes - Only authentication routes with admin-protected user management
