@@ -10,6 +10,7 @@ import {
   deleteJobByNrcJobNo,
   holdJobByNrcJobNo,
   checkJobPlanningStatus,
+  recalculateSharedCardDiffDate,
 } from '../controllers/jobController';
 
 const router = Router();
@@ -36,4 +37,9 @@ router
   .route('/:nrcJobNo/planning-status')
   .get(authenticateToken, asyncHandler(checkJobPlanningStatus));
 
-export default router; 
+// Recalculate shared card diff dates for all jobs
+router
+  .route('/recalculate-shared-card-diff')
+  .post(requireAdminJWT, asyncHandler(recalculateSharedCardDiffDate));
+
+export default router;

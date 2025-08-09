@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { calculateSharedCardDiffDate } from '../utils/dateUtils';
 
 
 export const createPurchaseOrder = async (req: Request, res: Response) => {
@@ -22,12 +23,92 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
       createData[field] = data[field];
     }
   }
+  
+  // Calculate shared card diff date
+  createData.sharedCardDiffDate = calculateSharedCardDiffDate(data.shadeCardApprovalDate);
+  
   const purchaseOrder = await prisma.purchaseOrder.create({ data: createData });
   res.status(201).json({
     success: true,
     data: purchaseOrder,
     message: 'Purchase order created successfully',
   });
+};
+
+export const updatePurchaseOrder = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const data = req.body;
+  
+  // Only pass allowed fields to Prisma
+  const allowedFields = [
+    'boardSize', 'customer', 'deliveryDate', 'dieCode', 'dispatchDate', 'dispatchQuantity',
+    'fluteType', 'jockeyMonth', 'noOfUps', 'nrcDeliveryDate', 'noOfSheets', 'poDate',
+    'poNumber', 'pendingQuantity', 'pendingValidity', 'plant', 'shadeCardApprovalDate',
+    'srNo', 'style', 'totalPOQuantity', 'unit', 'userId', 'jobNrcJobNo'
+  ];
+  
+  const updateData: any = {};
+  for (const field of allowedFields) {
+    if (data[field] !== undefined) {
+      updateData[field] = data[field];
+    }
+  }
+  
+  // Calculate shared card diff date
+  updateData.sharedCardDiffDate = calculateSharedCardDiffDate(data.shadeCardApprovalDate);
+  
+  const purchaseOrder = await prisma.purchaseOrder.update({
+    where: { id: Number(id) },
+    data: updateData,
+  });
+  
+  res.status(200).json({
+    success: true,
+    data: purchaseOrder,
+    message: 'Purchase order updated successfully',
+  });
+};
+
+export const recalculatePurchaseOrderSharedCardDiffDate = async (req: Request, res: Response) => {
+  try {
+    // Get all purchase orders that have shadeCardApprovalDate
+    const purchaseOrders = await prisma.purchaseOrder.findMany({
+      where: {
+        shadeCardApprovalDate: {
+          not: null
+        }
+      },
+      select: {
+        id: true,
+        poNumber: true,
+        shadeCardApprovalDate: true
+      }
+    });
+
+    let updatedCount = 0;
+    
+    for (const po of purchaseOrders) {
+      const sharedCardDiffDate = calculateSharedCardDiffDate(po.shadeCardApprovalDate);
+      
+      await prisma.purchaseOrder.update({
+        where: { id: po.id },
+        data: { sharedCardDiffDate }
+      });
+      
+      updatedCount++;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully recalculated shared card diff date for ${updatedCount} purchase orders`,
+      updatedCount
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error recalculating shared card diff dates'
+    });
+  }
 };
 
 
@@ -92,4 +173,4 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
 //     ...(job && { job }),
 //     message: job ? 'Purchase order status updated and job created.' : 'Purchase order status updated.',
 //   });
-// }; 
+// };

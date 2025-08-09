@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
+import { calculateSharedCardDiffDate } from '../utils/dateUtils';
 
 
 export const createJob = async (req: Request, res: Response) => {
@@ -56,6 +57,7 @@ export const createJob = async (req: Request, res: Response) => {
       styleItemSKU,
       customerName,
       imageURL: imageURL || null,
+      sharedCardDiffDate: calculateSharedCardDiffDate(rest.shadeCardApprovalDate),
       ...rest,
     },
   });
@@ -114,6 +116,7 @@ export const getJobByNrcJobNo = async (req: Request, res: Response) => {
           totalPOQuantity: true,
           status: true,
           shadeCardApprovalDate: true,
+          sharedCardDiffDate: true,
           createdAt: true,
           updatedAt: true
         }
@@ -156,6 +159,7 @@ export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
     data: {
       ...rest,
       ...(imageURL !== undefined ? { imageURL } : {}),
+      sharedCardDiffDate: calculateSharedCardDiffDate(rest.shadeCardApprovalDate),
     },
   });
 
@@ -183,6 +187,48 @@ export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
     data: job,
     message: 'Job updated successfully',
   });
+};
+
+export const recalculateSharedCardDiffDate = async (req: Request, res: Response) => {
+  try {
+    // Get all jobs that have shadeCardApprovalDate
+    const jobs = await prisma.job.findMany({
+      where: {
+        shadeCardApprovalDate: {
+          not: null
+        }
+      },
+      select: {
+        id: true,
+        nrcJobNo: true,
+        shadeCardApprovalDate: true
+      }
+    });
+
+    let updatedCount = 0;
+    
+    for (const job of jobs) {
+      const sharedCardDiffDate = calculateSharedCardDiffDate(job.shadeCardApprovalDate);
+      
+      await prisma.job.update({
+        where: { id: job.id },
+        data: { sharedCardDiffDate }
+      });
+      
+      updatedCount++;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully recalculated shared card diff date for ${updatedCount} jobs`,
+      updatedCount
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error recalculating shared card diff dates'
+    });
+  }
 };
 
 
@@ -347,4 +393,4 @@ export const checkJobPlanningStatus = async (req: Request, res: Response) => {
     }
     throw new AppError('Failed to check job planning status', 500);
   }
-}; 
+};

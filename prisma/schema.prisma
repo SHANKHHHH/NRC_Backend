@@ -98,6 +98,7 @@ model Job {
   artworkReceivedDate   DateTime?       // "27 Art work Recevied date"
   artworkApprovedDate   DateTime?       // "28 Art work  Approved Date"
   shadeCardApprovalDate DateTime?       // "29 Shade Card Approval Date"
+  sharedCardDiffDate    Int?            // "30 Shared Card Diff Date" - Difference in days between current date and shadeCardApprovalDate
   srNo                  Float?          // "Sr#"
   jobDemand             JobDemand       @default(medium) // High, Medium, Low
   imageURL              String?         // New field for job image URL
@@ -261,6 +262,7 @@ model PurchaseOrder {
   pendingValidity       Float? // "Pending Validity"
   plant                 String? // "Plant"
   shadeCardApprovalDate DateTime? // "Shade Card Approval Date"
+  sharedCardDiffDate    Int? // "Shared Card Diff Date" - Difference in days between current date and shadeCardApprovalDate
   srNo                  Float? // "Sr #"
   style                 String? // "Style"
   totalPOQuantity       Int? // "Total PO Quantity"
