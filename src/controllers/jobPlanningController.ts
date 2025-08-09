@@ -25,7 +25,7 @@ export const createJobPlanning = async (req: Request, res: Response) => {
           stepNo: step.stepNo,
           stepName: step.stepName,
           machineDetails: step.machineDetails ? step.machineDetails.map((machine: any) => ({
-            id: machine.machineId || machine.id,
+            machineId: machine.machineId || machine.id,
             unit: machine.unit,
             machineCode: machine.machineCode,
             machineType: machine.machineType
@@ -93,8 +93,9 @@ export const getAllJobPlannings = async (_req: Request, res: Response) => {
     planning.steps.forEach(step => {
       if (Array.isArray(step.machineDetails)) {
         step.machineDetails.forEach((md: any) => {
-          if (md?.machineId && typeof md.machineId === 'string') {
-            machineIds.add(md.machineId);
+          const id = (md && typeof md === 'object') ? (md.machineId || (md as any).id) : undefined;
+          if (id && typeof id === 'string') {
+            machineIds.add(id);
           }
         });
       }
@@ -121,15 +122,10 @@ export const getAllJobPlannings = async (_req: Request, res: Response) => {
     for (const step of planning.steps) {
       if (Array.isArray(step.machineDetails)) {
         step.machineDetails = step.machineDetails.map(md => {
-          if (
-            md &&
-            typeof md === 'object' &&
-            !Array.isArray(md) &&
-            'machineId' in md &&
-            typeof md.machineId === 'string' &&
-            machineMap[md.machineId]
-          ) {
-            return { ...md, machine: machineMap[md.machineId] };
+          const mid = (md && typeof md === 'object') ? ((md as any).machineId || (md as any).id) : undefined;
+          if (mid && typeof mid === 'string' && machineMap[mid]) {
+            const base: Record<string, any> = (md && typeof md === 'object') ? (md as Record<string, any>) : {};
+            return { ...base, machine: machineMap[mid] };
           }
           return md;
         });
@@ -305,6 +301,91 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
   });
 };
 
+// Unified update: status and/or machineDetails
+export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
+  const { nrcJobNo, stepNo } = req.params;
+
+  // Find the job planning and step
+  const jobPlanning = await prisma.jobPlanning.findFirst({
+    where: { nrcJobNo },
+    select: { jobPlanId: true },
+  });
+  if (!jobPlanning) {
+    throw new AppError('JobPlanning not found for that NRC Job No', 404);
+  }
+
+  const step = await prisma.jobStep.findFirst({
+    where: { jobPlanningId: jobPlanning.jobPlanId, stepNo: Number(stepNo) },
+  });
+  if (!step) {
+    throw new AppError('Step not found for that NRC Job No and step number', 404);
+  }
+
+  const updateData: any = {};
+
+  // Optional status handling
+  if (req.body.status !== undefined) {
+    const status = String(req.body.status);
+    if (!['planned', 'start', 'stop'].includes(status)) {
+      throw new AppError('Invalid status value. Must be one of: planned, start, stop', 400);
+    }
+    updateData.status = status;
+
+    const now = new Date();
+    let userId = req.user?.userId || req.headers['user-id'];
+    if (Array.isArray(userId)) userId = userId[0];
+
+    if (status === 'start') {
+      updateData.startDate = now;
+      updateData.user = userId || null;
+    } else if (status === 'stop') {
+      updateData.endDate = now;
+    }
+  }
+
+  // Optional machineDetails handling
+  let machineDetailsProvided = false;
+  if (req.body.machineDetails !== undefined) {
+    machineDetailsProvided = true;
+    updateData.machineDetails = Array.isArray(req.body.machineDetails)
+      ? req.body.machineDetails.map((m: any) => ({
+          machineId: m.machineId || m.id,
+          unit: m.unit,
+          machineCode: m.machineCode,
+          machineType: m.machineType,
+        }))
+      : [];
+  }
+
+  const updatedStep = await prisma.jobStep.update({
+    where: { id: step.id },
+    data: updateData,
+    select: {
+      id: true,
+      stepNo: true,
+      stepName: true,
+      machineDetails: true,
+      jobPlanningId: true,
+      status: true,
+      user: true,
+      startDate: true,
+      endDate: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  if (machineDetailsProvided) {
+    await updateJobMachineDetailsFlag(nrcJobNo);
+  }
+
+  res.status(200).json({
+    success: true,
+    data: updatedStep,
+    message: 'Step updated successfully',
+  });
+};
+
 // Update step status for a given nrcJobNo and stepNo (frontend URL pattern)
 export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
@@ -460,5 +541,3 @@ export const getJobWorkflowStatus = async (req: Request, res: Response) => {
     throw new AppError('Failed to get workflow status', 500);
   }
 };
-
- 

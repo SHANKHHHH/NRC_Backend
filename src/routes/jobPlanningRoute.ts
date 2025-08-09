@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple } from '../controllers/jobPlanningController';
+import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo } from '../controllers/jobPlanningController';
 
 const router = Router();
 
@@ -27,18 +27,8 @@ router.get('/:nrcJobNo/steps', authenticateToken, getStepsByNrcJobNo);
 // Get a specific step for a given nrcJobNo and stepNo
 router.get('/:nrcJobNo/steps/:stepNo', authenticateToken, getStepByNrcJobNoAndStepNo);
 
-// Update step status (matches frontend URL pattern) - Changed to PUT
-router.put('/:nrcJobNo/steps/:stepNo', authenticateToken, (req, res) => {
-  console.log('PUT route hit for step status update:', req.params);
-  // Check if this is a status update
-  if (req.body && req.body.status) {
-    // Call the status update function
-    updateStepStatusByNrcJobNoAndStepNo(req, res);
-  } else {
-    // Call the general update function
-    updateStepByNrcJobNoAndStepNo(req, res);
-  }
-});
+// Unified update: status and/or machineDetails in one call
+router.put('/:nrcJobNo/steps/:stepNo', authenticateToken, upsertStepByNrcJobNoAndStepNo);
 
 // Add a test route to verify CORS is working
 router.options('/:nrcJobNo/steps/:stepNo', (req, res) => {
@@ -49,4 +39,4 @@ router.options('/:nrcJobNo/steps/:stepNo', (req, res) => {
 // Get a job planning by nrcJobNo (must be LAST to avoid conflicts)
 router.get('/:nrcJobNo', authenticateToken, getJobPlanningByNrcJobNo);
 
-export default router; 
+export default router;
