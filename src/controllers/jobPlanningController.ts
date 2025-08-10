@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
+import { autoCompleteJobIfReady } from '../utils/workflowValidator';
 import { Machine } from '@prisma/client';
 import { getWorkflowStatus } from '../utils/workflowValidator';
 import { updateJobMachineDetailsFlag } from '../utils/machineDetailsTracker';
@@ -294,6 +295,25 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
     );
   }
 
+  // Check if job should be automatically completed when step is set to 'stop'
+  if (status === 'stop') {
+    try {
+      const completionResult = await autoCompleteJobIfReady(nrcJobNo, userId);
+      if (completionResult.completed) {
+        return res.status(200).json({
+          success: true,
+          data: updatedStep,
+          message: `Job step status updated to ${status} and job automatically completed`,
+          autoCompleted: true,
+          completedJob: completionResult.completedJob
+        });
+      }
+    } catch (error) {
+      console.error('Error checking auto-completion:', error);
+      // Continue with normal response even if auto-completion check fails
+    }
+  }
+
   res.status(200).json({
     success: true,
     data: updatedStep,
@@ -304,6 +324,8 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
 // Unified update: status and/or machineDetails
 export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
+  let userId = req.user?.userId || req.headers['user-id'];
+  if (Array.isArray(userId)) userId = userId[0];
 
   // Find the job planning and step
   const jobPlanning = await prisma.jobPlanning.findFirst({
@@ -332,8 +354,6 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     updateData.status = status;
 
     const now = new Date();
-    let userId = req.user?.userId || req.headers['user-id'];
-    if (Array.isArray(userId)) userId = userId[0];
 
     if (status === 'start') {
       updateData.startDate = now;
@@ -377,6 +397,25 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
 
   if (machineDetailsProvided) {
     await updateJobMachineDetailsFlag(nrcJobNo);
+  }
+
+  // Check if job should be automatically completed when step status is set to 'stop'
+  if (updateData.status === 'stop') {
+    try {
+      const completionResult = await autoCompleteJobIfReady(nrcJobNo, userId);
+      if (completionResult.completed) {
+        return res.status(200).json({
+          success: true,
+          data: updatedStep,
+          message: 'Step updated successfully and job automatically completed',
+          autoCompleted: true,
+          completedJob: completionResult.completedJob
+        });
+      }
+    } catch (error) {
+      console.error('Error checking auto-completion:', error);
+      // Continue with normal response even if auto-completion check fails
+    }
   }
 
   res.status(200).json({
@@ -462,6 +501,25 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
       'JobStep',
       stepNo
     );
+  }
+
+  // Check if job should be automatically completed when step is set to 'stop'
+  if (status === 'stop') {
+    try {
+      const completionResult = await autoCompleteJobIfReady(nrcJobNo, userId);
+      if (completionResult.completed) {
+        return res.status(200).json({
+          success: true,
+          data: updatedStep,
+          message: `Job step status updated to ${status} and job automatically completed`,
+          autoCompleted: true,
+          completedJob: completionResult.completedJob
+        });
+      }
+    } catch (error) {
+      console.error('Error checking auto-completion:', error);
+      // Continue with normal response even if auto-completion check fails
+    }
   }
 
   res.status(200).json({

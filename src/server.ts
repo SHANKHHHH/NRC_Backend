@@ -16,6 +16,7 @@ import {
 } from './middleware';
 import { batchRequestsMiddleware } from './middleware/batchRequests';
 import { activityLogger } from './middleware/activityLogger';
+import { startAutoCompletionScheduler } from './utils/autoCompletionScheduler';
 import authRoutes from './routes/authRoute';
 import jobRoutes from './routes/jobRoute';
 import purchaseOrderRoutes from './routes/purchaseOrderRoute';
@@ -42,7 +43,7 @@ const PORT = Number(process.env.PORT) || 3000;
 // Security middleware (apply first)
 app.use(securityHeaders);
 app.use(corsMiddleware);
-app.use(rateLimiter(100, 15 * 60 * 1000)); // 100 requests per 15 minutes
+app.use(rateLimiter(300, 15 * 60 * 1000)); // 100 requests per 15 minutes
 app.use(requestSizeLimiter('10mb'));
 
 // Body parsing middleware
@@ -115,5 +116,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on http://localhost:${PORT}`);
   console.log(`Health check available at http://0.0.0.0:${PORT}/health`);
   console.log(` Test error handling at http://0.0.0.0:${PORT}/api/test-error`);
+  
+  // Start the auto-completion scheduler
+  startAutoCompletionScheduler();
+  console.log('Auto-completion scheduler started (checks every 5 minutes)');
 });
 export default app;

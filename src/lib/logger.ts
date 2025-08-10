@@ -9,6 +9,19 @@ import { prisma } from './prisma';
  */
 export async function logUserAction(userId: string, action: string, details?: string, nrcJobNo?: string) {
   try {
+    // First check if the user exists in the User table
+    const userExists = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true }
+    });
+
+    if (!userExists) {
+      // User doesn't exist, log to console instead
+      console.log(`User Action Log (Console Only): ${new Date().toISOString()} - User: ${userId} (not found in DB) - Action: ${action} - Details: ${details || 'N/A'} - NRC Job No: ${nrcJobNo || 'N/A'}`);
+      return;
+    }
+
+    // User exists, proceed with database logging
     await prisma.activityLog.create({
       data: {
         userId,
@@ -95,4 +108,4 @@ export const ActionTypes = {
   // System actions
   SYSTEM_BACKUP: 'System Backup',
   SYSTEM_MAINTENANCE: 'System Maintenance',
-} as const; 
+} as const;

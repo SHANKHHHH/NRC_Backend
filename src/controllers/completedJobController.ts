@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { Prisma } from '@prisma/client';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
+import { checkJobReadyForCompletion, autoCompleteJobIfReady } from '../utils/workflowValidator';
 
 /**
  * Check if a job is ready for completion
@@ -258,3 +259,112 @@ export const getCompletedJobById = async (req: Request, res: Response) => {
     }
   }
 }; 
+
+/**
+ * Check if a job is ready for completion and auto-complete it if possible
+ */
+export const checkAndAutoCompleteJob = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const userId = req.user?.userId;
+
+  try {
+    // Check if job is ready for completion
+    const completionCheck = await checkJobReadyForCompletion(nrcJobNo);
+    
+    if (!completionCheck.isReady) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          isReadyForCompletion: false,
+          reason: completionCheck.reason
+        }
+      });
+    }
+
+    // Job is ready - proceed with auto-completion
+    const result = await autoCompleteJobIfReady(nrcJobNo, userId);
+    
+    if (result.completed) {
+      // Log the completion
+      if (userId) {
+        await logUserActionWithResource(
+          userId,
+          ActionTypes.JOB_COMPLETED,
+          `Auto-completed job: ${nrcJobNo}`,
+          'CompletedJob',
+          result.completedJob.id.toString(),
+          nrcJobNo
+        );
+      }
+
+      res.status(200).json({
+        success: true,
+        data: {
+          isReadyForCompletion: true,
+          autoCompleted: true,
+          completedJob: result.completedJob,
+          message: 'Job automatically completed successfully'
+        }
+      });
+    } else {
+      res.status(200).json({
+        success: true,
+        data: {
+          isReadyForCompletion: true,
+          autoCompleted: false,
+          reason: result.reason,
+          message: 'Job is ready for completion but auto-completion failed'
+        }
+      });
+    }
+
+  } catch (error) {
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ success: false, message: error.message });
+    } else {
+      res.status(500).json({ success: false, message: 'Internal Server Error' });
+    }
+  }
+};
+
+/**
+ * Get all jobs that are ready for completion
+ */
+export const getJobsReadyForCompletion = async (req: Request, res: Response) => {
+  try {
+    // Get all active job plannings
+    const jobPlannings = await prisma.jobPlanning.findMany({
+      include: {
+        steps: {
+          include: {
+            dispatchProcess: true
+          }
+        }
+      }
+    });
+
+    const readyJobs = [];
+
+    for (const jobPlanning of jobPlannings) {
+      const completionCheck = await checkJobReadyForCompletion(jobPlanning.nrcJobNo);
+      if (completionCheck.isReady) {
+        readyJobs.push({
+          nrcJobNo: jobPlanning.nrcJobNo,
+          jobPlanId: jobPlanning.jobPlanId,
+          jobDemand: jobPlanning.jobDemand,
+          steps: jobPlanning.steps,
+          reason: 'All steps stopped and dispatch process accepted'
+        });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      count: readyJobs.length,
+      data: readyJobs
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
+  }
+};

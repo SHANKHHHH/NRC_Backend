@@ -248,3 +248,174 @@ export const getWorkflowStatus = async (nrcJobNo: string) => {
     }))
   };
 }; 
+
+/**
+ * Check if a job is ready for automatic completion
+ * Criteria: All steps must have status 'stop' and dispatch process must be 'accept'
+ */
+export const checkJobReadyForCompletion = async (nrcJobNo: string): Promise<{
+  isReady: boolean;
+  reason?: string;
+  jobPlanning?: any;
+}> => {
+  try {
+    // Get the job planning with all steps and their details
+    const jobPlanning = await prisma.jobPlanning.findFirst({
+      where: { nrcJobNo },
+      include: {
+        steps: {
+          include: {
+            dispatchProcess: true
+          }
+        }
+      }
+    });
+
+    if (!jobPlanning) {
+      return { isReady: false, reason: 'Job planning not found' };
+    }
+
+    // Check if all steps have status 'stop'
+    const allStepsStopped = jobPlanning.steps.every(step => step.status === 'stop');
+    if (!allStepsStopped) {
+      const stoppedSteps = jobPlanning.steps.filter(step => step.status === 'stop').length;
+      const totalSteps = jobPlanning.steps.length;
+      return { 
+        isReady: false, 
+        reason: `Not all steps are stopped. ${stoppedSteps}/${totalSteps} steps are stopped.` 
+      };
+    }
+
+    // Check if dispatch process exists and is accepted
+    const dispatchStep = jobPlanning.steps.find(step => 
+      step.stepName === 'DispatchProcess' || step.dispatchProcess
+    );
+
+    if (!dispatchStep || !dispatchStep.dispatchProcess) {
+      return { isReady: false, reason: 'Dispatch process not found' };
+    }
+
+    if (dispatchStep.dispatchProcess.status !== 'accept') {
+      return { isReady: false, reason: 'Dispatch process not accepted' };
+    }
+
+    // All criteria met - job is ready for completion
+    return { 
+      isReady: true, 
+      jobPlanning 
+    };
+
+  } catch (error) {
+    console.error('Error checking job completion readiness:', error);
+    return { isReady: false, reason: 'Error checking completion status' };
+  }
+};
+
+/**
+ * Automatically complete a job if it meets all completion criteria
+ */
+export const autoCompleteJobIfReady = async (nrcJobNo: string, userId?: string): Promise<{
+  completed: boolean;
+  reason?: string;
+  completedJob?: any;
+}> => {
+  try {
+    // Check if job is ready for completion
+    const completionCheck = await checkJobReadyForCompletion(nrcJobNo);
+    
+    if (!completionCheck.isReady) {
+      return { completed: false, reason: completionCheck.reason };
+    }
+
+    // Job is ready - proceed with completion
+    const jobPlanning = completionCheck.jobPlanning;
+
+    // Get job details
+    const job = await prisma.job.findUnique({
+      where: { nrcJobNo }
+    });
+
+    if (!job) {
+      return { completed: false, reason: 'Job not found' };
+    }
+
+    // Get purchase order details if any
+    const purchaseOrder = await prisma.purchaseOrder.findFirst({
+      where: { jobNrcJobNo: nrcJobNo }
+    });
+
+    // Calculate total duration
+    const startDate = jobPlanning.steps.reduce((earliest: Date | null, step: any) => {
+      if (step.startDate && (!earliest || step.startDate < earliest)) {
+        return step.startDate;
+      }
+      return earliest;
+    }, null);
+
+    const endDate = jobPlanning.steps.reduce((latest: Date | null, step: any) => {
+      if (step.endDate && (!latest || step.endDate > latest)) {
+        return step.endDate;
+      }
+      return latest;
+    }, null);
+
+    const totalDuration = startDate && endDate 
+      ? Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) // days
+      : null;
+
+    // Create completed job record
+    const completedJob = await prisma.completedJob.create({
+      data: {
+        nrcJobNo,
+        jobPlanId: jobPlanning.jobPlanId,
+        jobDemand: jobPlanning.jobDemand,
+        jobDetails: job,
+        purchaseOrderDetails: purchaseOrder ? JSON.parse(JSON.stringify(purchaseOrder)) : null,
+        allSteps: jobPlanning.steps,
+        allStepDetails: {
+          paperStore: jobPlanning.steps.map((s: any) => s.paperStore).filter(Boolean),
+          printingDetails: jobPlanning.steps.map((s: any) => s.printingDetails).filter(Boolean),
+          corrugation: jobPlanning.steps.map((s: any) => s.corrugation).filter(Boolean),
+          flutelam: jobPlanning.steps.map((s: any) => s.flutelam).filter(Boolean),
+          punching: jobPlanning.steps.map((s: any) => s.punching).filter(Boolean),
+          sideFlapPasting: jobPlanning.steps.map((s: any) => s.sideFlapPasting).filter(Boolean),
+          qualityDept: jobPlanning.steps.map((s: any) => s.qualityDept).filter(Boolean),
+          dispatchProcess: jobPlanning.steps.map((s: any) => s.dispatchProcess).filter(Boolean)
+        },
+        completedBy: userId || 'system',
+        totalDuration,
+        remarks: 'Automatically completed by system',
+        finalStatus: 'completed'
+      }
+    });
+
+    // Delete all JobStep records for this job planning
+    await prisma.jobStep.deleteMany({ where: { jobPlanningId: jobPlanning.jobPlanId } });
+
+    // Delete the JobPlanning record
+    await prisma.jobPlanning.delete({ where: { jobPlanId: jobPlanning.jobPlanId } });
+
+    // Update the Job record: set status to INACTIVE and specified fields to NULL
+    await prisma.job.update({
+      where: { nrcJobNo },
+      data: {
+        status: 'INACTIVE',
+        shadeCardApprovalDate: null,
+        artworkApprovedDate: null,
+        artworkReceivedDate: null,
+        imageURL: null
+      }
+    });
+
+    console.log(`Job ${nrcJobNo} automatically completed`);
+
+    return { 
+      completed: true, 
+      completedJob 
+    };
+
+  } catch (error) {
+    console.error('Error auto-completing job:', error);
+    return { completed: false, reason: 'Error during auto-completion' };
+  }
+};
