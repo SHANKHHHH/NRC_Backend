@@ -1,10 +1,11 @@
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { calculateSharedCardDiffDate } from '../utils/dateUtils';
 
 /**
  * Workflow validation utility for manufacturing steps
- * Handles the case where Corrugation and Printing can run in parallel
- * but both must be accepted before proceeding to next steps
+ * ALL steps are now optional - jobs can have any combination of steps
+ * Dependencies only apply to steps that actually exist in the job planning
  */
 
 export interface WorkflowStep {
@@ -21,6 +22,7 @@ export interface WorkflowValidationResult {
 
 /**
  * Check if a step can proceed based on workflow rules
+ * Now supports fully optional workflow - any step can be skipped
  */
 export const validateWorkflowStep = async (
   jobStepId: number,
@@ -48,36 +50,91 @@ export const validateWorkflowStep = async (
     return { canProceed: true };
   }
 
-  // Special workflow rules for steps that require both Corrugation and Printing
-  const stepsRequiringBothCorrugationAndPrinting = [
-    'Punching',
-    'SideFlapPasting',
-    'QualityDept',
-    'DispatchProcess'
-  ];
-
-  if (stepsRequiringBothCorrugationAndPrinting.includes(currentStepName)) {
-    return await validateBothCorrugationAndPrintingAccepted(jobStep.jobPlanning.nrcJobNo);
-  }
-
-  // Special handling for PrintingDetails and Corrugation - they can run in parallel
-  // They only need PaperStore to be completed (not necessarily accepted)
-  if (currentStepName === 'PrintingDetails' || currentStepName === 'Corrugation') {
-    return await validatePaperStoreCompleted(jobStep.jobPlanning.nrcJobNo);
-  }
-
-  // For other steps, check if the previous step is accepted
-  const prevStep = steps[currentStepIndex - 1];
-  return await validatePreviousStepAccepted(prevStep);
+  // For all other steps, check dependencies based on what actually exists
+  return await validateStepDependencies(jobStep.jobPlanning.nrcJobNo, currentStepName);
 };
 
 /**
- * Validate that both Corrugation and Printing steps are accepted
+ * Validate step dependencies based on what steps actually exist in the job
+ * This makes ALL steps truly optional
  */
-export const validateBothCorrugationAndPrintingAccepted = async (
+export const validateStepDependencies = async (
+  nrcJobNo: string,
+  currentStepName: string
+): Promise<WorkflowValidationResult> => {
+  try {
+    // Get all existing steps for this job
+    const existingSteps = await prisma.jobPlanning.findFirst({
+      where: { nrcJobNo },
+      include: {
+        steps: {
+          include: {
+            paperStore: true,
+            printingDetails: true,
+            corrugation: true,
+            flutelam: true,
+            punching: true,
+            sideFlapPasting: true,
+            qualityDept: true,
+            dispatchProcess: true
+          }
+        }
+      }
+    });
+
+    if (!existingSteps) {
+      return { canProceed: false, message: 'Job planning not found' };
+    }
+
+    // Check dependencies based on what actually exists
+    switch (currentStepName) {
+      case 'PrintingDetails':
+      case 'Corrugation':
+        // These can run after PaperStore (if PaperStore exists)
+        const paperStore = existingSteps.steps.find(s => s.stepName === 'PaperStore');
+        if (paperStore && paperStore.paperStore) {
+          return { canProceed: true, message: 'PaperStore exists, can proceed' };
+        }
+        return { canProceed: true, message: 'No PaperStore required, can proceed' };
+
+      case 'FluteLaminateBoardConversion':
+        // Can proceed if any of Corrugation or Printing exist and are accepted
+        return await validateAnyCorrugationOrPrintingAccepted(nrcJobNo);
+
+      case 'Punching':
+        // Can proceed if any of Corrugation or Printing exist and are accepted
+        return await validateAnyCorrugationOrPrintingAccepted(nrcJobNo);
+
+      case 'SideFlapPasting':
+        // Can proceed if any of Corrugation or Printing exist and are accepted
+        return await validateAnyCorrugationOrPrintingAccepted(nrcJobNo);
+
+      case 'QualityDept':
+        // Can proceed if any of Corrugation or Printing exist and are accepted
+        return await validateAnyCorrugationOrPrintingAccepted(nrcJobNo);
+
+      case 'DispatchProcess':
+        // Can proceed if any of Corrugation or Printing exist and are accepted
+        return await validateAnyCorrugationOrPrintingAccepted(nrcJobNo);
+
+      default:
+        // For any other step, check if previous step exists and is accepted
+        return await validatePreviousStepAccepted(nrcJobNo, currentStepName);
+    }
+  } catch (error) {
+    console.error('Error validating step dependencies:', error);
+    return { canProceed: false, message: 'Error checking dependencies' };
+  }
+};
+
+/**
+ * Validate that any existing Corrugation OR Printing steps are accepted
+ * If neither exists, step can still proceed
+ */
+export const validateAnyCorrugationOrPrintingAccepted = async (
   nrcJobNo: string
 ): Promise<WorkflowValidationResult> => {
-  // Check if both Corrugation and Printing exist and are accepted
+  // Check if any Corrugation or Printing exist and are accepted
   const [corrugation, printing] = await Promise.all([
     prisma.corrugation.findFirst({
       where: { jobNrcJobNo: nrcJobNo }
@@ -91,30 +148,32 @@ export const validateBothCorrugationAndPrintingAccepted = async (
   let canProceed = true;
   let message = '';
 
-  // Check Corrugation
-  if (!corrugation) {
-    requiredSteps.push('Corrugation');
-    canProceed = false;
-    message += 'Corrugation step must be completed. ';
-  } else if (corrugation.status !== 'accept') {
+  // Check Corrugation (if exists, must be accepted)
+  if (corrugation && corrugation.status !== 'accept') {
     requiredSteps.push('Corrugation (must be accepted)');
     canProceed = false;
     message += 'Corrugation step must be accepted. ';
   }
 
-  // Check Printing
-  if (!printing) {
-    requiredSteps.push('PrintingDetails');
-    canProceed = false;
-    message += 'Printing step must be completed. ';
-  } else if (printing.status !== 'accept') {
+  // Check Printing (if exists, must be accepted)
+  if (printing && printing.status !== 'accept') {
     requiredSteps.push('PrintingDetails (must be accepted)');
     canProceed = false;
     message += 'Printing step must be accepted. ';
   }
 
   if (canProceed) {
-    message = 'Both Corrugation and Printing steps are accepted.';
+    const existingSteps = [];
+    if (corrugation) existingSteps.push('Corrugation');
+    if (printing) existingSteps.push('PrintingDetails');
+    
+    if (existingSteps.length === 0) {
+      message = 'No Corrugation or Printing steps required for this job.';
+    } else if (existingSteps.length === 1) {
+      message = `${existingSteps[0]} step is accepted.`;
+    } else {
+      message = 'Both Corrugation and Printing steps are accepted.';
+    }
   }
 
   return {
@@ -125,88 +184,81 @@ export const validateBothCorrugationAndPrintingAccepted = async (
 };
 
 /**
- * Validate that PaperStore is completed (for PrintingDetails and Corrugation)
- */
-export const validatePaperStoreCompleted = async (
-  nrcJobNo: string
-): Promise<WorkflowValidationResult> => {
-  const paperStore = await prisma.paperStore.findFirst({
-    where: { jobNrcJobNo: nrcJobNo }
-  });
-
-  if (!paperStore) {
-    return {
-      canProceed: false,
-      message: 'PaperStore step must be completed first.',
-      requiredSteps: ['PaperStore']
-    };
-  }
-
-  // PaperStore just needs to exist, doesn't need to be accepted for parallel processing
-  return {
-    canProceed: true,
-    message: 'PaperStore step is completed.'
-  };
-};
-
-/**
- * Validate that the previous step is accepted
+ * Validate that the previous step is accepted (if it exists)
  */
 export const validatePreviousStepAccepted = async (
-  prevStep: WorkflowStep
+  nrcJobNo: string,
+  currentStepName: string
 ): Promise<WorkflowValidationResult> => {
-  let prevDetail: any = null;
+  try {
+    // Get the job planning to find the previous step
+    const jobPlanning = await prisma.jobPlanning.findFirst({
+      where: { nrcJobNo },
+      include: { steps: true }
+    });
 
-  // Get the previous step details based on step name
-  switch (prevStep.stepName) {
-    case 'PaperStore':
-      prevDetail = await prisma.paperStore.findUnique({ where: { jobStepId: prevStep.id } });
-      break;
-    case 'PrintingDetails':
-      prevDetail = await prisma.printingDetails.findUnique({ where: { jobStepId: prevStep.id } });
-      break;
-    case 'Corrugation':
-      prevDetail = await prisma.corrugation.findUnique({ where: { jobStepId: prevStep.id } });
-      break;
-    case 'FluteLaminateBoardConversion':
-      prevDetail = await prisma.fluteLaminateBoardConversion.findUnique({ where: { jobStepId: prevStep.id } });
-      break;
-    case 'Punching':
-      prevDetail = await prisma.punching.findUnique({ where: { jobStepId: prevStep.id } });
-      break;
-    case 'SideFlapPasting':
-      prevDetail = await prisma.sideFlapPasting.findUnique({ where: { jobStepId: prevStep.id } });
-      break;
-    case 'QualityDept':
-      prevDetail = await prisma.qualityDept.findUnique({ where: { jobStepId: prevStep.id } });
-      break;
-    case 'DispatchProcess':
-      prevDetail = await prisma.dispatchProcess.findUnique({ where: { jobStepId: prevStep.id } });
-      break;
-    default:
-      break;
+    if (!jobPlanning) {
+      return { canProceed: false, message: 'Job planning not found' };
+    }
+
+    const steps = jobPlanning.steps.sort((a, b) => a.stepNo - b.stepNo);
+    const currentStepIndex = steps.findIndex(s => s.stepName === currentStepName);
+
+    if (currentStepIndex <= 0) {
+      return { canProceed: true, message: 'First step or no previous step' };
+    }
+
+    const prevStep = steps[currentStepIndex - 1];
+    
+    // Check if previous step exists and is accepted
+    let prevDetail: any = null;
+
+    switch (prevStep.stepName) {
+      case 'PaperStore':
+        prevDetail = await prisma.paperStore.findUnique({ where: { jobStepId: prevStep.id } });
+        break;
+      case 'PrintingDetails':
+        prevDetail = await prisma.printingDetails.findUnique({ where: { jobStepId: prevStep.id } });
+        break;
+      case 'Corrugation':
+        prevDetail = await prisma.corrugation.findUnique({ where: { jobStepId: prevStep.id } });
+        break;
+      case 'FluteLaminateBoardConversion':
+        prevDetail = await prisma.fluteLaminateBoardConversion.findUnique({ where: { jobStepId: prevStep.id } });
+        break;
+      case 'Punching':
+        prevDetail = await prisma.punching.findUnique({ where: { jobStepId: prevStep.id } });
+        break;
+      case 'SideFlapPasting':
+        prevDetail = await prisma.sideFlapPasting.findUnique({ where: { jobStepId: prevStep.id } });
+        break;
+      case 'QualityDept':
+        prevDetail = await prisma.qualityDept.findUnique({ where: { jobStepId: prevStep.id } });
+        break;
+      case 'DispatchProcess':
+        prevDetail = await prisma.dispatchProcess.findUnique({ where: { jobStepId: prevStep.id } });
+        break;
+      default:
+        break;
+    }
+
+    if (!prevDetail) {
+      return { canProceed: true, message: `Previous step (${prevStep.stepName}) not required` };
+    }
+
+    if (prevDetail.status !== 'accept') {
+      return { 
+        canProceed: false, 
+        message: `Previous step (${prevStep.stepName}) must be accepted before proceeding.`,
+        requiredSteps: [`${prevStep.stepName} (must be accepted)`]
+      };
+    }
+
+    return { canProceed: true, message: `Previous step (${prevStep.stepName}) is accepted.` };
+  } catch (error) {
+    console.error('Error validating previous step:', error);
+    return { canProceed: false, message: 'Error checking previous step' };
   }
-
-  if (!prevDetail) {
-    return {
-      canProceed: false,
-      message: `Previous step (${prevStep.stepName}) must be completed first.`,
-      requiredSteps: [prevStep.stepName]
-    };
-  }
-
-  if (prevDetail.status !== 'accept') {
-    return {
-      canProceed: false,
-      message: `Previous step (${prevStep.stepName}) must be accepted before proceeding.`,
-      requiredSteps: [`${prevStep.stepName} (must be accepted)`]
-    };
-  }
-
-  return {
-    canProceed: true,
-    message: `Previous step (${prevStep.stepName}) is accepted.`
-  };
 };
 
 /**
@@ -247,11 +299,11 @@ export const getWorkflowStatus = async (nrcJobNo: string) => {
                step.qualityDept || step.dispatchProcess
     }))
   };
-}; 
+};
 
 /**
  * Check if a job is ready for automatic completion
- * Criteria: All steps must have status 'stop' and dispatch process must be 'accept'
+ * Criteria: All EXISTING steps must have status 'stop' and dispatch process must be 'accept'
  */
 export const checkJobReadyForCompletion = async (nrcJobNo: string): Promise<{
   isReady: boolean;
@@ -275,7 +327,7 @@ export const checkJobReadyForCompletion = async (nrcJobNo: string): Promise<{
       return { isReady: false, reason: 'Job planning not found' };
     }
 
-    // Check if all steps have status 'stop'
+    // Check if all EXISTING steps have status 'stop'
     const allStepsStopped = jobPlanning.steps.every(step => step.status === 'stop');
     if (!allStepsStopped) {
       const stoppedSteps = jobPlanning.steps.filter(step => step.status === 'stop').length;
@@ -395,15 +447,18 @@ export const autoCompleteJobIfReady = async (nrcJobNo: string, userId?: string):
     // Delete the JobPlanning record
     await prisma.jobPlanning.delete({ where: { jobPlanId: jobPlanning.jobPlanId } });
 
-    // Update the Job record: set status to INACTIVE and specified fields to NULL
+    // Update the Job record: set status to INACTIVE but preserve important dates
     await prisma.job.update({
       where: { nrcJobNo },
       data: {
         status: 'INACTIVE',
-        shadeCardApprovalDate: null,
-        artworkApprovedDate: null,
-        artworkReceivedDate: null,
-        imageURL: null
+        // Don't clear these important dates - they are historical data
+        // shadeCardApprovalDate: null,  // Keep the shade card approval date
+        // artworkApprovedDate: null,    // Keep the artwork approval date  
+        // artworkReceivedDate: null,    // Keep the artwork received date
+        imageURL: null,  // Only clear the image URL as it's not historical data
+        // Recalculate the shared card diff date to reflect current completion date
+        sharedCardDiffDate: calculateSharedCardDiffDate(job.shadeCardApprovalDate)
       }
     });
 

@@ -8,13 +8,17 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-enum UserRole {
+enum UserRole{
   admin
   planner
   production_head
   dispatch_executive
   qc_manager
   printer
+  corrugator
+  flutelaminator
+  pasting_operator
+  punching_operator
 }
 
 enum JobStatus {
