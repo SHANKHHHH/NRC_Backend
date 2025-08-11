@@ -81,6 +81,24 @@ export const updateSideFlapPasting = async (req: Request, res: Response) => {
       data: req.body,
     });
 
+  // Auto-update job's machine details flag if machineNo field present
+  try {
+    const hasMachineField = Object.prototype.hasOwnProperty.call(req.body || {}, 'machineNo');
+    if (hasMachineField) {
+      await prisma.jobStep.findFirst({
+        where: { sideFlapPasting: { id: sideFlapPasting.id } },
+        include: { jobPlanning: { select: { nrcJobNo: true } } }
+      }).then(async (js) => {
+        if (js?.jobPlanning?.nrcJobNo) {
+          const { updateJobMachineDetailsFlag } = await import('../utils/machineDetailsTracker');
+          await updateJobMachineDetailsFlag(js.jobPlanning.nrcJobNo);
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('Warning: could not update isMachineDetailsFilled after sideFlapPasting update:', e);
+  }
+
     // Step 3: Optional logging
     if (req.user?.userId) {
       await logUserActionWithResource(
@@ -126,4 +144,4 @@ export const deleteSideFlapPasting = async (req: Request, res: Response) => {
     );
   }
   res.status(200).json({ success: true, message: 'SideFlapPasting deleted' });
-}; 
+};

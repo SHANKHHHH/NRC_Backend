@@ -71,6 +71,24 @@ export const updatePrintingDetails = async (req: Request, res: Response) => {
     data: req.body, 
   });
 
+  // Auto-update job's machine details flag if machine field present
+  try {
+    const hasMachineField = Object.prototype.hasOwnProperty.call(req.body || {}, 'machine');
+    if (hasMachineField) {
+      await prisma.jobStep.findFirst({
+        where: { printingDetails: { id: printingDetails.id } },
+        include: { jobPlanning: { select: { nrcJobNo: true } } }
+      }).then(async (js) => {
+        if (js?.jobPlanning?.nrcJobNo) {
+          const { updateJobMachineDetailsFlag } = await import('../utils/machineDetailsTracker');
+          await updateJobMachineDetailsFlag(js.jobPlanning.nrcJobNo);
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('Warning: could not update isMachineDetailsFilled after printingDetails update:', e);
+  }
+
   // Log update
   if (req.user?.userId) {
     await logUserActionWithResource(
@@ -113,4 +131,4 @@ export const getPrintingDetailsByNrcJobNo = async (req: Request, res: Response) 
   const { nrcJobNo } = req.params;
   const printingDetails = await prisma.printingDetails.findMany({ where: { jobNrcJobNo: nrcJobNo } });
   res.status(200).json({ success: true, data: printingDetails });
-}; 
+};

@@ -2,7 +2,8 @@ import { prisma } from '../lib/prisma';
 
 /**
  * Utility to track machine details status in jobs
- * Automatically updates isMachineDetailsFilled flag based on machineDetails in job steps
+ * Automatically updates isMachineDetailsFilled flag based on machine assignments
+ * present either in JobStep.machineDetails OR in step-detail tables with machine fields.
  */
 
 /**
@@ -11,14 +12,19 @@ import { prisma } from '../lib/prisma';
  */
 export const updateJobMachineDetailsFlag = async (nrcJobNo: string): Promise<void> => {
   try {
-    // Get the job planning and all its steps
+    // Get the job planning and all its steps with relevant machine fields
     const jobPlanning = await prisma.jobPlanning.findFirst({
       where: { nrcJobNo },
       include: {
         steps: {
           select: {
             id: true,
-            machineDetails: true
+            machineDetails: true,
+            // Step-detail relations that may carry machine fields
+            printingDetails: { select: { machine: true } },
+            corrugation: { select: { machineNo: true } },
+            punching: { select: { machine: true } },
+            sideFlapPasting: { select: { machineNo: true } }
           }
         }
       }
@@ -28,12 +34,21 @@ export const updateJobMachineDetailsFlag = async (nrcJobNo: string): Promise<voi
       throw new Error(`Job planning not found for ${nrcJobNo}`);
     }
 
-    // Check if any step has machine details filled
-    const hasAnyMachineDetails = jobPlanning.steps.some(step => 
-      step.machineDetails && 
-      Array.isArray(step.machineDetails) && 
-      step.machineDetails.length > 0
-    );
+    // Check if any step indicates machine assignment
+    const hasAnyMachineDetails = jobPlanning.steps.some(step => {
+      const hasArrayDetails = Array.isArray(step.machineDetails) && step.machineDetails.length > 0;
+      const hasPrintingMachine = !!step.printingDetails?.machine;
+      const hasCorrugationMachine = !!step.corrugation?.machineNo;
+      const hasPunchingMachine = !!step.punching?.machine;
+      const hasSideFlapMachine = !!step.sideFlapPasting?.machineNo;
+      return (
+        hasArrayDetails ||
+        hasPrintingMachine ||
+        hasCorrugationMachine ||
+        hasPunchingMachine ||
+        hasSideFlapMachine
+      );
+    });
 
     // Update the job's machine details flag
     await prisma.job.update({
@@ -45,5 +60,3 @@ export const updateJobMachineDetailsFlag = async (nrcJobNo: string): Promise<voi
     throw error;
   }
 };
-
- 

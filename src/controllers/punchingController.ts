@@ -74,6 +74,24 @@ export const updatePunching = async (req: Request, res: Response) => {
       data: req.body,
     });
 
+  // Auto-update job's machine details flag if machine field present
+  try {
+    const hasMachineField = Object.prototype.hasOwnProperty.call(req.body || {}, 'machine');
+    if (hasMachineField) {
+      await prisma.jobStep.findFirst({
+        where: { punching: { id: punching.id } },
+        include: { jobPlanning: { select: { nrcJobNo: true } } }
+      }).then(async (js) => {
+        if (js?.jobPlanning?.nrcJobNo) {
+          const { updateJobMachineDetailsFlag } = await import('../utils/machineDetailsTracker');
+          await updateJobMachineDetailsFlag(js.jobPlanning.nrcJobNo);
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('Warning: could not update isMachineDetailsFilled after punching update:', e);
+  }
+
     // Optional logging
     if (req.user?.userId) {
       await logUserActionWithResource(
@@ -126,4 +144,4 @@ export const getPunchingByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
   const punchings = await prisma.punching.findMany({ where: { jobNrcJobNo: nrcJobNo } });
   res.status(200).json({ success: true, data: punchings });
-}; 
+};

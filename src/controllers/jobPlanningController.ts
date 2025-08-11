@@ -37,6 +37,13 @@ export const createJobPlanning = async (req: Request, res: Response) => {
     include: { steps: true },
   });
 
+  // Immediately update the job's machine details flag based on initial steps
+  try {
+    await updateJobMachineDetailsFlag(nrcJobNo);
+  } catch (e) {
+    console.warn('Warning: could not update isMachineDetailsFilled on planning create:', e);
+  }
+
 // Log the job planning creation action
   if (req.user?.userId) {
     await logUserActionWithResource(
