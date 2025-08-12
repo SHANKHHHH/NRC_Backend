@@ -9,7 +9,7 @@ router.get('/by-job/:nrcJobNo', authenticateToken, getFluteLaminateBoardConversi
 router.get('/:id', authenticateToken, getFluteLaminateBoardConversionById);
 router.get('/', authenticateToken, getAllFluteLaminateBoardConversions);
 
-router.put('/:nrcJobNo', requireAdminJWT, updateFluteLaminateBoardConversion);
+router.put('/:nrcJobNo', authenticateToken, updateFluteLaminateBoardConversion);
 router.delete('/:id', requireAdminJWT, deleteFluteLaminateBoardConversion);
 
 export default router; 

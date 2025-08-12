@@ -9,7 +9,7 @@ router.get('/by-job/:nrcJobNo', authenticateToken, getPaperStoreByNrcJobNo);
 router.get('/:id', authenticateToken, getPaperStoreById);
 router.get('/', authenticateToken, getAllPaperStores);
 
-router.put('/:nrcJobNo', requireAdminJWT, updatePaperStore);
+router.put('/:nrcJobNo', authenticateToken, updatePaperStore);
 router.delete('/:id', requireAdminJWT, deletePaperStore);
 
 export default router; 
