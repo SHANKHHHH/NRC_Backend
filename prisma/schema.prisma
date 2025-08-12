@@ -73,8 +73,8 @@ model User {
 model Job {
   id                    Int             @id @default(autoincrement())
   nrcJobNo              String          @unique // "00 NRC Job#" - Auto-generated, required
-  styleItemSKU          String          // "01 Style Item SKU"
-  customerName          String          // "02 Customer Name"
+  styleItemSKU          String          // "01 Style Item SKU" - MANDATORY
+  customerName          String          // "02 Customer Name" - MANDATORY
   fluteType             String?         // "03 Flute Type"
   status                JobStatus @default(ACTIVE) // "04 Job Status Active/Inactive"
   latestRate            Float?          // "05 Latest Rate"
