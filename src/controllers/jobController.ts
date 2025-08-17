@@ -3,13 +3,14 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { calculateSharedCardDiffDate } from '../utils/dateUtils';
+import { RoleManager } from '../utils/roleUtils';
 
 
 export const createJob = async (req: Request, res: Response) => {
-  // Authorization Check
+  // Authorization Check - Now supports multiple roles
   const userRole = req.user?.role;
-  if (userRole !== 'admin' && userRole !== 'planner') {
-    throw new AppError('You are not authorized to perform this action', 403);
+  if (!userRole || !RoleManager.canPerformPlannerAction(userRole)) {
+    throw new AppError('You are not authorized to perform this action. Required roles: admin or planner', 403);
   }
 
   const { nrcJobNo, styleItemSKU, customerName, imageURL, ...rest } = req.body; //datasets
@@ -221,8 +222,8 @@ export const getJobByNrcJobNo = async (req: Request, res: Response) => {
 export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
 
   const userRole = req.user?.role;
-  if (userRole !== 'admin' && userRole !== 'planner') {
-    throw new AppError('You are not authorized to perform this action', 403);
+  if (!userRole || !RoleManager.canPerformPlannerAction(userRole)) {
+    throw new AppError('You are not authorized to perform this action. Required roles: admin or planner', 403);
   }
 
   const { nrcJobNo } = req.params;
@@ -313,8 +314,8 @@ export const recalculateSharedCardDiffDate = async (req: Request, res: Response)
 
 export const deleteJobByNrcJobNo = async (req: Request, res: Response) => {
   const userRole = req.user?.role;
-  if (userRole !== 'admin') {
-    throw new AppError('You are not authorized to perform this action', 403);
+  if (!userRole || !RoleManager.canPerformAdminAction(userRole)) {
+    throw new AppError('You are not authorized to perform this action. Required role: admin', 403);
   }
 
   const { nrcJobNo } = req.params;

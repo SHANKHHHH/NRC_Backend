@@ -104,6 +104,9 @@ export const ActionTypes = {
   USER_CREATED: 'User Created',
   USER_UPDATED: 'User Updated',
   USER_DEACTIVATED: 'User Deactivated',
+  USER_ROLE_ADDED: 'User Role Added',
+  USER_ROLE_REMOVED: 'User Role Removed',
+  USER_ROLES_UPDATED: 'User Roles Updated',
   
   // System actions
   SYSTEM_BACKUP: 'System Backup',

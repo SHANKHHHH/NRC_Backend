@@ -33,6 +33,7 @@ import activityLogRoutes from './routes/activityLogRoute';
 import machineRoutes from './routes/machineRoute';
 import completedJobRoutes from './routes/completedJobRoute';
 import dashboardRoutes from './routes/dashboardRoute';
+import userRoutes from './routes/userRoute';
 
 // Load environment variables
 
@@ -90,6 +91,7 @@ app.use('/api/activity-logs', activityLogRoutes);
 app.use('/api/machines', machineRoutes);
 app.use('/api/completed-jobs', completedJobRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/users', userRoutes);
 
 // Test error handling routes
 app.get('/api/test-error', (req: Request, res: Response, next: NextFunction) => {

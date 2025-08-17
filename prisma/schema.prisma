@@ -55,7 +55,7 @@ model User {
   email     String?
   phoneNumber String?
   password  String
-  role      UserRole
+  role      String    // Changed from UserRole enum to String for multiple roles support
   name      String?
   isActive  Boolean   @default(true)
   lastLogin DateTime?

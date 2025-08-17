@@ -2,14 +2,15 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
+import { RoleManager } from '../utils/roleUtils';
 
 /**
  * Create a new machine
  */
 export const createMachine = async (req: Request, res: Response) => {
   const userRole = req.user?.role;
-  if (userRole !== 'admin' && userRole !== 'production_head') {
-    throw new AppError('You are not authorized to perform this action', 403);
+  if (!userRole || !RoleManager.canPerformProductionAction(userRole)) {
+    throw new AppError('You are not authorized to perform this action. Required roles: admin, planner, or production_head', 403);
   }
 
   const { unit, machineCode, machineType, description, type, capacity, remarks } = req.body;
@@ -269,8 +270,8 @@ export const getMachineById = async (req: Request, res: Response) => {
  */
 export const updateMachine = async (req: Request, res: Response) => {
   const userRole = req.user?.role;
-  if (userRole !== 'admin' && userRole !== 'production_head') {
-    throw new AppError('You are not authorized to perform this action', 403);
+  if (!userRole || !RoleManager.canPerformProductionAction(userRole)) {
+    throw new AppError('You are not authorized to perform this action. Required roles: admin, planner, or production_head', 403);
   }
 
   const { id } = req.params;
@@ -315,8 +316,8 @@ export const updateMachine = async (req: Request, res: Response) => {
  */
 export const updateMachineStatus = async (req: Request, res: Response) => {
   const userRole = req.user?.role;
-  if (userRole !== 'admin' && userRole !== 'production_head') {
-    throw new AppError('You are not authorized to perform this action', 403);
+  if (!userRole || !RoleManager.canPerformProductionAction(userRole)) {
+    throw new AppError('You are not authorized to perform this action. Required roles: admin, planner, or production_head', 403);
   }
 
   const { id } = req.params;
@@ -354,8 +355,8 @@ export const updateMachineStatus = async (req: Request, res: Response) => {
  */
 export const deleteMachine = async (req: Request, res: Response) => {
   const userRole = req.user?.role;
-  if (userRole !== 'admin') {
-    throw new AppError('You are not authorized to perform this action', 403);
+  if (!userRole || !RoleManager.canPerformProductionAction(userRole)) {
+    throw new AppError('You are not authorized to perform this action. Required roles: admin, planner, or production_head', 403);
   }
 
   const { id } = req.params;
