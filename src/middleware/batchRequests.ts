@@ -78,7 +78,80 @@ async function processBatchRequest(batchReq: BatchRequest): Promise<BatchRespons
 
   // Map common endpoints to their handlers
   const endpointHandlers: { [key: string]: Function } = {
-    'GET:/api/jobs': () => prisma.job.findMany({ orderBy: { createdAt: 'desc' } }),
+    'GET:/api/jobs': async () => {
+      try {
+        const jobs = await prisma.job.findMany({ 
+          orderBy: { createdAt: 'desc' },
+          // Only select essential fields to avoid timeout
+          select: {
+            id: true,
+            nrcJobNo: true,
+            styleItemSKU: true,
+            customerName: true,
+            fluteType: true,
+            status: true,
+            latestRate: true,
+            preRate: true,
+            length: true,
+            width: true,
+            height: true,
+            boxDimensions: true,
+            diePunchCode: true,
+            boardCategory: true,
+            noOfColor: true,
+            processColors: true,
+            specialColor1: true,
+            specialColor2: true,
+            specialColor3: true,
+            specialColor4: true,
+            overPrintFinishing: true,
+            topFaceGSM: true,
+            flutingGSM: true,
+            bottomLinerGSM: true,
+            decalBoardX: true,
+            lengthBoardY: true,
+            boardSize: true,
+            artworkApprovedDate: true,
+            shadeCardApprovalDate: true,
+            sharedCardDiffDate: true,
+            srNo: true,
+            jobDemand: true,
+            imageURL: true,
+            noOfSheets: true,
+            isMachineDetailsFilled: true,
+            createdAt: true,
+            updatedAt: true,
+            userId: true,
+            machineId: true,
+            clientId: true,
+            styleId: true,
+          }
+        });
+
+        // Transform the data to match frontend expectations
+        const safeJobs = jobs.map(job => ({
+          ...job,
+          // Provide empty arrays for frontend compatibility
+          paperStores: [],
+          printingDetails: [],
+          corrugations: [],
+          fluteLaminateBoardConversions: [],
+          punchings: [],
+          sideFlapPastings: [],
+          qualityDepts: [],
+          dispatchProcesses: [],
+          artworks: [],
+          purchaseOrders: [],
+        }));
+
+        return safeJobs;
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('type \'Null\' is not a subtype of type \'List<dynamic>\'')) {
+          throw new Error('Database schema mismatch - jobs cannot be loaded');
+        }
+        throw error;
+      }
+    },
     'GET:/api/machines': () => prisma.machine.findMany(),
     'GET:/api/job-planning': () => prisma.jobPlanning.findMany({
       include: { steps: true },

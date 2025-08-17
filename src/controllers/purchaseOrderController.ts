@@ -3,6 +3,43 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { calculateSharedCardDiffDate } from '../utils/dateUtils';
 
+// Get all purchase orders
+export const getAllPurchaseOrders = async (req: Request, res: Response) => {
+  try {
+    const purchaseOrders = await prisma.purchaseOrder.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        job: {
+          select: {
+            nrcJobNo: true,
+            customerName: true,
+            styleItemSKU: true
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            role: true
+          }
+        }
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      count: purchaseOrders.length,
+      data: purchaseOrders,
+    });
+  } catch (error) {
+    console.error('Error fetching purchase orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch purchase orders',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
 
 export const createPurchaseOrder = async (req: Request, res: Response) => {
   const data = req.body;

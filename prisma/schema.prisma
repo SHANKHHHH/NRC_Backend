@@ -81,7 +81,7 @@ model Job {
   preRate               Float?          // "06 Pre Rate"
   length                Float?          // "07 L"
   width                 Float?          // "08 W"
-  height                Float?          // "09 H"
+  height                String?          // "09 H"
   boxDimensions         String?         // "10 Box Dimensions"
   diePunchCode          Float?          // "11 Die Punch Code"
   boardCategory         String?         // "12 Board Category"
@@ -108,8 +108,8 @@ model Job {
   imageURL              String?         // New field for job image URL
   noOfSheets            Int?            // Number of sheets for the job
   isMachineDetailsFilled Boolean        @default(false) // Track if any step has machine details filled
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+  createdAt             DateTime?       @default(now())
+  updatedAt             DateTime?        @updatedAt
   user                  User?           @relation("UserJobs", fields: [userId], references: [id])
   userId                String?
   machine               Machine?        @relation(fields: [machineId], references: [id])
@@ -120,6 +120,8 @@ model Job {
   fluteLaminateBoardConversions FluteLaminateBoardConversion[] @relation("JobToFluteLaminateBoardConversion")
   punchings             Punching[]       @relation("JobToPunching")
   sideFlapPastings      SideFlapPasting[] @relation("JobToSideFlapPasting")
+  clientId              String?
+  styleId               String?
   qualityDepts          QualityDept[]    @relation("JobToQualityDept")
   dispatchProcesses     DispatchProcess[] @relation("JobToDispatchProcess")
   artworks              ArtWork[]         @relation("JobArtworksByNrcJobNo")

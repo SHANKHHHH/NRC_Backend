@@ -21,13 +21,34 @@ export const getDashboardData = async (req: Request, res: Response) => {
       prisma.job.findMany({
         take: Number(limit),
         orderBy: { createdAt: 'desc' },
-        select: {
-          nrcJobNo: true,
-          styleItemSKU: true,
-          customerName: true,
-          imageURL: true,
-          createdAt: true,
-          status: true
+        include: {
+          // Include all relations but ensure they're never null
+          paperStores: true,
+          printingDetails: true,
+          corrugations: true,
+          fluteLaminateBoardConversions: true,
+          punchings: true,
+          sideFlapPastings: true,
+          qualityDepts: true,
+          dispatchProcesses: true,
+          artworks: true,
+          purchaseOrders: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              role: true,
+              email: true
+            }
+          },
+          machine: {
+            select: {
+              id: true,
+              description: true,
+              status: true,
+              machineType: true
+            }
+          }
         }
       }),
       
@@ -99,6 +120,21 @@ export const getDashboardData = async (req: Request, res: Response) => {
       })
     ]);
 
+    // Ensure all array fields in jobs are never null - convert null to empty arrays
+    const safeJobs = jobs.map(job => ({
+      ...job,
+      paperStores: job.paperStores || [],
+      printingDetails: job.printingDetails || [],
+      corrugations: job.corrugations || [],
+      fluteLaminateBoardConversions: job.fluteLaminateBoardConversions || [],
+      punchings: job.punchings || [],
+      sideFlapPastings: job.sideFlapPastings || [],
+      qualityDepts: job.qualityDepts || [],
+      dispatchProcesses: job.dispatchProcesses || [],
+      artworks: job.artworks || [],
+      purchaseOrders: job.purchaseOrders || []
+    }));
+
     // If specific job number is requested, get detailed data
     let jobDetails = null;
     if (nrcJobNo) {
@@ -155,7 +191,7 @@ export const getDashboardData = async (req: Request, res: Response) => {
           activeMachines: machines.filter(m => m.status === 'available').length,
           recentActivities: activityLogs.length
         },
-        jobs,
+        jobs: safeJobs,
         jobPlannings,
         machines,
         activityLogs,

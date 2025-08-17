@@ -1,8 +1,16 @@
 import { Router } from 'express';
-import { createPurchaseOrder, updatePurchaseOrder, recalculatePurchaseOrderSharedCardDiffDate } from '../controllers/purchaseOrderController';
-import { requireAdminJWT } from '../middleware/auth';
+import { 
+  createPurchaseOrder, 
+  updatePurchaseOrder, 
+  recalculatePurchaseOrderSharedCardDiffDate,
+  getAllPurchaseOrders
+} from '../controllers/purchaseOrderController';
+import { requireAdminJWT, authenticateToken } from '../middleware/auth';
 
 const router = Router();
+
+// Get all purchase orders
+router.get('/', authenticateToken, getAllPurchaseOrders);
 
 // Create a new purchase order
 router.post('/create', createPurchaseOrder);

@@ -53,6 +53,12 @@ export const errorHandler = (
     error = new AppError(message, 400);
   }
 
+  // Prisma null array type error
+  if (err.message && err.message.includes('type \'Null\' is not a subtype of type \'List<dynamic>\'')) {
+    const message = 'Database schema mismatch detected. Please contact administrator.';
+    error = new AppError(message, 500);
+  }
+
   // JWT errors
   if (err.name === 'JsonWebTokenError') {
     const message = 'Invalid token';

@@ -88,15 +88,94 @@ export const createJob = async (req: Request, res: Response) => {
 
 //get all jobs
 export const getAllJobs = async (req: Request, res: Response) => {
-  const jobs = await prisma.job.findMany({
-    orderBy: { createdAt: 'desc' },
-  });
+  try {
+    const jobs = await prisma.job.findMany({
+      orderBy: { createdAt: 'desc' },
+      // Only select essential fields to avoid timeout
+      select: {
+        id: true,
+        nrcJobNo: true,
+        styleItemSKU: true,
+        customerName: true,
+        fluteType: true,
+        status: true,
+        latestRate: true,
+        preRate: true,
+        length: true,
+        width: true,
+        height: true,
+        boxDimensions: true,
+        diePunchCode: true,
+        boardCategory: true,
+        noOfColor: true,
+        processColors: true,
+        specialColor1: true,
+        specialColor2: true,
+        specialColor3: true,
+        specialColor4: true,
+        overPrintFinishing: true,
+        topFaceGSM: true,
+        flutingGSM: true,
+        bottomLinerGSM: true,
+        decalBoardX: true,
+        lengthBoardY: true,
+        boardSize: true,
+        artworkApprovedDate: true,
+        shadeCardApprovalDate: true,
+        sharedCardDiffDate: true,
+        srNo: true,
+        jobDemand: true,
+        imageURL: true,
+        noOfSheets: true,
+        isMachineDetailsFilled: true,
+        createdAt: true,
+        updatedAt: true,
+        userId: true,
+        machineId: true,
+        clientId: true,
+        styleId: true,
+      }
+    });
 
-  res.status(200).json({
-    success: true,
-    count: jobs.length,
-    data: jobs,
-  });
+    // Transform the data to match frontend expectations
+    const safeJobs = jobs.map(job => ({
+      ...job,
+      // Provide empty arrays for frontend compatibility
+      paperStores: [],
+      printingDetails: [],
+      corrugations: [],
+      fluteLaminateBoardConversions: [],
+      punchings: [],
+      sideFlapPastings: [],
+      qualityDepts: [],
+      dispatchProcesses: [],
+      artworks: [],
+      purchaseOrders: [],
+    }));
+
+    res.status(200).json({
+      success: true,
+      count: safeJobs.length,
+      data: safeJobs,
+    });
+  } catch (error) {
+    console.error('Error fetching jobs:', error);
+    
+    // Handle the specific Prisma error
+    if (error instanceof Error && error.message.includes('type \'Null\' is not a subtype of type \'List<dynamic>\'')) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to load jobs: Database schema mismatch detected. Please contact administrator.',
+        error: 'SCHEMA_MISMATCH'
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to load jobs',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
 };
 
 
