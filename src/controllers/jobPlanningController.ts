@@ -606,3 +606,172 @@ export const getJobWorkflowStatus = async (req: Request, res: Response) => {
     throw new AppError('Failed to get workflow status', 500);
   }
 };
+
+// Bulk update all job steps and their details
+export const bulkUpdateJobSteps = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const { steps, jobDetails } = req.body;
+
+  try {
+    // 1. Update job details if provided (outside transaction)
+    if (jobDetails) {
+      await prisma.job.update({
+        where: { nrcJobNo },
+        data: jobDetails
+      });
+    }
+
+    // 2. Get existing job planning (outside transaction)
+    const jobPlanning = await prisma.jobPlanning.findFirst({
+      where: { nrcJobNo },
+      include: { 
+        steps: {
+          include: {
+            paperStore: true,
+            printingDetails: true,
+            corrugation: true,
+            flutelam: true,
+            punching: true,
+            sideFlapPasting: true,
+            qualityDept: true,
+            dispatchProcess: true
+          }
+        }
+      }
+    });
+
+    if (!jobPlanning) {
+      throw new AppError('Job planning not found', 404);
+    }
+
+    // 3. Use transaction only for step updates (with increased timeout)
+    await prisma.$transaction(async (tx) => {
+      for (const stepData of steps) {
+        const { stepNo, stepName, status, machineDetails, stepDetails } = stepData;
+        
+        const step = jobPlanning.steps.find(s => s.stepNo === stepNo);
+        if (!step) continue;
+
+        // Update step basic info
+        await tx.jobStep.update({
+          where: { id: step.id },
+          data: {
+            status,
+            machineDetails,
+            startDate: status === 'start' ? new Date() : undefined,
+            endDate: status === 'stop' ? new Date() : undefined,
+            user: req.user?.userId || null
+          }
+        });
+
+        // Update step-specific details based on stepName
+        if (stepDetails) {
+          switch (stepName) {
+            case 'PaperStore':
+              if (step.paperStore) {
+                await tx.paperStore.update({
+                  where: { id: step.paperStore.id },
+                  data: stepDetails
+                });
+              }
+              break;
+            case 'PrintingDetails':
+              if (step.printingDetails) {
+                await tx.printingDetails.update({
+                  where: { id: step.printingDetails.id },
+                  data: stepDetails
+                });
+              }
+              break;
+            case 'Corrugation':
+              if (step.corrugation) {
+                await tx.corrugation.update({
+                  where: { id: step.corrugation.id },
+                  data: stepDetails
+                });
+              }
+              break;
+            case 'FluteLaminateBoardConversion':
+              if (step.flutelam) {
+                await tx.fluteLaminateBoardConversion.update({
+                  where: { id: step.flutelam.id },
+                  data: stepDetails
+                });
+              }
+              break;
+            case 'Punching':
+              if (step.punching) {
+                await tx.punching.update({
+                  where: { id: step.punching.id },
+                  data: stepDetails
+                });
+              }
+              break;
+            case 'SideFlapPasting':
+              if (step.sideFlapPasting) {
+                await tx.sideFlapPasting.update({
+                  where: { id: step.sideFlapPasting.id },
+                  data: stepDetails
+                });
+              }
+              break;
+            case 'QualityDept':
+              if (step.qualityDept) {
+                await tx.qualityDept.update({
+                  where: { id: step.qualityDept.id },
+                  data: stepDetails
+                });
+              }
+              break;
+            case 'DispatchProcess':
+              if (step.dispatchProcess) {
+                await tx.dispatchProcess.update({
+                  where: { id: step.dispatchProcess.id },
+                  data: stepDetails
+                });
+              }
+              break;
+          }
+        }
+      }
+    }, {
+      timeout: 15000 // 15 seconds timeout
+    });
+
+    // 4. Update job machine details flag (outside transaction)
+    await updateJobMachineDetailsFlag(nrcJobNo);
+
+    // 5. Return updated data (outside transaction)
+    const updatedData = await prisma.jobPlanning.findFirst({
+      where: { nrcJobNo },
+      include: { 
+        steps: {
+          include: {
+            paperStore: true,
+            printingDetails: true,
+            corrugation: true,
+            flutelam: true,
+            punching: true,
+            sideFlapPasting: true,
+            qualityDept: true,
+            dispatchProcess: true
+          }
+        }
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: updatedData,
+      message: 'All job steps updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Bulk update error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update job steps',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo } from '../controllers/jobPlanningController';
+import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps } from '../controllers/jobPlanningController';
 
 const router = Router();
 
@@ -38,5 +38,8 @@ router.options('/:nrcJobNo/steps/:stepNo', (req, res) => {
 
 // Get a job planning by nrcJobNo (must be LAST to avoid conflicts)
 router.get('/:nrcJobNo', authenticateToken, getJobPlanningByNrcJobNo);
+
+// Bulk update all job steps and their details
+router.put('/:nrcJobNo/bulk-update', authenticateToken, bulkUpdateJobSteps);
 
 export default router;
