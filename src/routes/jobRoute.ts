@@ -25,7 +25,7 @@ router
 router
   .route('/:nrcJobNo')
   .get(authenticateToken, cacheMiddleware(5 * 60 * 1000), asyncHandler(getJobByNrcJobNo)) // Cache for 5 minutes
-  .put(requireAdminJWT, asyncHandler(updateJobByNrcJobNo))
+  .put(authenticateToken, asyncHandler(updateJobByNrcJobNo))
   .delete(requireAdminJWT, asyncHandler(deleteJobByNrcJobNo));
 
 router
