@@ -221,11 +221,6 @@ export const getJobByNrcJobNo = async (req: Request, res: Response) => {
 
 export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
 
-  const userRole = req.user?.role;
-  if (!userRole || !RoleManager.canPerformPlannerAction(userRole)) {
-    throw new AppError('You are not authorized to perform this action. Required roles: admin or planner', 403);
-  }
-
   const { nrcJobNo } = req.params;
   const { imageURL, ...rest } = req.body;
 

@@ -61,7 +61,6 @@ model User {
   lastLogin DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  
   // Relations
   jobs          Job[]           @relation("UserJobs")
   activityLogs  ActivityLog[]   @relation("UserActivityLogs")
