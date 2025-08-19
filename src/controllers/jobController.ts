@@ -121,6 +121,8 @@ export const getAllJobs = async (req: Request, res: Response) => {
         decalBoardX: true,
         lengthBoardY: true,
         boardSize: true,
+        noUps: true,
+        artworkReceivedDate:true,
         artworkApprovedDate: true,
         shadeCardApprovalDate: true,
         sharedCardDiffDate: true,
