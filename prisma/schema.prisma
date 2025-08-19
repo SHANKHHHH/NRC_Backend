@@ -501,7 +501,11 @@ model JobStep {
   dispatchProcess     DispatchProcess?
 }
 
-
+enum JobStepStatus {
+  planned
+  start
+  stop
+}
 
 model CompletedJob {
   id                    Int             @id @default(autoincrement())
