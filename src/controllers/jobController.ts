@@ -92,68 +92,49 @@ export const getAllJobs = async (req: Request, res: Response) => {
   try {
     const jobs = await prisma.job.findMany({
       orderBy: { createdAt: 'desc' },
-      // Only select essential fields to avoid timeout
-      select: {
-        id: true,
-        nrcJobNo: true,
-        styleItemSKU: true,
-        customerName: true,
-        fluteType: true,
-        status: true,
-        latestRate: true,
-        preRate: true,
-        length: true,
-        width: true,
-        height: true,
-        boxDimensions: true,
-        diePunchCode: true,
-        boardCategory: true,
-        noOfColor: true,
-        processColors: true,
-        specialColor1: true,
-        specialColor2: true,
-        specialColor3: true,
-        specialColor4: true,
-        overPrintFinishing: true,
-        topFaceGSM: true,
-        flutingGSM: true,
-        bottomLinerGSM: true,
-        decalBoardX: true,
-        lengthBoardY: true,
-        boardSize: true,
-        noUps: true,
-        artworkReceivedDate:true,
-        artworkApprovedDate: true,
-        shadeCardApprovalDate: true,
-        sharedCardDiffDate: true,
-        srNo: true,
-        jobDemand: true,
-        imageURL: true,
-        noOfSheets: true,
-        isMachineDetailsFilled: true,
-        createdAt: true,
-        updatedAt: true,
-        userId: true,
-        machineId: true,
-        clientId: true,
-        styleId: true,
+      include: {
+        // Include all relations to get actual data instead of empty arrays
+        purchaseOrders: true,
+        paperStores: true,
+        printingDetails: true,
+        corrugations: true,
+        fluteLaminateBoardConversions: true,
+        punchings: true,
+        sideFlapPastings: true,
+        qualityDepts: true,
+        dispatchProcesses: true,
+        artworks: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
+        machine: {
+          select: {
+            id: true,
+            description: true,
+            status: true
+          }
+        }
       }
     });
 
-    // Transform the data to match frontend expectations
+    // Transform the data to ensure relations are never null
     const safeJobs = jobs.map(job => ({
       ...job,
-      // Provide empty arrays for frontend compatibility
-      paperStores: [],
-      printingDetails: [],
-      corrugations: [],
-      fluteLaminateBoardConversions: [],
-      punchings: [],
-      sideFlapPastings: [],
-      qualityDepts: [],
-      dispatchProcesses: [],
-      artworks: [],
-      purchaseOrders: [],
+      // Ensure all relations are arrays (never null)
+      purchaseOrders: job.purchaseOrders || [],
+      paperStores: job.paperStores || [],
+      printingDetails: job.printingDetails || [],
+      corrugations: job.corrugations || [],
+      fluteLaminateBoardConversions: job.fluteLaminateBoardConversions || [],
+      punchings: job.punchings || [],
+      sideFlapPastings: job.sideFlapPastings || [],
+      qualityDepts: job.qualityDepts || [],
+      dispatchProcesses: job.dispatchProcesses || [],
+      artworks: job.artworks || [],
     }));
 
     res.status(200).json({
