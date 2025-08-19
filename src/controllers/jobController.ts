@@ -229,39 +229,61 @@ export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
     throw new AppError('imageURL must be a string', 400);
   }
 
-  const job = await prisma.job.update({
-    where: { nrcJobNo },
-    data: {
-      ...rest,
-      ...(imageURL !== undefined ? { imageURL } : {}),
-      sharedCardDiffDate: calculateSharedCardDiffDate(rest.shadeCardApprovalDate),
-    },
-  });
+  try {
+    // First check if job exists
+    const existingJob = await prisma.job.findUnique({
+      where: { nrcJobNo }
+    });
 
-  if (!job) {
-    throw new AppError('Job not found with that NRC Job No', 404);
+    if (!existingJob) {
+      throw new AppError('Job not found with that NRC Job No', 404);
+    }
+
+    // Now update the job
+    const job = await prisma.job.update({
+      where: { nrcJobNo },
+      data: {
+        ...rest,
+        ...(imageURL !== undefined ? { imageURL } : {}),
+        sharedCardDiffDate: calculateSharedCardDiffDate(rest.shadeCardApprovalDate),
+      },
+    });
+
+    // Log the job update action
+    if (req.user?.userId) {
+      await logUserActionWithResource(
+        req.user.userId,
+        ActionTypes.JOB_UPDATED,
+        JSON.stringify({
+          message: 'Job updated',
+          jobNo: nrcJobNo,
+          updatedFields: Object.keys(req.body)
+        }),
+        'Job',
+        nrcJobNo
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      data: job,
+      message: 'Job updated successfully',
+    });
+  } catch (error) {
+    // If it's already an AppError, re-throw it
+    if (error instanceof AppError) {
+      throw error;
+    }
+    
+    // Handle Prisma errors
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2025') {
+      throw new AppError('Job not found with that NRC Job No', 404);
+    }
+    
+    // Log unexpected errors
+    console.error('Error updating job:', error);
+    throw new AppError('Failed to update job', 500);
   }
-
-  // Log the job update action
-  if (req.user?.userId) {
-    await logUserActionWithResource(
-      req.user.userId,
-      ActionTypes.JOB_UPDATED,
-      JSON.stringify({
-        message: 'Job updated',
-        jobNo: nrcJobNo,
-        updatedFields: Object.keys(req.body)
-      }),
-      'Job',
-      nrcJobNo
-    );
-  }
-
-  res.status(200).json({
-    success: true,
-    data: job,
-    message: 'Job updated successfully',
-  });
 };
 
 export const recalculateSharedCardDiffDate = async (req: Request, res: Response) => {

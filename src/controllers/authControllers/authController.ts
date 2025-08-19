@@ -10,7 +10,7 @@ import { PhoneNumber } from 'libphonenumber-js';
 import { error } from 'console';
 import { logUserAction, logUserActionWithResource, ActionTypes } from '../../lib/logger';
 
-const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager','printer'];
+const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager','printer', 'corrugator','flutelaminator','pasting_operator','punching_operator'];
 
 export const login = async (req: Request, res: Response, next: NextFunction) => {
 
@@ -46,13 +46,22 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
     const userActive = user.isActive === true;
     // if (!user.isActive) throw new AppError('Account is deactivated', 401);
 
+    // Parse roles from JSON string or handle single role
+    let userRoles: string[];
+    try {
+      userRoles = JSON.parse(user.role);
+    } catch {
+      // Fallback for existing single roles
+      userRoles = [user.role];
+    }
+
     return res.status(200).json({
       success: true,
       acessToken: accessToken,
       data: {
         id: user.id,
         userActive,
-        role: user.role
+        roles: userRoles
       }
     });
 
@@ -78,12 +87,22 @@ export const logout = async (req: Request, res: Response) => {
 export const getProfile = async (req: Request, res: Response) => {
   const user = await prisma.user.findUnique({ where: { id: req.user?.userId } });
   if (!user) throw new AppError('User not found', 404);
+  
+  // Parse roles from JSON string or handle single role
+  let userRoles: string[];
+  try {
+    userRoles = JSON.parse(user.role);
+  } catch {
+    // Fallback for existing single roles
+    userRoles = [user.role];
+  }
+  
   res.json({
     success: true,
     data: {
       id: user.id,
       email: user.email,
-      role: user.role,
+      roles: userRoles,
       isActive: user.isActive,
       lastLogin: user.lastLogin,
       createdAt: user.createdAt,
@@ -93,16 +112,38 @@ export const getProfile = async (req: Request, res: Response) => {
 };
 
 export const addMember = async (req: Request, res: Response) => {
-  const { email, password, role, firstName, lastName } = req.body;
+  const { email, password, role, roles, firstName, lastName } = req.body;
   
   // Email is optional now, but if provided, validate format
   if (email && !validateEmail(email)) {
     throw new AppError('Invalid email format', 400);
   }
   
-  if (!VALID_ROLES.includes(role)) {
-    throw new AppError(`Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`, 400);
+  // Handle both single role (backward compatibility) and multiple roles
+  let userRoles: string[];
+  if (Array.isArray(roles)) {
+    // Multiple roles provided
+    if (roles.length === 0) {
+      throw new AppError('At least one role must be provided', 400);
+    }
+    
+    // Validate all roles
+    for (const roleItem of roles) {
+      if (!VALID_ROLES.includes(roleItem)) {
+        throw new AppError(`Invalid role: ${roleItem}. Must be one of: ${VALID_ROLES.join(', ')}`, 400);
+      }
+    }
+    userRoles = roles;
+  } else if (role) {
+    // Single role provided (backward compatibility)
+    if (!VALID_ROLES.includes(role)) {
+      throw new AppError(`Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`, 400);
+    }
+    userRoles = [role];
+  } else {
+    throw new AppError('Role or roles are required', 400);
   }
+  
   if (password.length < 6) {
     throw new AppError('Password must be at least 6 characters long', 400);
   }
@@ -158,12 +199,15 @@ export const addMember = async (req: Request, res: Response) => {
 
   const hashedPassword = await bcrypt.hash(password, 12);
 
+  // Store roles as JSON string
+  const rolesJson = JSON.stringify(userRoles);
+
   const user = await prisma.user.create({
     data: {
       id: customId,
       email,
       password: hashedPassword,
-      role,
+      role: rolesJson, // Store as JSON string
       isActive: true,
       name: `${firstName} ${lastName}`,
     }
@@ -174,7 +218,7 @@ export const addMember = async (req: Request, res: Response) => {
     await logUserActionWithResource(
       req.user.userId,
       ActionTypes.USER_CREATED,
-      `Created user: ${customId} with role: ${role}`,
+      `Created user: ${customId} with roles: ${userRoles.join(', ')}`,
       'User',
       customId
     );
@@ -186,16 +230,33 @@ export const addMember = async (req: Request, res: Response) => {
     data: {
       id: user.id,
       email: user.email,
-      role: user.role
+      roles: userRoles
     }
   });
 };
 
 export const getAllUsers = async (_req: Request, res: Response) => {
   const users = await prisma.user.findMany();
+  
+  // Parse roles for each user
+  const usersWithParsedRoles = users.map(user => {
+    let userRoles: string[];
+    try {
+      userRoles = JSON.parse(user.role);
+    } catch {
+      // Fallback for existing single roles
+      userRoles = [user.role];
+    }
+    
+    return {
+      ...user,
+      roles: userRoles
+    };
+  });
+  
   res.json({
     success: true,
-    data: users
+    data: usersWithParsedRoles
   });
 };
 
@@ -203,13 +264,22 @@ export const getUserById = async (req: Request, res: Response) => {
   const { id } = req.params;
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) throw new AppError('User not found', 404);
+  
+  // Parse roles from JSON string or handle single role
+  let userRoles: string[];
+  try {
+    userRoles = JSON.parse(user.role);
+  } catch {
+    // Fallback for existing single roles
+    userRoles = [user.role];
+  }
 
   res.json({
     success: true,
     data: {
       id: user.id,
       email: user.email,
-      role: user.role,
+      roles: userRoles,
       name: user.name,
       isActive: user.isActive,
       lastLogin: user.lastLogin,
@@ -221,17 +291,66 @@ export const getUserById = async (req: Request, res: Response) => {
 
 export const updateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { email, role, name, isActive } = req.body;
+  const { email, role, roles, firstName, lastName, isActive } = req.body;
 
-  const user = await prisma.user.update({
+  // Handle both single role and multiple roles
+  let rolesToUpdate: string;
+  if (Array.isArray(roles)) {
+    // Multiple roles provided
+    if (roles.length === 0) {
+      throw new AppError('At least one role must be provided', 400);
+    }
+    
+    // Validate all roles
+    for (const roleItem of roles) {
+      if (!VALID_ROLES.includes(roleItem)) {
+        throw new AppError(`Invalid role: ${roleItem}. Must be one of: ${VALID_ROLES.join(', ')}`, 400);
+      }
+    }
+    rolesToUpdate = JSON.stringify(roles);
+  } else if (role) {
+    // Single role provided (backward compatibility)
+    if (!VALID_ROLES.includes(role)) {
+      throw new AppError(`Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`, 400);
+    }
+    rolesToUpdate = JSON.stringify([role]);
+  } else {
+    throw new AppError('Role or roles are required', 400);
+  }
+
+  // Check for existing user with same email only if email is provided
+  if (email) {
+    const existing = await prisma.user.findFirst({ where: { email } });
+    if (existing && existing.id !== id) { // Exclude the current user from the check
+      throw new AppError('User with this email already exists', 400);
+    }
+  }
+
+  const updatedUser = await prisma.user.update({
     where: { id },
-    data: { email, role, name , isActive }
+    data: {
+      email,
+      role: rolesToUpdate,
+      name: firstName && lastName ? `${firstName} ${lastName}` : undefined,
+      isActive
+    }
   });
+
+  // Parse roles for response
+  let userRoles: string[];
+  try {
+    userRoles = JSON.parse(updatedUser.role);
+  } catch {
+    userRoles = [updatedUser.role];
+  }
 
   res.json({
     success: true,
     message: 'User updated successfully',
-    data: user
+    data: {
+      ...updatedUser,
+      roles: userRoles
+    }
   });
 };
 
@@ -244,9 +363,12 @@ export const deleteUser = async (req: Request, res: Response) => {
   });
 };
 
-export const getRoles = (_req: Request, res: Response) => {
+export const getRoles = async (_req: Request, res: Response) => {
   res.json({
     success: true,
-    data: VALID_ROLES
+    data: {
+      roles: VALID_ROLES,
+      description: 'Available roles for user assignment. You can assign multiple roles by sending an array.'
+    }
   });
 };
