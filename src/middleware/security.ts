@@ -12,7 +12,10 @@ export const securityHeaders = (req: Request, res: Response, next: NextFunction)
     res.setHeader('X-XSS-Protection', '1; mode=block');
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     // More permissive CSP for development
-    res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* https://nrc-backend-his4.onrender.com;");
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' http://localhost:* https://nrc-backend-his4.onrender.com;"
+    );
   }
   
   next();
@@ -66,12 +69,20 @@ export const rateLimiter = (maxRequests: number = 100, windowMs: number = 15 * 6
   return (req: Request, res: Response, next: NextFunction) => {
     const ip = req.ip || req.connection.remoteAddress || 'unknown';
     const now = Date.now();
-    
-    const userRequests = requestCounts.get(ip);
-    
+
+    // this particular things expires entries to prevent memory leaks
+    for (const [key, value] of requestCounts.entries()) {
+      if (value.resetTime <= now) {
+        requestCounts.delete(key);
+      }
+    }
+
+    let userRequests = requestCounts.get(ip);
+
     if (!userRequests || now > userRequests.resetTime) {
       // Reset or initialize
-      requestCounts.set(ip, { count: 1, resetTime: now + windowMs });
+      userRequests = { count: 1, resetTime: now + windowMs };
+      requestCounts.set(ip, userRequests);
     } else {
       userRequests.count++;
       
@@ -87,7 +98,7 @@ export const rateLimiter = (maxRequests: number = 100, windowMs: number = 15 * 6
     // Add rate limit headers
     res.setHeader('X-RateLimit-Limit', maxRequests.toString());
     res.setHeader('X-RateLimit-Remaining', Math.max(0, maxRequests - (userRequests?.count || 0)).toString());
-    res.setHeader('X-RateLimit-Reset', new Date(now + windowMs).toISOString());
+    res.setHeader('X-RateLimit-Reset', new Date(userRequests.resetTime).toISOString());
     
     next();
   };
@@ -124,4 +135,4 @@ function parseSize(size: string): number {
   
   const [, value, unit] = match;
   return parseInt(value) * (units[unit] || 1);
-} 
+}

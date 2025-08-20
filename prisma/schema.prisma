@@ -8,7 +8,469 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-enum UserRole{
+model User {
+  id             String          @id
+  email          String?
+  phoneNumber    String?
+  password       String
+  role           String
+  name           String?
+  isActive       Boolean         @default(true)
+  lastLogin      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  activityLogs   ActivityLog[]   @relation("UserActivityLogs")
+  jobs           Job[]           @relation("UserJobs")
+  purchaseOrders PurchaseOrder[] @relation("UserPurchaseOrders")
+}
+
+model Job {
+  id                            Int                            @id @default(autoincrement())
+  nrcJobNo                      String                         @unique
+  styleItemSKU                  String
+  customerName                  String
+  fluteType                     String?
+  status                        JobStatus                      @default(ACTIVE)
+  latestRate                    Float?
+  preRate                       Float?
+  length                        Float?
+  width                         Float?
+  height                        String?
+  boxDimensions                 String?
+  diePunchCode                  Float?
+  boardCategory                 String?
+  noOfColor                     String?
+  processColors                 String?
+  specialColor1                 String?
+  specialColor2                 String?
+  specialColor3                 String?
+  specialColor4                 String?
+  overPrintFinishing            String?
+  topFaceGSM                    String?
+  flutingGSM                    String?
+  bottomLinerGSM                String?
+  decalBoardX                   String?
+  lengthBoardY                  String?
+  boardSize                     String?
+  noUps                         String?
+  artworkReceivedDate           DateTime?
+  artworkApprovedDate           DateTime?
+  shadeCardApprovalDate         DateTime?
+  sharedCardDiffDate            Int?
+  srNo                          Float?
+  jobDemand                     JobDemand                      @default(medium)
+  imageURL                      String?
+  noOfSheets                    Int?
+  isMachineDetailsFilled        Boolean                        @default(false)
+  createdAt                     DateTime?                      @default(now())
+  updatedAt                     DateTime?                      @updatedAt
+  userId                        String?
+  machineId                     String?
+  clientId                      String?
+  styleId                       String?
+  artworks                      ArtWork[]                      @relation("JobArtworksByNrcJobNo")
+  corrugations                  Corrugation[]                  @relation("JobToCorrugation")
+  dispatchProcesses             DispatchProcess[]              @relation("JobToDispatchProcess")
+  fluteLaminateBoardConversions FluteLaminateBoardConversion[] @relation("JobToFluteLaminateBoardConversion")
+  machine                       Machine?                       @relation(fields: [machineId], references: [id])
+  user                          User?                          @relation("UserJobs", fields: [userId], references: [id])
+  paperStores                   PaperStore[]                   @relation("JobToPaperStore")
+  printingDetails               PrintingDetails[]              @relation("JobToPrintingDetails")
+  punchings                     Punching[]                     @relation("JobToPunching")
+  purchaseOrders                PurchaseOrder[]                @relation("JobToPurchaseOrders")
+  qualityDepts                  QualityDept[]                  @relation("JobToQualityDept")
+  sideFlapPastings              SideFlapPasting[]              @relation("JobToSideFlapPasting")
+}
+
+model Machine {
+  id          String        @id @default(cuid())
+  unit        String
+  machineCode String
+  machineType String
+  description String
+  type        String
+  capacity    Int
+  remarks     String?
+  status      MachineStatus @default(available)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  jobs        Job[]
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  details   String?
+  nrcJobNo  String?
+  createdAt DateTime @default(now())
+  user      User?    @relation("UserActivityLogs", fields: [userId], references: [id])
+}
+
+model Reel {
+  id             Int                  @id @default(autoincrement())
+  reelNo         String               @unique
+  size           String
+  quality        String
+  gsm            String
+  specification  String
+  openingStock   Float
+  closingStock   Float
+  createdAt      DateTime             @default(now())
+  inwardEntries  RawMaterialInward[]
+  outwardEntries RawMaterialOutward[]
+}
+
+model RawMaterialInward {
+  id             Int      @id @default(autoincrement())
+  invoiceNo      String
+  invoiceDate    DateTime
+  noReelReceived Int
+  receiptDate    DateTime
+  reelId         Int
+  createdAt      DateTime @default(now())
+  reel           Reel     @relation(fields: [reelId], references: [id])
+}
+
+model RawMaterialOutward {
+  id          Int      @id @default(autoincrement())
+  requestedBy String
+  issuedQty   Float
+  weight      Float
+  jobName     String
+  qtySheet    Int
+  issueDate   DateTime
+  reelId      Int
+  createdAt   DateTime @default(now())
+  reel        Reel     @relation(fields: [reelId], references: [id])
+}
+
+model ArtWork {
+  id                       Int       @id @default(autoincrement())
+  nrcJobNo                 String
+  jobCode                  String
+  customerName             String
+  plateJobCode             String
+  style                    String
+  productRange             String
+  productCategory          String
+  boxType                  String
+  length                   Float
+  width                    Float
+  height                   Float
+  processColor1            String?
+  processColor2            String?
+  processColor3            String?
+  processColor4            String?
+  finishing                String?
+  artworkReceived          DateTime?
+  sentForApprovalDate      DateTime?
+  approvedDate             DateTime?
+  plateOutputMachine1      String?
+  plateOutputMachine2      String?
+  bottomPanelColorCode     String?
+  artworkLayoutChange      Boolean
+  dimensionChange          Boolean
+  jobSpecification         String?
+  remarks                  String?
+  shadeCardToBeClosed      Boolean
+  dieReference             String?
+  noOfUps                  Int?
+  boardSizeKeylineCm       String?
+  dieSupplied              Boolean
+  typeOfBoard              String?
+  typeOfPunchAndDieGripper String?
+  imagesUpload             String?
+  approvalDate             DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  job                      Job       @relation("JobArtworksByNrcJobNo", fields: [nrcJobNo], references: [nrcJobNo])
+}
+
+model PrintingApproval {
+  id            Int      @id @default(autoincrement())
+  size          String
+  gsm           String
+  sheets        Int
+  mill          String
+  weight        Float
+  quality       String
+  machine5Color Boolean
+  machine6Color Boolean
+  machine8Color Boolean
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model PurchaseOrder {
+  id                    Int                 @id @default(autoincrement())
+  boardSize             String?
+  customer              String
+  deliveryDate          DateTime?
+  dieCode               Float?
+  dispatchDate          DateTime?
+  dispatchQuantity      Int?
+  fluteType             String?
+  jockeyMonth           String?
+  noOfUps               Int?
+  nrcDeliveryDate       DateTime?
+  noOfSheets            Int?
+  poDate                DateTime?
+  poNumber              String?
+  pendingQuantity       Int?
+  pendingValidity       Float?
+  plant                 String?
+  shadeCardApprovalDate DateTime?
+  sharedCardDiffDate    Int?
+  srNo                  Float?
+  style                 String?
+  totalPOQuantity       Int?
+  unit                  String?
+  status                PurchaseOrderStatus @default(created)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  jobNrcJobNo           String?
+  userId                String?
+  job                   Job?                @relation("JobToPurchaseOrders", fields: [jobNrcJobNo], references: [nrcJobNo])
+  user                  User?               @relation("UserPurchaseOrders", fields: [userId], references: [id])
+}
+
+model PaperStore {
+  id                  Int                  @id @default(autoincrement())
+  jobNrcJobNo         String
+  status              StepStatus           @default(in_progress)
+  sheetSize           String?
+  quantity            Int?
+  available           Int?
+  issuedDate          DateTime?
+  mill                String?
+  extraMargin         String?
+  gsm                 String?
+  quality             String?
+  jobStepId           Int?                 @unique
+  job                 Job                  @relation("JobToPaperStore", fields: [jobNrcJobNo], references: [nrcJobNo])
+  jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPaperStore")
+}
+
+model ProductionPlanning {
+  id                       Int                           @id @default(autoincrement())
+  corrugationId            Int?
+  dieCuttingId             Int?
+  dispatchId               Int?
+  fluteLaminateBoardConvId Int?
+  printingDetailsId        Int?
+  punchingId               Int?
+  qualityDeptId            Int?
+  sideFlapPastingId        Int?
+  paperStoreId             Int?
+  createdAt                DateTime                      @default(now())
+  updatedAt                DateTime                      @updatedAt
+  corrugation              Corrugation?                  @relation("ProductionPlanningToCorrugation", fields: [corrugationId], references: [id])
+  dieCutting               DieCutting?                   @relation(fields: [dieCuttingId], references: [id])
+  dispatch                 DispatchProcess?              @relation("ProductionPlanningToDispatchProcess", fields: [dispatchId], references: [id])
+  fluteLaminateBoardConv   FluteLaminateBoardConversion? @relation("ProductionPlanningToFluteLaminateBoardConversion", fields: [fluteLaminateBoardConvId], references: [id])
+  paperStore               PaperStore?                   @relation("ProductionPlanningToPaperStore", fields: [paperStoreId], references: [id])
+  printingDetails          PrintingDetails?              @relation("ProductionPlanningToPrintingDetails", fields: [printingDetailsId], references: [id])
+  punching                 Punching?                     @relation("ProductionPlanningToPunching", fields: [punchingId], references: [id])
+  qualityDept              QualityDept?                  @relation("ProductionPlanningToQualityDept", fields: [qualityDeptId], references: [id])
+  sideFlapPasting          SideFlapPasting?              @relation("ProductionPlanningToSideFlapPasting", fields: [sideFlapPastingId], references: [id])
+}
+
+model PrintingDetails {
+  id                  Int                  @id @default(autoincrement())
+  jobNrcJobNo         String
+  status              StepStatus           @default(in_progress)
+  date                DateTime?
+  shift               String?
+  oprName             String?
+  noOfColours         Int?
+  inksUsed            String?
+  quantity            Int?
+  wastage             Int?
+  coatingType         String?
+  separateSheets      Int?
+  extraSheets         Int?
+  machine             String?
+  jobStepId           Int?                 @unique
+  job                 Job                  @relation("JobToPrintingDetails", fields: [jobNrcJobNo], references: [nrcJobNo])
+  jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPrintingDetails")
+}
+
+model Corrugation {
+  id                  Int                  @id @default(autoincrement())
+  jobNrcJobNo         String
+  status              StepStatus           @default(in_progress)
+  date                DateTime?
+  shift               String?
+  oprName             String?
+  machineNo           String?
+  quantity            Int?
+  size                String?
+  gsm1                String?
+  gsm2                String?
+  flute               String?
+  remarks             String?
+  qcCheckSignBy       String?
+  jobStepId           Int?                 @unique
+  job                 Job                  @relation("JobToCorrugation", fields: [jobNrcJobNo], references: [nrcJobNo])
+  jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToCorrugation")
+}
+
+model FluteLaminateBoardConversion {
+  id                  Int                  @id @default(autoincrement())
+  jobNrcJobNo         String
+  status              StepStatus           @default(in_progress)
+  date                DateTime?
+  shift               String?
+  operatorName        String?
+  film                String?
+  quantity            Int?
+  qcCheckSignBy       String?
+  adhesive            String?
+  wastage             Int?
+  jobStepId           Int?                 @unique
+  job                 Job                  @relation("JobToFluteLaminateBoardConversion", fields: [jobNrcJobNo], references: [nrcJobNo])
+  jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToFluteLaminateBoardConversion")
+}
+
+model Punching {
+  id                  Int                  @id @default(autoincrement())
+  jobNrcJobNo         String
+  status              StepStatus           @default(in_progress)
+  date                DateTime?
+  shift               String?
+  operatorName        String?
+  quantity            Int?
+  machine             String?
+  qcCheckSignBy       String?
+  die                 String?
+  wastage             Int?
+  remarks             String?
+  jobStepId           Int?                 @unique
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPunching")
+  job                 Job                  @relation("JobToPunching", fields: [jobNrcJobNo], references: [nrcJobNo])
+  jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
+}
+
+model SideFlapPasting {
+  id                  Int                  @id @default(autoincrement())
+  jobNrcJobNo         String
+  status              StepStatus           @default(in_progress)
+  machineNo           String?
+  date                DateTime?
+  shift               String?
+  operatorName        String?
+  adhesive            String?
+  quantity            Int?
+  wastage             Int?
+  qcCheckSignBy       String?
+  remarks             String?
+  jobStepId           Int?                 @unique
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToSideFlapPasting")
+  job                 Job                  @relation("JobToSideFlapPasting", fields: [jobNrcJobNo], references: [nrcJobNo])
+  jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
+}
+
+model QualityDept {
+  id                  Int                  @id @default(autoincrement())
+  jobNrcJobNo         String
+  status              StepStatus           @default(in_progress)
+  date                DateTime?
+  shift               String?
+  operatorName        String?
+  checkedBy           String?
+  quantity            Int?
+  rejectedQty         Int?
+  reasonForRejection  String?
+  remarks             String?
+  qcCheckSignBy       String?
+  jobStepId           Int?                 @unique
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToQualityDept")
+  job                 Job                  @relation("JobToQualityDept", fields: [jobNrcJobNo], references: [nrcJobNo])
+  jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
+}
+
+model DispatchProcess {
+  id                  Int                  @id @default(autoincrement())
+  jobNrcJobNo         String
+  status              StepStatus           @default(in_progress)
+  date                DateTime?
+  shift               String?
+  operatorName        String?
+  quantity            Int?
+  dispatchNo          String?
+  dispatchDate        DateTime?
+  remarks             String?
+  balanceQty          Int?
+  qcCheckSignBy       String?
+  jobStepId           Int?                 @unique
+  job                 Job                  @relation("JobToDispatchProcess", fields: [jobNrcJobNo], references: [nrcJobNo])
+  jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
+  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToDispatchProcess")
+}
+
+model DieCutting {
+  id                 Int                  @id @default(autoincrement())
+  details            String?
+  productionPlanning ProductionPlanning[]
+}
+
+model JobPlanning {
+  jobPlanId Int       @id @default(autoincrement())
+  nrcJobNo  String
+  jobDemand JobDemand
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  steps     JobStep[]
+}
+
+model JobStep {
+  id              Int                           @id @default(autoincrement())
+  stepNo          Int
+  stepName        String
+  machineDetails  Json[]
+  jobPlanningId   Int
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+  status          JobStepStatus                 @default(planned)
+  user            String?
+  startDate       DateTime?
+  endDate         DateTime?
+  corrugation     Corrugation?
+  dispatchProcess DispatchProcess?
+  flutelam        FluteLaminateBoardConversion?
+  jobPlanning     JobPlanning                   @relation(fields: [jobPlanningId], references: [jobPlanId])
+  paperStore      PaperStore?
+  printingDetails PrintingDetails?
+  punching        Punching?
+  qualityDept     QualityDept?
+  sideFlapPasting SideFlapPasting?
+}
+
+model CompletedJob {
+  id                   Int       @id @default(autoincrement())
+  nrcJobNo             String
+  jobPlanId            Int
+  jobDemand            JobDemand
+  jobDetails           Json
+  purchaseOrderDetails Json?
+  allSteps             Json
+  allStepDetails       Json
+  completedAt          DateTime  @default(now())
+  completedBy          String?
+  totalDuration        Int?
+  finalStatus          String    @default("completed")
+  remarks              String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+enum UserRole {
   admin
   planner
   production_head
@@ -50,477 +512,8 @@ enum JobDemand {
   low
 }
 
-model User {
-  id        String    @id // Custom NRC format: NRC001, NRC002, etc.
-  email     String?
-  phoneNumber String?
-  password  String
-  role      String    // Changed from UserRole enum to String for multiple roles support
-  name      String?
-  isActive  Boolean   @default(true)
-  lastLogin DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  // Relations
-  jobs          Job[]           @relation("UserJobs")
-  activityLogs  ActivityLog[]   @relation("UserActivityLogs")
-  purchaseOrders PurchaseOrder[] @relation("UserPurchaseOrders")
-}
-
-
-
-model Job {
-  id                    Int             @id @default(autoincrement())
-  nrcJobNo              String          @unique // "00 NRC Job#" - Auto-generated, required
-  styleItemSKU          String          // "01 Style Item SKU" - MANDATORY
-  customerName          String          // "02 Customer Name" - MANDATORY
-  fluteType             String?         // "03 Flute Type"
-  status                JobStatus @default(ACTIVE) // "04 Job Status Active/Inactive"
-  latestRate            Float?          // "05 Latest Rate"
-  preRate               Float?          // "06 Pre Rate"
-  length                Float?          // "07 L"
-  width                 Float?          // "08 W"
-  height                String?          // "09 H"
-  boxDimensions         String?         // "10 Box Dimensions"
-  diePunchCode          Float?          // "11 Die Punch Code"
-  boardCategory         String?         // "12 Board Category"
-  noOfColor             String?            // "13 No. Of  COLOR"
-  processColors         String?         // "14 Process Colors"
-  specialColor1         String?         // "15 Special Color 1"
-  specialColor2         String?         // "16 Special Color 2"
-  specialColor3         String?         // "17 Special Color 3"
-  specialColor4         String?         // "18 Special Color 4"
-  overPrintFinishing    String?         // "19 Over Print Finishing"
-  topFaceGSM            String?         // "20 Top Face GSM"
-  flutingGSM            String?         // "21 Fluting GSM"
-  bottomLinerGSM        String?         // "22 Bottom Liner GSM"
-  decalBoardX           String?         // "23 Decal Board X"
-  lengthBoardY          String?         // "24 Length Board Y"
-  boardSize             String?         // "25 BOARD SIZE"
-  noUps                 String?            // "26 NO UPS"
-  artworkReceivedDate   DateTime?       // "27 Art work Recevied date"
-  artworkApprovedDate   DateTime?       // "28 Art work  Approved Date"
-  shadeCardApprovalDate DateTime?       // "29 Shade Card Approval Date"
-  sharedCardDiffDate    Int?            // "30 Shared Card Diff Date" - Difference in days between current date and shadeCardApprovalDate
-  srNo                  Float?          // "Sr#"
-  jobDemand             JobDemand       @default(medium) // High, Medium, Low
-  imageURL              String?         // New field for job image URL
-  noOfSheets            Int?            // Number of sheets for the job
-  isMachineDetailsFilled Boolean        @default(false) // Track if any step has machine details filled
-  createdAt             DateTime?       @default(now())
-  updatedAt             DateTime?        @updatedAt
-  user                  User?           @relation("UserJobs", fields: [userId], references: [id])
-  userId                String?
-  machine               Machine?        @relation(fields: [machineId], references: [id])
-  machineId             String?
-  paperStores           PaperStore[]    @relation("JobToPaperStore")
-  printingDetails       PrintingDetails[] @relation("JobToPrintingDetails")
-  corrugations          Corrugation[]   @relation("JobToCorrugation")
-  fluteLaminateBoardConversions FluteLaminateBoardConversion[] @relation("JobToFluteLaminateBoardConversion")
-  punchings             Punching[]       @relation("JobToPunching")
-  sideFlapPastings      SideFlapPasting[] @relation("JobToSideFlapPasting")
-  clientId              String?
-  styleId               String?
-  qualityDepts          QualityDept[]    @relation("JobToQualityDept")
-  dispatchProcesses     DispatchProcess[] @relation("JobToDispatchProcess")
-  artworks              ArtWork[]         @relation("JobArtworksByNrcJobNo")
-  purchaseOrders        PurchaseOrder[]   @relation("JobToPurchaseOrders")
-}
-
-model Machine {
-  id           String   @id @default(cuid())
-  unit         String   // e.g., NR1, MK, DG, etc.
-  machineCode  String   // e.g., PR01, CR01, FL01, etc.
-  machineType  String   // e.g., Printing, Corrugation, Flute Laminator, etc.
-  description  String   // e.g., Heidelberg Printing Machine, Corrugation Machine 1, etc.
-  type         String   // e.g., Automatic, Manual, Semi Auto
-  capacity     Int      // Capacity (8 Hours), e.g., 27000
-  remarks      String?  // Remarks, e.g., "Up to 8 color with varnish"
-  status       MachineStatus @default(available)
-  isActive     Boolean  @default(true)
-  jobs         Job[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-} 
-
-model ActivityLog {
-  id        String   @id @default(cuid())
-  user      User?    @relation("UserActivityLogs", fields: [userId], references: [id])
-  userId    String?
-  action    String
-  details   String?
-  nrcJobNo  String?  // Add nrcJobNo field to store the job number
-  createdAt DateTime @default(now())
-}
-
-model Reel {
-  id             Int                  @id @default(autoincrement())
-  reelNo         String               @unique
-  size           String
-  quality        String
-  gsm            String
-  specification  String
-  openingStock   Float
-  closingStock   Float
-  inwardEntries  RawMaterialInward[] // One-to-many relation
-  outwardEntries RawMaterialOutward[] // One-to-many relation
-  createdAt      DateTime             @default(now())
-}
-
-model RawMaterialInward {
-  id             Int      @id @default(autoincrement()) // Sr No
-  invoiceNo      String
-  invoiceDate    DateTime
-  noReelReceived Int
-  receiptDate    DateTime
-  reel           Reel     @relation(fields: [reelId], references: [id])
-  reelId         Int
-  createdAt      DateTime @default(now())
-}
-
-model RawMaterialOutward {
-  id          Int      @id @default(autoincrement()) // Sr No
-  requestedBy String
-  issuedQty   Float
-  weight      Float
-  jobName     String
-  qtySheet    Int
-  issueDate   DateTime
-  reel        Reel     @relation(fields: [reelId], references: [id])
-  reelId      Int
-  createdAt   DateTime @default(now())
-}
-
-model ArtWork {
-  id                    Int             @id @default(autoincrement())
-  nrcJobNo              String
-  job                   Job             @relation("JobArtworksByNrcJobNo", fields: [nrcJobNo], references: [nrcJobNo])
-  jobCode                 String // Job code
-  customerName            String
-  plateJobCode            String
-  style                   String
-  productRange            String
-  productCategory         String
-  boxType                 String
-  length                  Float
-  width                   Float
-  height                  Float
-  processColor1           String?
-  processColor2           String?
-  processColor3           String?
-  processColor4           String?
-  finishing               String?
-  artworkReceived         DateTime?
-  sentForApprovalDate     DateTime?
-  approvedDate            DateTime?
-  plateOutputMachine1     String? // Plate output on machine category 1
-  plateOutputMachine2     String? // Plate output on machine category 2
-  bottomPanelColorCode    String?
-  artworkLayoutChange     Boolean // true if layout changed
-  dimensionChange         Boolean // true if dimension changed
-  jobSpecification        String? // Board substrate/specification
-  remarks                 String?
-  shadeCardToBeClosed     Boolean // true if shade card to be closed
-  dieReference            String?
-  noOfUps                 Int?
-  boardSizeKeylineCm      String?
-  dieSupplied             Boolean
-  typeOfBoard             String?
-  typeOfPunchAndDieGripper String?
-  imagesUpload            String? // Could be a URL or comma-separated URLs
-  approvalDate            DateTime?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
-}
-
-model PrintingApproval {
-  id            Int      @id @default(autoincrement())
-  size          String
-  gsm           String
-  sheets        Int
-  mill          String
-  weight        Float
-  quality       String
-  machine5Color Boolean // Approval or presence for 5 color press
-  machine6Color Boolean // Approval or presence for 6 color press
-  machine8Color Boolean // Approval or presence for 8 color press
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-model PurchaseOrder {
-  id                    Int       @id @default(autoincrement())
-  boardSize             String? // "Board Size"
-  customer              String // "Customer"
-  deliveryDate          DateTime? // "Delivery Date"
-  dieCode               Float? // "Die Code"
-  dispatchDate          DateTime? // "Dispatch Date"
-  dispatchQuantity      Int? // "Dispatch Quantity"
-  fluteType             String? // "Flute Type"
-  jockeyMonth           String? // "Jockey Month"
-  noOfUps               Int? // "NO.of ups"
-  nrcDeliveryDate       DateTime? // "NRC Delivery Date"
-  noOfSheets            Int? // "No. Of Sheets"
-  poDate                DateTime? // "PO Date"
-  poNumber              String? // "PO.NUMBER"
-  pendingQuantity       Int? // "Pending  Quantity"
-  pendingValidity       Float? // "Pending Validity"
-  plant                 String? // "Plant"
-  shadeCardApprovalDate DateTime? // "Shade Card Approval Date"
-  sharedCardDiffDate    Int? // "Shared Card Diff Date" - Difference in days between current date and shadeCardApprovalDate
-  srNo                  Float? // "Sr #"
-  style                 String? // "Style"
-  totalPOQuantity       Int? // "Total PO Quantity"
-  unit                  String? // "Unit"
-  status                PurchaseOrderStatus @default(created)
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  jobNrcJobNo           String?   // Optional foreign key to Job.nrcJobNo
-  job                   Job?      @relation("JobToPurchaseOrders", fields: [jobNrcJobNo], references: [nrcJobNo])
-  user                  User?     @relation("UserPurchaseOrders", fields: [userId], references: [id])
-  userId                String?
-}
-
-model PaperStore {
-  id                 Int                  @id @default(autoincrement())
-  jobNrcJobNo        String
-  job                Job                  @relation("JobToPaperStore", fields: [jobNrcJobNo], references: [nrcJobNo])
-  status             StepStatus           @default(in_progress)
-  sheetSize          String?
-  quantity           Int?                 // Standardized quantity field (was: required)
-  available          Int?                 // Available quantity
-  issuedDate         DateTime?
-  mill               String?
-  extraMargin        String?
-  gsm                String?
-  quality            String?
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPaperStore")
-  jobStepId          Int? @unique
-  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
-}
-
-model ProductionPlanning {
-  id                       Int                           @id @default(autoincrement())
-  corrugation              Corrugation?                  @relation("ProductionPlanningToCorrugation", fields: [corrugationId], references: [id])
-  corrugationId            Int?
-  dieCutting               DieCutting?                   @relation(fields: [dieCuttingId], references: [id])
-  dieCuttingId             Int?
-  dispatch                 DispatchProcess?              @relation("ProductionPlanningToDispatchProcess", fields: [dispatchId], references: [id])
-  dispatchId               Int?
-  fluteLaminateBoardConv   FluteLaminateBoardConversion? @relation("ProductionPlanningToFluteLaminateBoardConversion", fields: [fluteLaminateBoardConvId], references: [id])
-  fluteLaminateBoardConvId Int?
-  printingDetails          PrintingDetails?              @relation("ProductionPlanningToPrintingDetails", fields: [printingDetailsId], references: [id])
-  printingDetailsId        Int?
-  punching                 Punching?                     @relation("ProductionPlanningToPunching", fields: [punchingId], references: [id])
-  punchingId               Int?
-  qualityDept              QualityDept?                  @relation("ProductionPlanningToQualityDept", fields: [qualityDeptId], references: [id])
-  qualityDeptId            Int?
-  sideFlapPasting          SideFlapPasting?              @relation("ProductionPlanningToSideFlapPasting", fields: [sideFlapPastingId], references: [id])
-  sideFlapPastingId        Int?
-  paperStore               PaperStore?                   @relation("ProductionPlanningToPaperStore", fields: [paperStoreId], references: [id])
-  paperStoreId             Int?
-  createdAt                DateTime                      @default(now())
-  updatedAt                DateTime                      @updatedAt
-}
-
-model PrintingDetails {
-  id                 Int                  @id @default(autoincrement())
-  jobNrcJobNo        String
-  job                Job                  @relation("JobToPrintingDetails", fields: [jobNrcJobNo], references: [nrcJobNo])
-  status             StepStatus           @default(in_progress)
-  date               DateTime?
-  shift              String?
-  oprName            String? // OPR Name
-  noOfColours        Int?
-  inksUsed           String?
-  quantity           Int?                 // Standardized quantity field (was: postPrintingFinishingOkQty)
-  wastage             Int?
-  coatingType         String? // Gloss or Matt
-  separateSheets       Int?
-  extraSheets          Int?
-  machine            String? // e.g., "NEW-SM102"
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPrintingDetails")
-  jobStepId          Int? @unique
-  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
-}
-
-model Corrugation {
-  id                 Int                  @id @default(autoincrement())
-  jobNrcJobNo        String
-  job                Job                  @relation("JobToCorrugation", fields: [jobNrcJobNo], references: [nrcJobNo])
-  status             StepStatus           @default(in_progress)
-  date               DateTime?
-  shift              String?
-  oprName            String? // OPR Name
-  machineNo          String? // M/c No
-  quantity           Int?                 // Standardized quantity field (was: noOfSheets)
-  size               String?
-  gsm1               String?
-  gsm2               String?
-  flute              String?
-  remarks            String?
-  qcCheckSignBy      String? // QC Check & Sign BY
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToCorrugation")
-  jobStepId          Int? @unique
-  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
-}
-
-model FluteLaminateBoardConversion {
-  id                 Int                  @id @default(autoincrement())
-  jobNrcJobNo        String
-  job                Job                  @relation("JobToFluteLaminateBoardConversion", fields: [jobNrcJobNo], references: [nrcJobNo])
-  status             StepStatus           @default(in_progress)
-  date               DateTime?
-  shift              String?
-  operatorName       String?
-  film               String?
-  quantity           Int?                 // Standardized quantity field (was: okQty)
-  qcCheckSignBy      String?
-  adhesive          String?
-  wastage             Int?
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToFluteLaminateBoardConversion")
-  jobStepId          Int? @unique
-  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
-}
-
-model Punching {
-  id                 Int                  @id @default(autoincrement())
-  jobNrcJobNo        String
-  job                Job                  @relation("JobToPunching", fields: [jobNrcJobNo], references: [nrcJobNo])
-  status             StepStatus           @default(in_progress)
-  date               DateTime?
-  shift              String?
-  operatorName       String?
-  quantity           Int?                 // Standardized quantity field (was: okQty)
-  machine            String?
-  qcCheckSignBy      String?
-  die                String?
-  wastage             Int?
-  remarks            String?
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPunching")
-  jobStepId          Int? @unique
-  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
-}
-
-model SideFlapPasting {
-  id                 Int                  @id @default(autoincrement())
-  jobNrcJobNo        String
-  job                Job                  @relation("JobToSideFlapPasting", fields: [jobNrcJobNo], references: [nrcJobNo])
-  status             StepStatus           @default(in_progress)
-  machineNo          String?
-  date               DateTime?
-  shift              String?
-  operatorName       String?
-  adhesive          String?
-  quantity           Int?                 // Already standardized
-  wastage             Int?
-  qcCheckSignBy      String?
-  remarks            String?
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToSideFlapPasting")
-  jobStepId          Int? @unique
-  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
-}
-
-model QualityDept {
-  id                 Int                  @id @default(autoincrement())
-  jobNrcJobNo        String
-  job                Job                  @relation("JobToQualityDept", fields: [jobNrcJobNo], references: [nrcJobNo])
-  status             StepStatus           @default(in_progress)
-  date               DateTime?
-  shift              String?
-  operatorName       String?
-  checkedBy          String?
-  quantity           Int?                 // Standardized quantity field (was: passQty - represents passed quantity)
-  rejectedQty        Int?                 // Keep rejected quantity separate
-  reasonForRejection String?
-  remarks            String?
-  qcCheckSignBy      String?
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToQualityDept")
-  jobStepId          Int? @unique
-  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
-}
-
-model DispatchProcess {
-  id                 Int                  @id @default(autoincrement())
-  jobNrcJobNo        String
-  job                Job                  @relation("JobToDispatchProcess", fields: [jobNrcJobNo], references: [nrcJobNo])
-  status             StepStatus           @default(in_progress)
-  date               DateTime?
-  shift              String?
-  operatorName       String?
-  quantity           Int?                 // Standardized quantity field (was: noOfBoxes)
-  dispatchNo         String?
-  dispatchDate       DateTime?
-  remarks            String?
-  balanceQty         Int?                 // Keep balance quantity separate
-  qcCheckSignBy      String?
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToDispatchProcess")
-  jobStepId          Int? @unique
-  jobStep            JobStep?             @relation(fields: [jobStepId], references: [id])
-}
-
-model DieCutting {
-  id                 Int                  @id @default(autoincrement())
-  details            String?
-  productionPlanning ProductionPlanning[] 
-}
-
-model JobPlanning {
-  jobPlanId   Int        @id @default(autoincrement())
-  nrcJobNo    String     // Foreign key to Job.nrcJobNo
-  jobDemand   JobDemand
-  steps       JobStep[]
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-}
-
-model JobStep {
-  id            Int          @id @default(autoincrement())
-  stepNo        Int
-  stepName      String
-  machineDetails Json[]     // Array of JSON objects for machine details
-  jobPlanning   JobPlanning  @relation(fields: [jobPlanningId], references: [jobPlanId])
-  jobPlanningId Int
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-
-  // New fields
-  status        JobStepStatus @default(planned)
-  user          String?       // User ID from request header
-  startDate     DateTime?     // Date when job step is started
-  endDate       DateTime?     // Date when job step is ended
-
-  // Centralized optional relations to step detail models
-  paperStore          PaperStore?
-  printingDetails     PrintingDetails?
-  corrugation         Corrugation?
-  flutelam            FluteLaminateBoardConversion?
-  punching            Punching?
-  sideFlapPasting     SideFlapPasting?
-  qualityDept         QualityDept?
-  dispatchProcess     DispatchProcess?
-}
-
 enum JobStepStatus {
   planned
   start
   stop
-}
-
-model CompletedJob {
-  id                    Int             @id @default(autoincrement())
-  nrcJobNo              String          // Original job number
-  jobPlanId             Int             // Original job planning ID
-  jobDemand             JobDemand       // Original job demand
-  jobDetails            Json            // Complete job details from Job table
-  purchaseOrderDetails  Json?           // Complete PO details if any
-  allSteps              Json            // All job steps with their details
-  allStepDetails        Json            // All production step details (corrugation, printing, etc.)
-  completedAt           DateTime        @default(now())
-  completedBy           String?         // User who marked as completed
-  totalDuration         Int?            // Total duration in hours/days
-  finalStatus           String          @default("completed")
-  remarks               String?
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
 }

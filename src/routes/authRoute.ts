@@ -12,19 +12,19 @@ const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive'
 //Unprotected Routes
 
 // role base user login
-router.post('/login', login as RequestHandler);
+router.post('/login', asyncHandler(login));
 
 // User management routes
 // Admin-only routes
-router.post('/add-member', requireAdminJWT, addMember as RequestHandler);
-router.get('/users', requireAdminJWT, getAllUsers as RequestHandler);
-router.put('/users/:id', requireAdminJWT, updateUser as RequestHandler);
-router.delete('/users/:id', requireAdminJWT, deleteUser as RequestHandler);
+router.post('/add-member', requireAdminJWT, asyncHandler(addMember));
+router.get('/users', requireAdminJWT, asyncHandler(getAllUsers));
+router.put('/users/:id', requireAdminJWT, asyncHandler(updateUser));
+router.delete('/users/:id', requireAdminJWT, asyncHandler(deleteUser));
 
 // Authenticated user routes
-router.get('/profile', authenticateToken, getProfile as RequestHandler);
-router.get('/users/:id', authenticateToken, getUserById as RequestHandler);
-router.get('/roles', authenticateToken, getRoles as RequestHandler);
-router.post('/logout', authenticateToken, logout as RequestHandler);
+router.get('/profile', authenticateToken, asyncHandler(getProfile));
+router.get('/users/:id', authenticateToken, asyncHandler(getUserById));
+router.get('/roles', authenticateToken, asyncHandler(getRoles));
+router.post('/logout', authenticateToken, asyncHandler(logout));
 
 export default router;

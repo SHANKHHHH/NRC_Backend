@@ -1,11 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
+import logger from '../utils/logger';
 
 // Request logger middleware
 export const requestLogger = (req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
-  
-  // Log request
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`, {
+
+  logger.info('Incoming Request', {
+    method: req.method,
+    path: req.path,
     ip: req.ip,
     userAgent: req.get('User-Agent'),
     contentType: req.get('Content-Type'),
@@ -14,17 +16,17 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
     body: req.method !== 'GET' ? req.body : undefined
   });
 
-  // Override res.end to log response
   const originalEnd = res.end;
-  res.end = function(chunk?: any, encoding?: any): Response {
+  res.end = function (chunk?: any, encoding?: any): Response {
     const duration = Date.now() - start;
-    
-    // Log response
-    console.log(` ${new Date().toISOString()} - ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`, {
+
+    logger.info('Outgoing Response', {
+      method: req.method,
+      path: req.path,
       statusCode: res.statusCode,
-      contentLength: res.get('Content-Length'),
+      duration: `${duration}ms`,
       contentType: res.get('Content-Type'),
-      duration: `${duration}ms`
+      contentLength: res.get('Content-Length')
     });
 
     return originalEnd.call(this, chunk, encoding);
@@ -33,24 +35,28 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
   next();
 };
 
-// Performance monitoring middleware
+// Performance monitor
 export const performanceMonitor = (req: Request, res: Response, next: NextFunction) => {
   const start = process.hrtime();
-  
+
   res.on('finish', () => {
     const [seconds, nanoseconds] = process.hrtime(start);
-    const duration = seconds * 1000 + nanoseconds / 1000000; // Convert to milliseconds
-    
-    if (duration > 1000) { // Log slow requests (> 1 second)
-      console.warn(` Slow request detected: ${req.method} ${req.path} took ${duration.toFixed(2)}ms`);
+    const duration = seconds * 1000 + nanoseconds / 1000000;
+
+    if (duration > 1000) {
+      logger.warn('Slow request detected', {
+        method: req.method,
+        path: req.path,
+        duration: `${duration.toFixed(2)}ms`
+      });
     }
   });
 
   next();
 };
 
-// Simple logger for development
+// Simple logger for dev
 export const simpleLogger = (req: Request, res: Response, next: NextFunction) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  logger.debug('Simple request log', { method: req.method, path: req.path });
   next();
-}; 
+};

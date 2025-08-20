@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
+import { asyncHandler } from '../middleware';
 import {
   createMachine,
   getAllMachines,
@@ -18,18 +19,18 @@ const router = express.Router();
 router.use(authenticateToken);
 
 // Public routes (authenticated users can view)
-router.get('/', getAllMachines);
-router.get('/available', getAvailableMachines);
-router.get('/busy', getBusyMachines);
-router.get('/stats', getMachineStats);
-router.get('/:id', getMachineById);
+router.get('/', asyncHandler(getAllMachines));
+router.get('/available', asyncHandler(getAvailableMachines));
+router.get('/busy', asyncHandler(getBusyMachines));
+router.get('/stats', asyncHandler(getMachineStats));
+router.get('/:id', asyncHandler(getMachineById));
 
 // Admin and Production Head routes
-router.post('/', createMachine);
-router.put('/:id', updateMachine);
-router.patch('/:id/status', updateMachineStatus);
+router.post('/', asyncHandler(createMachine));
+router.put('/:id', asyncHandler(updateMachine));
+router.patch('/:id/status', asyncHandler(updateMachineStatus));
 
 // Admin only routes
-router.delete('/:id', requireAdminJWT, deleteMachine);
+router.delete('/:id', requireAdminJWT, asyncHandler(deleteMachine));
 
 export default router; 

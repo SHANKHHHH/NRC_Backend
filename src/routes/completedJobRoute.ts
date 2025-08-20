@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
+import { asyncHandler } from '../middleware';
 import {
   checkJobCompletion,
   completeJob,
@@ -15,13 +16,13 @@ const router = Router();
 router.use(authenticateToken);
 
 // Check if a job is ready for completion
-router.get('/check/:nrcJobNo', checkJobCompletion);
+router.get('/check/:nrcJobNo', asyncHandler(checkJobCompletion));
 
 // Check if a job is ready for completion and auto-complete it
-router.post('/check-and-complete/:nrcJobNo', checkAndAutoCompleteJob);
+router.post('/check-and-complete/:nrcJobNo', asyncHandler(checkAndAutoCompleteJob));
 
 // Get all jobs that are ready for completion
-router.get('/ready-for-completion', getJobsReadyForCompletion);
+router.get('/ready-for-completion', asyncHandler(getJobsReadyForCompletion));
 
 // Scheduler management routes
 router.post('/scheduler/start', (req, res) => {
@@ -59,12 +60,12 @@ router.post('/scheduler/trigger-check', async (req, res) => {
 });
 
 // Complete a job
-router.post('/complete/:nrcJobNo', completeJob);
+router.post('/complete/:nrcJobNo', asyncHandler(completeJob));
 
 // Get all completed jobs
-router.get('/', getAllCompletedJobs);
+router.get('/', asyncHandler(getAllCompletedJobs));
 
 // Get a specific completed job
-router.get('/:id', getCompletedJobById);
+router.get('/:id', asyncHandler(getCompletedJobById));
 
 export default router;

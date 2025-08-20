@@ -1,15 +1,16 @@
 import { Router } from 'express';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
+import { asyncHandler } from '../middleware';
 import { createPunching, getPunchingById, getAllPunchings, updatePunching, deletePunching, getPunchingByNrcJobNo } from '../controllers/punchingController';
 
 const router = Router();
 
-router.post('/', authenticateToken, createPunching);
-router.get('/by-job/:nrcJobNo', authenticateToken, getPunchingByNrcJobNo);
-router.get('/:id', authenticateToken, getPunchingById);
-router.get('/', authenticateToken, getAllPunchings);
+router.post('/', authenticateToken, asyncHandler(createPunching));
+router.get('/by-job/:nrcJobNo', authenticateToken, asyncHandler(getPunchingByNrcJobNo));
+router.get('/:id', authenticateToken, asyncHandler(getPunchingById));
+router.get('/', authenticateToken, asyncHandler(getAllPunchings));
 
-router.put('/:nrcJobNo', authenticateToken, updatePunching);
-router.delete('/:id', requireAdminJWT, deletePunching);
+router.put('/:nrcJobNo', authenticateToken, asyncHandler(updatePunching));
+router.delete('/:id', requireAdminJWT, asyncHandler(deletePunching));
 
 export default router; 

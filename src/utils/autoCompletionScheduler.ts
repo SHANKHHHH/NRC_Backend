@@ -26,12 +26,14 @@ export const startAutoCompletionScheduler = (intervalMs: number = 5 * 60 * 1000)
       await checkAndCompleteReadyJobs();
     } catch (error) {
       console.error('Error in auto-completion scheduler:', error);
+      // Don't let scheduler errors crash the server
     }
   }, intervalMs);
 
-  // Run once immediately
+  // Run once immediately with better error handling
   checkAndCompleteReadyJobs().catch(error => {
     console.error('Error in initial auto-completion check:', error);
+    // Don't let initial check errors crash the server
   });
 };
 

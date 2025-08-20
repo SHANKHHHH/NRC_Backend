@@ -1,5 +1,6 @@
 import express from 'express';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
+import { asyncHandler } from '../middleware';
 import {
   getActivityLogs,
   getUserActivityLogs,
@@ -11,10 +12,10 @@ const router = express.Router();
 
 
 router.use(authenticateToken);
-router.get('/',  getActivityLogs);
-router.get('/summary', getActivitySummary);
-router.get('/user/:userId', getUserActivityLogs);
-router.get('/job/:nrcJobNo', getJobActivityLogs);
+router.get('/', asyncHandler(getActivityLogs));
+router.get('/summary', asyncHandler(getActivitySummary));
+router.get('/user/:userId', asyncHandler(getUserActivityLogs));
+router.get('/job/:nrcJobNo', asyncHandler(getJobActivityLogs));
 
 
 export default router; 
