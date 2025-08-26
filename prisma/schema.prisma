@@ -481,6 +481,7 @@ enum UserRole {
   flutelaminator
   pasting_operator
   punching_operator
+  paperstore
 }
 
 enum JobStatus {

@@ -45,6 +45,7 @@ import machineRoutes from './routes/machineRoute';
 import completedJobRoutes from './routes/completedJobRoute';
 import dashboardRoutes from './routes/dashboardRoute';
 import userRoutes from './routes/userRoute';
+import plannerDashboardRoutes from './routes/plannerDashboardRoute';
 
 // Load environment variables
 
@@ -103,6 +104,7 @@ app.use('/api/machines', machineRoutes);
 app.use('/api/completed-jobs', completedJobRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/planner-dashboard', plannerDashboardRoutes);
 
 // Test error handling routes
 app.get('/api/test-error', (req: Request, res: Response, next: NextFunction) => {

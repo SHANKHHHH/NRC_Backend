@@ -7,7 +7,7 @@ import { login, getProfile, logout, addMember, getAllUsers, getUserById, updateU
 const router = Router();
 
 // Available roles
-const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager','printer'];
+const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager', 'printer', 'corrugator', 'flutelaminator', 'pasting_operator', 'punching_operator', 'paperstore'];
 
 //Unprotected Routes
 
