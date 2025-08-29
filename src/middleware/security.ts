@@ -29,7 +29,8 @@ export const corsMiddleware = (req: Request, res: Response, next: NextFunction) 
     'http://localhost:5173',
     'https://nrc-backend-his4.onrender.com',
     'https://nrc-frontend.vercel.app',
-    'https://nrc-frontend-y5wf.vercel.app'
+    'https://nrc-frontend-y5wf.vercel.app',
+    'https://nrc-frontend-y5wf.vercel.app/dashboard'
   ];
   const origin = req.headers.origin;
   
