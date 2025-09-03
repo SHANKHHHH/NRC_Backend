@@ -20,6 +20,13 @@ export const getPlannerDashboard = async (req: Request, res: Response) => {
       }
     });
 
+    // Get all completed jobs
+    const completedJobs = await prisma.completedJob.findMany({
+      orderBy: {
+        completedAt: 'desc'
+      }
+    });
+
     // Process each job to check completion status
     const processedJobs = jobs.map(job => {
       // Check PO completion
@@ -53,9 +60,31 @@ export const getPlannerDashboard = async (req: Request, res: Response) => {
       };
     });
 
+    // Process completed jobs for display
+    const processedCompletedJobs = completedJobs.map(completedJob => ({
+      nrcJobNo: completedJob.nrcJobNo,
+      styleItemSKU: (completedJob.jobDetails as any)?.styleItemSKU || 'N/A',
+      customerName: (completedJob.jobDetails as any)?.customerName || 'N/A',
+      status: 'COMPLETED',
+      poStatus: 'completed',
+      machineDetailsStatus: 'completed',
+      artworkStatus: 'completed',
+      overallProgress: 100,
+      completedAt: completedJob.completedAt,
+      completedBy: completedJob.completedBy,
+      totalDuration: completedJob.totalDuration,
+      remarks: completedJob.remarks,
+      // Additional details
+      poCount: (completedJob.purchaseOrderDetails as any) ? 1 : 0,
+      artworkCount: 1, // Assuming completed jobs have artwork
+      hasMachineDetails: true
+    }));
+
     // Calculate summary statistics
     const summary = {
-      totalJobs: jobs.length,
+      totalActiveJobs: jobs.length,
+      totalCompletedJobs: completedJobs.length,
+      totalJobs: jobs.length + completedJobs.length,
       poCompleted: processedJobs.filter(job => job.poStatus === 'completed').length,
       machineDetailsCompleted: processedJobs.filter(job => job.machineDetailsStatus === 'completed').length,
       artworkCompleted: processedJobs.filter(job => job.artworkStatus === 'completed').length,
@@ -68,7 +97,9 @@ export const getPlannerDashboard = async (req: Request, res: Response) => {
       success: true,
       data: {
         summary,
-        jobs: processedJobs
+        activeJobs: processedJobs,
+        completedJobs: processedCompletedJobs,
+        allJobs: [...processedJobs, ...processedCompletedJobs]
       }
     });
 
