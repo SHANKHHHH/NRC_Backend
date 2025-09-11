@@ -56,7 +56,7 @@ const PORT = Number(process.env.PORT) || 3000;
 // Security middleware (apply first)
 app.use(securityHeaders);
 app.use(corsMiddleware);
-app.use(rateLimiter(300, 15 * 60 * 1000)); // 100 requests per 15 minutes
+app.use(rateLimiter(1000, 15 * 60 * 1000)); // 100 requests per 15 minutes
 app.use(requestSizeLimiter('10mb'));
 
 // Body parsing middleware

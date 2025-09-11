@@ -67,7 +67,7 @@ export const corsMiddleware = (req: Request, res: Response, next: NextFunction) 
 // Rate limiting middleware (simple in-memory implementation)
 const requestCounts = new Map<string, { count: number; resetTime: number }>();
 
-export const rateLimiter = (maxRequests: number = 100, windowMs: number = 15 * 60 * 1000) => {
+export const rateLimiter = (maxRequests: number = 1000, windowMs: number = 15 * 60 * 1000) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const ip = req.ip || req.connection.remoteAddress || 'unknown';
     const now = Date.now();

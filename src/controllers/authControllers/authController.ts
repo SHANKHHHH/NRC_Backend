@@ -16,10 +16,10 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
 
   try{
     const loginValidator = loginSchema.parse(req.body)
-    const { id, password } = loginValidator;
+    const { email, password } = loginValidator;
     
     
-    const user = await prisma.user.findFirst({ where: { id } });
+    const user = await prisma.user.findFirst({ where: { email } });
 
 
     if(!user){
@@ -42,7 +42,7 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
     // Log the login action
     await logUserAction(user.id, ActionTypes.USER_LOGIN, `Login successful from IP: ${req.ip}`);
 
-    const accessToken = generateAccessToken(id);
+    const accessToken = generateAccessToken(user.id);
     const userActive = user.isActive === true;
     // if (!user.isActive) throw new AppError('Account is deactivated', 401);
 
@@ -114,8 +114,12 @@ export const getProfile = async (req: Request, res: Response) => {
 export const addMember = async (req: Request, res: Response) => {
   const { email, password, role, roles, firstName, lastName } = req.body;
   
-  // Email is optional now, but if provided, validate format
-  if (email && !validateEmail(email)) {
+  // Email is now required
+  if (!email) {
+    throw new AppError('Email is required', 400);
+  }
+  
+  if (!validateEmail(email)) {
     throw new AppError('Invalid email format', 400);
   }
   
@@ -148,12 +152,10 @@ export const addMember = async (req: Request, res: Response) => {
     throw new AppError('Password must be at least 6 characters long', 400);
   }
   
-  // Check for existing user with same email only if email is provided
-  if (email) {
-    const existing = await prisma.user.findFirst({ where: { email } });
-    if (existing) {
-      throw new AppError('User with this email already exists', 400);
-    }
+  // Check for existing user with same email
+  const existing = await prisma.user.findFirst({ where: { email } });
+  if (existing) {
+    throw new AppError('User with this email already exists', 400);
   }
 
   // Generate unique custom id in NRC format

@@ -145,43 +145,43 @@ res.status(200).json({ success: true, data: updated, message: 'PaperStore update
 
 };
 
-export const updatePaperStoreStatus = async (req: Request, res: Response) => {
-  const { nrcJobNo } = req.params;
-  const { status } = req.body;
+// export const updatePaperStoreStatus = async (req: Request, res: Response) => {
+//   const { nrcJobNo } = req.params;
+//   const { status } = req.body;
   
-  // Validate status
-  if (!['reject', 'accept', 'hold', 'in_progress'].includes(status)) {
-    throw new AppError('Invalid status. Must be one of: reject, accept, hold, in_progress', 400);
-  }
+//   // Validate status
+//   if (!['reject', 'accept', 'hold', 'in_progress'].includes(status)) {
+//     throw new AppError('Invalid status. Must be one of: reject, accept, hold, in_progress', 400);
+//   }
   
-  // Find the PaperStore by jobNrcJobNo
-  const existing = await prisma.paperStore.findFirst({
-    where: { jobNrcJobNo: nrcJobNo },
-  });
+//   // Find the PaperStore by jobNrcJobNo
+//   const existing = await prisma.paperStore.findFirst({
+//     where: { jobNrcJobNo: nrcJobNo },
+//   });
   
-  if (!existing) {
-    return res.status(404).json({ success: false, message: 'PaperStore not found' });
-  }
+//   if (!existing) {
+//     return res.status(404).json({ success: false, message: 'PaperStore not found' });
+//   }
   
-  // Update the status
-  const updated = await prisma.paperStore.update({
-    where: { id: existing.id },
-    data: { status: status as any },
-  });
+//   // Update the status
+//   const updated = await prisma.paperStore.update({
+//     where: { id: existing.id },
+//     data: { status: status as any },
+//   });
   
-  // Log action
-  if (req.user?.userId) {
-    await logUserActionWithResource(
-      req.user.userId,
-      ActionTypes.JOBSTEP_UPDATED,
-      `Updated PaperStore status to ${status} for jobNrcJobNo: ${nrcJobNo}`,
-      'PaperStore',
-      nrcJobNo
-    );
-  }
+//   // Log action
+//   if (req.user?.userId) {
+//     await logUserActionWithResource(
+//       req.user.userId,
+//       ActionTypes.JOBSTEP_UPDATED,
+//       `Updated PaperStore status to ${status} for jobNrcJobNo: ${nrcJobNo}`,
+//       'PaperStore',
+//       nrcJobNo
+//     );
+//   }
   
-  res.status(200).json({ success: true, data: updated, message: 'PaperStore status updated' });
-};
+//   res.status(200).json({ success: true, data: updated, message: 'PaperStore status updated' });
+// };
 
 export const deletePaperStore = async (req: Request, res: Response) => {
   const { id } = req.params;
