@@ -147,4 +147,25 @@ export class RoleManager {
   static canPerformProductionAction(userRole: string): boolean {
     return this.hasAnyRole(userRole, ['admin', 'planner', 'production_head']);
   }
+
+  /**
+   * Check if user is flying squad member
+   */
+  static isFlyingSquad(userRole: string): boolean {
+    return this.hasRole(userRole, 'flyingsquad');
+  }
+
+  /**
+   * Check if user can perform QC check actions (flying squad or admin)
+   */
+  static canPerformQCCheck(userRole: string): boolean {
+    return this.hasAnyRole(userRole, ['admin', 'flyingsquad']);
+  }
+
+  /**
+   * Check if user can access all job steps (flying squad, admin, planner)
+   */
+  static canAccessAllJobSteps(userRole: string): boolean {
+    return this.hasAnyRole(userRole, ['admin', 'planner', 'flyingsquad']);
+  }
 }

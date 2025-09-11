@@ -248,6 +248,8 @@ model PaperStore {
   extraMargin         String?
   gsm                 String?
   quality             String?
+  qcCheckSignBy       String?
+  qcCheckAt           DateTime?
   jobStepId           Int?                 @unique
   job                 Job                  @relation("JobToPaperStore", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
@@ -294,6 +296,7 @@ model PrintingDetails {
   extraSheets         Int?
   machine             String?
   qcCheckSignBy       String?
+  qcCheckAt           DateTime?
   jobStepId           Int?                 @unique
   job                 Job                  @relation("JobToPrintingDetails", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
@@ -315,6 +318,7 @@ model Corrugation {
   flute               String?
   remarks             String?
   qcCheckSignBy       String?
+  qcCheckAt           DateTime?
   jobStepId           Int?                 @unique
   job                 Job                  @relation("JobToCorrugation", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
@@ -331,6 +335,7 @@ model FluteLaminateBoardConversion {
   film                String?
   quantity            Int?
   qcCheckSignBy       String?
+  qcCheckAt           DateTime?
   adhesive            String?
   wastage             Int?
   jobStepId           Int?                 @unique
@@ -349,6 +354,7 @@ model Punching {
   quantity            Int?
   machine             String?
   qcCheckSignBy       String?
+  qcCheckAt           DateTime?
   die                 String?
   wastage             Int?
   remarks             String?
@@ -370,6 +376,7 @@ model SideFlapPasting {
   quantity            Int?
   wastage             Int?
   qcCheckSignBy       String?
+  qcCheckAt           DateTime?
   remarks             String?
   jobStepId           Int?                 @unique
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToSideFlapPasting")
@@ -390,6 +397,7 @@ model QualityDept {
   reasonForRejection  String?
   remarks             String?
   qcCheckSignBy       String?
+  qcCheckAt           DateTime?
   jobStepId           Int?                 @unique
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToQualityDept")
   job                 Job                  @relation("JobToQualityDept", fields: [jobNrcJobNo], references: [nrcJobNo])
@@ -409,6 +417,7 @@ model DispatchProcess {
   remarks             String?
   balanceQty          Int?
   qcCheckSignBy       String?
+  qcCheckAt           DateTime?
   jobStepId           Int?                 @unique
   job                 Job                  @relation("JobToDispatchProcess", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])

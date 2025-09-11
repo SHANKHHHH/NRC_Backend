@@ -10,7 +10,7 @@ import { PhoneNumber } from 'libphonenumber-js';
 import { error } from 'console';
 import { logUserAction, logUserActionWithResource, ActionTypes } from '../../lib/logger';
 
-const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager','printer', 'corrugator','flutelaminator','pasting_operator','punching_operator', 'paperstore'];
+const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager','printer', 'corrugator','flutelaminator','pasting_operator','punching_operator', 'paperstore','flyingsquad'];
 
 export const login = async (req: Request, res: Response, next: NextFunction) => {
 

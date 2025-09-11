@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../utils/errorHandler';
+import { RoleManager } from '../utils/roleUtils';
 
 // Extend Express Request interface to include user
 declare global {
@@ -72,7 +73,7 @@ export const requireAdminJWT = async (req: Request, res: Response, next: NextFun
     const user = await prisma.user.findUnique({ where: { id: decoded.id } });
     if (!user) throw new AppError('User not found', 401);
     if (!user.isActive) throw new AppError('Account is deactivated', 401);
-    if (user.role !== 'admin') throw new AppError('Admin role required', 403);
+    if (!RoleManager.isAdmin(user.role)) throw new AppError('Admin role required', 403);
 
     req.user = {
       userId: user.id,

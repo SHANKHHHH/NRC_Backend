@@ -108,6 +108,11 @@ export const ActionTypes = {
   USER_ROLE_REMOVED: 'User Role Removed',
   USER_ROLES_UPDATED: 'User Roles Updated',
   
+  // QC actions
+  QC_CHECK_PERFORMED: 'QC Check Performed',
+  QC_CHECK_APPROVED: 'QC Check Approved',
+  QC_CHECK_REJECTED: 'QC Check Rejected',
+  
   // System actions
   SYSTEM_BACKUP: 'System Backup',
   SYSTEM_MAINTENANCE: 'System Maintenance',
