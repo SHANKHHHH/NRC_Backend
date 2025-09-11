@@ -1,5 +1,5 @@
 // Define role types directly since we removed the UserRole enum
-type UserRole = 'admin' | 'planner' | 'production_head' | 'dispatch_executive' | 'qc_manager' | 'printer' | 'corrugator' | 'flutelaminator' | 'pasting_operator' | 'punching_operator';
+type UserRole = 'admin' | 'planner' | 'production_head' | 'dispatch_executive' | 'qc_manager' | 'printer' | 'corrugator' | 'flutelaminator' | 'pasting_operator' | 'punching_operator'|'paperstore'|'flyingsquad';
 
 // Role utility functions for handling multiple roles stored as JSON strings
 export class RoleManager {

@@ -293,6 +293,7 @@ model PrintingDetails {
   separateSheets      Int?
   extraSheets         Int?
   machine             String?
+  qcCheckSignBy       String?
   jobStepId           Int?                 @unique
   job                 Job                  @relation("JobToPrintingDetails", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
@@ -482,6 +483,7 @@ enum UserRole {
   pasting_operator
   punching_operator
   paperstore
+  flyingsquad
 }
 
 enum JobStatus {
