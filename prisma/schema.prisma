@@ -22,6 +22,7 @@ model User {
   activityLogs   ActivityLog[]   @relation("UserActivityLogs")
   jobs           Job[]           @relation("UserJobs")
   purchaseOrders PurchaseOrder[] @relation("UserPurchaseOrders")
+  userMachines   UserMachine[]   @relation("UserMachines")
 }
 
 model Job {
@@ -96,6 +97,8 @@ model Machine {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   jobs        Job[]
+  userMachines UserMachine[] @relation("MachineUsers")
+  purchaseOrderMachines PurchaseOrderMachine[] @relation("PurchaseOrderMachines")
 }
 
 model ActivityLog {
@@ -234,6 +237,7 @@ model PurchaseOrder {
   userId                String?
   job                   Job?                @relation("JobToPurchaseOrders", fields: [jobNrcJobNo], references: [nrcJobNo])
   user                  User?               @relation("UserPurchaseOrders", fields: [userId], references: [id])
+  purchaseOrderMachines PurchaseOrderMachine[] @relation("PurchaseOrderMachines")
 }
 
 model PaperStore {
@@ -528,4 +532,35 @@ enum JobStepStatus {
   planned
   start
   stop
+}
+
+model UserMachine {
+  id          String   @id @default(cuid())
+  userId      String
+  machineId   String
+  assignedAt  DateTime @default(now())
+  assignedBy  String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation("UserMachines", fields: [userId], references: [id], onDelete: Cascade)
+  machine     Machine  @relation("MachineUsers", fields: [machineId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, machineId])
+}
+
+model PurchaseOrderMachine {
+  id              String   @id @default(cuid())
+  purchaseOrderId Int
+  machineId       String
+  assignedAt      DateTime @default(now())
+  assignedBy      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  purchaseOrder   PurchaseOrder @relation("PurchaseOrderMachines", fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  machine         Machine       @relation("PurchaseOrderMachines", fields: [machineId], references: [id], onDelete: Cascade)
+
+  @@unique([purchaseOrderId, machineId])
 }

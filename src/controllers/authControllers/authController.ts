@@ -112,7 +112,7 @@ export const getProfile = async (req: Request, res: Response) => {
 };
 
 export const addMember = async (req: Request, res: Response) => {
-  const { email, password, role, roles, firstName, lastName } = req.body;
+  const { email, password, role, roles, firstName, lastName, machineIds } = req.body;
   
   // Email is now required
   if (!email) {
@@ -215,6 +215,30 @@ export const addMember = async (req: Request, res: Response) => {
     }
   });
 
+  // Assign machines to user if provided
+  if (machineIds && Array.isArray(machineIds) && machineIds.length > 0) {
+    // Validate machines exist
+    const machines = await prisma.machine.findMany({
+      where: { id: { in: machineIds } },
+      select: { id: true }
+    });
+    
+    if (machines.length !== machineIds.length) {
+      const foundIds = machines.map(m => m.id);
+      const missingIds = machineIds.filter(id => !foundIds.includes(id));
+      throw new AppError(`Machines not found: ${missingIds.join(', ')}`, 404);
+    }
+    
+    // Create machine assignments
+    await prisma.userMachine.createMany({
+      data: machineIds.map((machineId: string) => ({
+        userId: customId,
+        machineId: machineId,
+        assignedBy: req.user?.userId
+      }))
+    });
+  }
+
   // Log the user creation action
   if (req.user?.userId) {
     await logUserActionWithResource(
@@ -232,7 +256,8 @@ export const addMember = async (req: Request, res: Response) => {
     data: {
       id: user.id,
       email: user.email,
-      roles: userRoles
+      roles: userRoles,
+      assignedMachines: machineIds || []
     }
   });
 };

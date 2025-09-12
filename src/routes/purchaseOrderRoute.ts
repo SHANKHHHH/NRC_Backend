@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { asyncHandler } from '../middleware';
+import { asyncHandler, addMachineFiltering } from '../middleware';
 import { 
   createPurchaseOrder, 
   updatePurchaseOrder, 
@@ -11,7 +11,7 @@ import { requireAdminJWT, authenticateToken } from '../middleware/auth';
 const router = Router();
 
 // Get all purchase orders
-router.get('/', authenticateToken, asyncHandler(getAllPurchaseOrders));
+router.get('/', authenticateToken, addMachineFiltering, asyncHandler(getAllPurchaseOrders));
 
 // Create a new purchase order
 router.post('/create', asyncHandler(createPurchaseOrder));

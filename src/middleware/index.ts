@@ -25,5 +25,15 @@ export {
 } from './validation';
 
 // Authentication
-// (Removed invalid exports for requireRole and requireAdmin)
-// ... existing code ... 
+export { authenticateToken, requireAdminJWT } from './auth';
+
+// Machine Access Control
+export {
+  checkMachineAccess,
+  getUserMachineIds,
+  checkJobMachineAccess,
+  checkPOMachineAccess,
+  requireJobMachineAccess,
+  requirePOMachineAccess,
+  addMachineFiltering
+} from './machineAccess'; 
