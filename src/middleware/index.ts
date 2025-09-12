@@ -25,7 +25,22 @@ export {
 } from './validation';
 
 // Authentication
+<<<<<<< Updated upstream
 export {  
   requireRole, 
   requireAdmin, 
 } from './auth'; 
+=======
+export { authenticateToken, requireAdminJWT } from './auth';
+
+// Machine Access Control
+export {
+  checkMachineAccess,
+  getUserMachineIds,
+  checkJobMachineAccess,
+  checkPOMachineAccess,
+  requireJobMachineAccess,
+  requirePOMachineAccess,
+  addMachineFiltering
+} from './machineAccess'; 
+>>>>>>> Stashed changes

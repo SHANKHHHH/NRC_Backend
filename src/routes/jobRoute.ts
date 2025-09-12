@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { asyncHandler } from '../middleware';
+import { asyncHandler, addMachineFiltering } from '../middleware';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
 import {
   createJob,
@@ -15,7 +15,11 @@ const router = Router();
 // Chain routes for getting all jobs and creating a new job
 router
   .route('/')
+<<<<<<< Updated upstream
   .get(authenticateToken, asyncHandler(getAllJobs))
+=======
+  .get(authenticateToken, addMachineFiltering, cacheMiddleware(2 * 60 * 1000), asyncHandler(getAllJobs)) // Cache for 2 minutes
+>>>>>>> Stashed changes
   .post(authenticateToken, asyncHandler(createJob));
 
 // Chain routes for getting, updating, and deleting a specific job by NRC Job No

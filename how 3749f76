@@ -1,0 +1,14 @@
+[33mcommit 3749f76df05f83ce71f07387f4093dbdf83ba5ea[m[33m ([m[1;36mHEAD -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: Dhruv Gupta <gdhruv579@gmail.com>
+Date:   Thu Sep 11 18:24:41 2025 +0530
+
+    added:flying squad role
+
+prisma/schema.prisma
+src/controllers/authControllers/authController.ts
+src/controllers/flyingSquadController.ts
+src/lib/logger.ts
+src/middleware/auth.ts
+src/routes/flyingSquadRoute.ts
+src/server.ts
+src/utils/roleUtils.ts

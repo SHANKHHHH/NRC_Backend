@@ -82,7 +82,11 @@ export const getProfile = async (req: Request, res: Response) => {
 };
 
 export const addMember = async (req: Request, res: Response) => {
+<<<<<<< Updated upstream
   const { email, password, role, firstName, lastName } = req.body;
+=======
+  const { email, password, role, roles, firstName, lastName, machineIds } = req.body;
+>>>>>>> Stashed changes
   
   // Email is optional now, but if provided, validate format
   if (email && !validateEmail(email)) {
@@ -121,13 +125,56 @@ export const addMember = async (req: Request, res: Response) => {
     }
   });
 
+<<<<<<< Updated upstream
+=======
+  // Assign machines to user if provided
+  if (machineIds && Array.isArray(machineIds) && machineIds.length > 0) {
+    // Validate machines exist
+    const machines = await prisma.machine.findMany({
+      where: { id: { in: machineIds } },
+      select: { id: true }
+    });
+    
+    if (machines.length !== machineIds.length) {
+      const foundIds = machines.map(m => m.id);
+      const missingIds = machineIds.filter(id => !foundIds.includes(id));
+      throw new AppError(`Machines not found: ${missingIds.join(', ')}`, 404);
+    }
+    
+    // Create machine assignments
+    await prisma.userMachine.createMany({
+      data: machineIds.map((machineId: string) => ({
+        userId: customId,
+        machineId: machineId,
+        assignedBy: req.user?.userId
+      }))
+    });
+  }
+
+  // Log the user creation action
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.USER_CREATED,
+      `Created user: ${customId} with roles: ${userRoles.join(', ')}`,
+      'User',
+      customId
+    );
+  }
+
+>>>>>>> Stashed changes
   res.status(201).json({
     success: true,
     message: 'User created successfully',
     data: {
       id: user.id,
       email: user.email,
+<<<<<<< Updated upstream
       role: user.role
+=======
+      roles: userRoles,
+      assignedMachines: machineIds || []
+>>>>>>> Stashed changes
     }
   });
 };

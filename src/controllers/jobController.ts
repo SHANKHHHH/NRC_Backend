@@ -10,12 +10,36 @@ export const createJob = async (req: Request, res: Response) => {
     throw new AppError('You are not authorized to perform this action', 403);
   }
 
+<<<<<<< Updated upstream
   const { nrcJobNo, styleItemSKU, customerName, ...rest } = req.body; //datasets
+=======
+  const { nrcJobNo, styleItemSKU, customerName, imageURL, machineId, ...rest } = req.body; //datasets
+>>>>>>> Stashed changes
 
   if (!styleItemSKU || !customerName) {
     throw new AppError('Style Item SKU and Customer Name are required', 400);
   }
 
+<<<<<<< Updated upstream
+=======
+  // Optional: Validate imageURL if present
+  if (imageURL && typeof imageURL !== 'string') {
+    throw new AppError('imageURL must be a string', 400);
+  }
+
+  // Validate machineId if provided
+  if (machineId) {
+    const machine = await prisma.machine.findUnique({
+      where: { id: machineId },
+      select: { id: true, machineCode: true }
+    });
+    
+    if (!machine) {
+      throw new AppError('Machine not found', 404);
+    }
+  }
+
+>>>>>>> Stashed changes
   // Always generate nrcJobNo (ignore if provided in request)
   // Get first 3 letters of customer name (uppercase, remove spaces)
   const customerPrefix = customerName.replace(/\s+/g, '').substring(0, 3).toUpperCase();
@@ -49,13 +73,19 @@ export const createJob = async (req: Request, res: Response) => {
       nrcJobNo: generatedNrcJobNo,  
       styleItemSKU,
       customerName,
+<<<<<<< Updated upstream
+=======
+      imageURL: imageURL || null,
+      machineId: machineId || null,
+      sharedCardDiffDate: calculateSharedCardDiffDate(rest.shadeCardApprovalDate),
+>>>>>>> Stashed changes
       ...rest,
     },
   });
 
   res.status(201).json({
     success: true,
-    data: job,
+    data: { ...job, assignedMachine: machineId || null },
     message: 'Job created successfully',
   });
 };
@@ -63,9 +93,52 @@ export const createJob = async (req: Request, res: Response) => {
 
 //get all jobs
 export const getAllJobs = async (req: Request, res: Response) => {
+<<<<<<< Updated upstream
   const jobs = await prisma.job.findMany({
     orderBy: { createdAt: 'desc' },
   });
+=======
+  try {
+    const userMachineIds = req.userMachineIds; // From middleware
+    
+    const whereClause: any = {};
+    if (userMachineIds !== null && userMachineIds && userMachineIds.length > 0) {
+      whereClause.machineId = { in: userMachineIds };
+    }
+    
+    const jobs = await prisma.job.findMany({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        // Include all relations to get actual data instead of empty arrays
+        purchaseOrders: true,
+        paperStores: true,
+        printingDetails: true,
+        corrugations: true,
+        fluteLaminateBoardConversions: true,
+        punchings: true,
+        sideFlapPastings: true,
+        qualityDepts: true,
+        dispatchProcesses: true,
+        artworks: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            role: true
+          }
+        },
+        machine: {
+          select: {
+            id: true,
+            description: true,
+            status: true,
+            machineType: true
+          }
+        }
+      }
+    });
+>>>>>>> Stashed changes
 
   res.status(200).json({
     success: true,

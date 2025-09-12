@@ -15,6 +15,29 @@ import {
 import authRoutes from './routes/authRoute';
 import jobRoutes from './routes/jobRoute';
 import purchaseOrderRoutes from './routes/purchaseOrderRoute';
+<<<<<<< Updated upstream
+=======
+import jobPlanningRoutes from './routes/jobPlanningRoute';
+import paperStoreRoutes from './routes/paperStoreRoute';
+import printingDetailsRoute from './routes/printingDetailsRoute';
+import corrugationRoute from './routes/corrugationRoute';
+import fluteLaminateBoardConversionRoute from './routes/fluteLaminateBoardConversionRoute';
+import punchingRoute from './routes/punchingRoute';
+import sideFlapPastingRoute from './routes/sideFlapPastingRoute';
+import qualityDeptRoute from './routes/qualityDeptRoute';
+import dispatchProcessRoute from './routes/dispatchProcessRoute';
+import activityLogRoutes from './routes/activityLogRoute';
+import machineRoutes from './routes/machineRoute';
+import completedJobRoutes from './routes/completedJobRoute';
+import dashboardRoutes from './routes/dashboardRoute';
+import userRoutes from './routes/userRoute';
+import plannerDashboardRoutes from './routes/plannerDashboardRoute';
+import flyingSquadRoutes from './routes/flyingSquadRoute';
+import machineAssignmentRoutes from './routes/machineAssignmentRoute';
+
+// Load environment variables
+
+>>>>>>> Stashed changes
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -60,6 +83,26 @@ app.get('/health', (req: Request, res: Response) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
+<<<<<<< Updated upstream
+=======
+app.use('/api/job-planning', jobPlanningRoutes);
+app.use('/api/paper-store', paperStoreRoutes);
+app.use('/api/printing-details', printingDetailsRoute);
+app.use('/api/corrugation', corrugationRoute);
+app.use('/api/flute-laminate-board-conversion', fluteLaminateBoardConversionRoute);
+app.use('/api/punching', punchingRoute);
+app.use('/api/side-flap-pasting', sideFlapPastingRoute);
+app.use('/api/quality-dept', qualityDeptRoute);
+app.use('/api/dispatch-process', dispatchProcessRoute);
+app.use('/api/activity-logs', activityLogRoutes);
+app.use('/api/machines', machineRoutes);
+app.use('/api/completed-jobs', completedJobRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/planner-dashboard', plannerDashboardRoutes);
+app.use('/api/flying-squad', flyingSquadRoutes);
+app.use('/api/machine-assignments', machineAssignmentRoutes);
+>>>>>>> Stashed changes
 
 // Test error handling routes
 app.get('/api/test-error', (req: Request, res: Response, next: NextFunction) => {
