@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
+import { getFilteredJobNumbers } from '../middleware/machineAccess';
 import { calculateSharedCardDiffDate } from '../utils/dateUtils';
 import { RoleManager } from '../utils/roleUtils';
 
@@ -105,13 +106,14 @@ export const getAllJobs = async (req: Request, res: Response) => {
   try {
     const userMachineIds = req.userMachineIds; // From middleware
     
-    const whereClause: any = {};
-    if (userMachineIds !== null && userMachineIds && userMachineIds.length > 0) {
-      whereClause.machineId = { in: userMachineIds };
-    }
+    // Get job numbers that are accessible to the user based on machine assignments
+    const userRole = req.user?.role || '';
+    const accessibleJobNumbers = await getFilteredJobNumbers(userMachineIds || null, userRole);
     
     const jobs = await prisma.job.findMany({
-      where: whereClause,
+      where: {
+        nrcJobNo: { in: accessibleJobNumbers }
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         // Include all relations to get actual data instead of empty arrays

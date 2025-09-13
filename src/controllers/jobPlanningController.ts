@@ -6,6 +6,7 @@ import { autoCompleteJobIfReady } from '../utils/workflowValidator';
 import { Machine } from '@prisma/client';
 import { getWorkflowStatus } from '../utils/workflowValidator';
 import { updateJobMachineDetailsFlag } from '../utils/machineDetailsTracker';
+import { getFilteredJobNumbers } from '../middleware/machineAccess';
 
 export const createJobPlanning = async (req: Request, res: Response) => {
   const { nrcJobNo, jobDemand, steps } = req.body;
@@ -75,61 +76,31 @@ function serializeMachine(machine: Machine) {
 export const getAllJobPlannings = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   
-  let jobPlannings;
-  if (userMachineIds !== null && userMachineIds && userMachineIds.length > 0) {
-    // Get job numbers that are linked to user's machines
-    const jobsOnUserMachines = await prisma.job.findMany({
-      where: { machineId: { in: userMachineIds } },
-      select: { nrcJobNo: true }
-    });
-    
-    const jobNumbers = jobsOnUserMachines.map(job => job.nrcJobNo);
-    
-    // Filter job plannings by these job numbers
-    jobPlannings = await prisma.jobPlanning.findMany({
-      where: { nrcJobNo: { in: jobNumbers } },
-      include: {
-        steps: {
-          select: {
-            id: true,
-            stepNo: true,
-            stepName: true,
-            machineDetails: true,
-            status: true,
-            startDate: true,
-            endDate: true,
-            user: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-          orderBy: { stepNo: 'asc' }
-        }
-      },
-      orderBy: { jobPlanId: 'desc' },
-    });
-  } else {
-    // Admin/flying squad - get all job plannings
-    jobPlannings = await prisma.jobPlanning.findMany({
-      include: {
-        steps: {
-          select: {
-            id: true,
-            stepNo: true,
-            stepName: true,
-            machineDetails: true,
-            status: true,
-            startDate: true,
-            endDate: true,
-            user: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-          orderBy: { stepNo: 'asc' }
-        }
-      },
-      orderBy: { jobPlanId: 'desc' },
-    });
-  }
+  // Get job numbers that are accessible to the user based on machine assignments
+  const userRole = req.user?.role || '';
+  const accessibleJobNumbers = await getFilteredJobNumbers(userMachineIds || null, userRole);
+  
+  const jobPlannings = await prisma.jobPlanning.findMany({
+    where: { nrcJobNo: { in: accessibleJobNumbers } },
+    include: {
+      steps: {
+        select: {
+          id: true,
+          stepNo: true,
+          stepName: true,
+          machineDetails: true,
+          status: true,
+          startDate: true,
+          endDate: true,
+          user: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { stepNo: 'asc' }
+      }
+    },
+    orderBy: { jobPlanId: 'desc' },
+  });
 
   // Extract machine IDs more efficiently
   const machineIds = new Set<string>();
