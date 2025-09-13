@@ -72,28 +72,64 @@ function serializeMachine(machine: Machine) {
 }
 
 // Get all JobPlannings with steps - Optimized version
-export const getAllJobPlannings = async (_req: Request, res: Response) => {
-  // Use a single optimized query with proper includes and selects
-  const jobPlannings = await prisma.jobPlanning.findMany({
-    include: {
-      steps: {
-        select: {
-          id: true,
-          stepNo: true,
-          stepName: true,
-          machineDetails: true,
-          status: true,
-          startDate: true,
-          endDate: true,
-          user: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        orderBy: { stepNo: 'asc' } // Add ordering for consistent results
-      }
-    },
-    orderBy: { jobPlanId: 'desc' },
-  });
+export const getAllJobPlannings = async (req: Request, res: Response) => {
+  const userMachineIds = req.userMachineIds; // From middleware
+  
+  let jobPlannings;
+  if (userMachineIds !== null && userMachineIds && userMachineIds.length > 0) {
+    // Get job numbers that are linked to user's machines
+    const jobsOnUserMachines = await prisma.job.findMany({
+      where: { machineId: { in: userMachineIds } },
+      select: { nrcJobNo: true }
+    });
+    
+    const jobNumbers = jobsOnUserMachines.map(job => job.nrcJobNo);
+    
+    // Filter job plannings by these job numbers
+    jobPlannings = await prisma.jobPlanning.findMany({
+      where: { nrcJobNo: { in: jobNumbers } },
+      include: {
+        steps: {
+          select: {
+            id: true,
+            stepNo: true,
+            stepName: true,
+            machineDetails: true,
+            status: true,
+            startDate: true,
+            endDate: true,
+            user: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: { stepNo: 'asc' }
+        }
+      },
+      orderBy: { jobPlanId: 'desc' },
+    });
+  } else {
+    // Admin/flying squad - get all job plannings
+    jobPlannings = await prisma.jobPlanning.findMany({
+      include: {
+        steps: {
+          select: {
+            id: true,
+            stepNo: true,
+            stepName: true,
+            machineDetails: true,
+            status: true,
+            startDate: true,
+            endDate: true,
+            user: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: { stepNo: 'asc' }
+        }
+      },
+      orderBy: { jobPlanId: 'desc' },
+    });
+  }
 
   // Extract machine IDs more efficiently
   const machineIds = new Set<string>();

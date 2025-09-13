@@ -6,7 +6,30 @@ import { calculateSharedCardDiffDate } from '../utils/dateUtils';
 // Get all purchase orders
 export const getAllPurchaseOrders = async (req: Request, res: Response) => {
   try {
+    const userMachineIds = req.userMachineIds; // From middleware
+    
+    const whereClause: any = {};
+    if (userMachineIds !== null && userMachineIds && userMachineIds.length > 0) {
+      whereClause.OR = [
+        // Direct PO-machine assignments
+        {
+          purchaseOrderMachines: {
+            some: {
+              machineId: { in: userMachineIds }
+            }
+          }
+        },
+        // POs linked to jobs on user's machines
+        {
+          job: {
+            machineId: { in: userMachineIds }
+          }
+        }
+      ];
+    }
+    
     const purchaseOrders = await prisma.purchaseOrder.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       include: {
         job: {
@@ -42,7 +65,7 @@ export const getAllPurchaseOrders = async (req: Request, res: Response) => {
 };
 
 export const createPurchaseOrder = async (req: Request, res: Response) => {
-  const data = req.body;
+  const { machineIds, ...data } = req.body;
   // Validate required field
   if (!data.customer || typeof data.customer !== 'string' || !data.customer.trim()) {
     throw new AppError('Customer is required and must be a non-empty string', 400);
@@ -65,9 +88,34 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
   createData.sharedCardDiffDate = calculateSharedCardDiffDate(data.shadeCardApprovalDate);
   
   const purchaseOrder = await prisma.purchaseOrder.create({ data: createData });
+  
+  // Assign machines to PO if provided
+  if (machineIds && Array.isArray(machineIds) && machineIds.length > 0) {
+    // Validate machines exist
+    const machines = await prisma.machine.findMany({
+      where: { id: { in: machineIds } },
+      select: { id: true }
+    });
+    
+    if (machines.length !== machineIds.length) {
+      const foundIds = machines.map(m => m.id);
+      const missingIds = machineIds.filter(id => !foundIds.includes(id));
+      throw new AppError(`Machines not found: ${missingIds.join(', ')}`, 404);
+    }
+    
+    // Create machine assignments
+    await prisma.purchaseOrderMachine.createMany({
+      data: machineIds.map((machineId: string) => ({
+        purchaseOrderId: purchaseOrder.id,
+        machineId: machineId,
+        assignedBy: req.user?.userId
+      }))
+    });
+  }
+  
   res.status(201).json({
     success: true,
-    data: purchaseOrder,
+    data: { ...purchaseOrder, assignedMachines: machineIds || [] },
     message: 'Purchase order created successfully',
   });
 };
