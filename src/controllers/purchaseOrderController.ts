@@ -65,7 +65,7 @@ export const getAllPurchaseOrders = async (req: Request, res: Response) => {
 };
 
 export const createPurchaseOrder = async (req: Request, res: Response) => {
-  const { machineIds, ...data } = req.body;
+  const data = req.body;
   // Validate required field
   if (!data.customer || typeof data.customer !== 'string' || !data.customer.trim()) {
     throw new AppError('Customer is required and must be a non-empty string', 400);
@@ -89,33 +89,9 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
   
   const purchaseOrder = await prisma.purchaseOrder.create({ data: createData });
   
-  // Assign machines to PO if provided
-  if (machineIds && Array.isArray(machineIds) && machineIds.length > 0) {
-    // Validate machines exist
-    const machines = await prisma.machine.findMany({
-      where: { id: { in: machineIds } },
-      select: { id: true }
-    });
-    
-    if (machines.length !== machineIds.length) {
-      const foundIds = machines.map(m => m.id);
-      const missingIds = machineIds.filter(id => !foundIds.includes(id));
-      throw new AppError(`Machines not found: ${missingIds.join(', ')}`, 404);
-    }
-    
-    // Create machine assignments
-    await prisma.purchaseOrderMachine.createMany({
-      data: machineIds.map((machineId: string) => ({
-        purchaseOrderId: purchaseOrder.id,
-        machineId: machineId,
-        assignedBy: req.user?.userId
-      }))
-    });
-  }
-  
   res.status(201).json({
     success: true,
-    data: { ...purchaseOrder, assignedMachines: machineIds || [] },
+    data: purchaseOrder,
     message: 'Purchase order created successfully',
   });
 };

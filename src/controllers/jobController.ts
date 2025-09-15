@@ -14,7 +14,7 @@ export const createJob = async (req: Request, res: Response) => {
     throw new AppError('You are not authorized to perform this action. Required roles: admin or planner', 403);
   }
 
-  const { nrcJobNo, styleItemSKU, customerName, imageURL, machineId, ...rest } = req.body; //datasets
+  const { nrcJobNo, styleItemSKU, customerName, imageURL, ...rest } = req.body; //datasets
 
   if (!styleItemSKU || !customerName) {
     throw new AppError('Style Item SKU and Customer Name are required', 400);
@@ -23,18 +23,6 @@ export const createJob = async (req: Request, res: Response) => {
   // Optional: Validate imageURL if present
   if (imageURL && typeof imageURL !== 'string') {
     throw new AppError('imageURL must be a string', 400);
-  }
-
-  // Validate machineId if provided
-  if (machineId) {
-    const machine = await prisma.machine.findUnique({
-      where: { id: machineId },
-      select: { id: true, machineCode: true }
-    });
-    
-    if (!machine) {
-      throw new AppError('Machine not found', 404);
-    }
   }
 
   // Always generate nrcJobNo (ignore if provided in request)
@@ -71,7 +59,6 @@ export const createJob = async (req: Request, res: Response) => {
       styleItemSKU,
       customerName,
       imageURL: imageURL || null,
-      machineId: machineId || null,
       sharedCardDiffDate: calculateSharedCardDiffDate(rest.shadeCardApprovalDate),
       ...rest,
     },
