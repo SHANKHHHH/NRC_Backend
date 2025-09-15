@@ -2,11 +2,24 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
+import { checkJobStepMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
 
 // Create PaperStore step detail, only if previous step is accepted
 export const createPaperStore = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
   if (!jobStepId) throw new AppError('jobStepId is required', 400);
+  
+  // Check machine access for paper store
+  const userId = req.user?.userId;
+  const userRole = req.user?.role;
+  
+  if (userId && userRole) {
+    const hasAccess = await checkJobStepMachineAccess(userId, userRole, jobStepId);
+    if (!hasAccess) {
+      throw new AppError('Access denied: You do not have access to this paper store machine', 403);
+    }
+  }
+  
   // Find the JobStep
   const jobStep = await prisma.jobStep.findUnique({ where: { id: jobStepId }, include: { jobPlanning: { include: { steps: true } } } });
   if (!jobStep) throw new AppError('JobStep not found', 404);
@@ -87,8 +100,25 @@ export const getPaperStoreById = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: paperStore });
 };
 
-export const getAllPaperStores = async (_req: Request, res: Response) => {
-  const paperStores = await prisma.paperStore.findMany();
+export const getAllPaperStores = async (req: Request, res: Response) => {
+  const userMachineIds = req.userMachineIds; // From middleware
+  
+  const userRole = req.user?.role || '';
+  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
+  
+  const paperStores = await prisma.paperStore.findMany({
+    where: { jobStepId: { in: jobStepIds } },
+    include: {
+      jobStep: {
+        include: {
+          jobPlanning: {
+            select: { nrcJobNo: true }
+          }
+        }
+      }
+    }
+  });
+  
   res.status(200).json({ success: true, count: paperStores.length, data: paperStores });
 };
 

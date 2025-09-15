@@ -3,10 +3,35 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { validateWorkflowStep } from '../utils/workflowValidator';
+import { checkMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
 
 export const createCorrugation = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
   if (!jobStepId) throw new AppError('jobStepId is required', 400);
+  
+  // Check machine access for corrugation
+  const userId = req.user?.userId;
+  const userRole = req.user?.role;
+  
+  if (userId && userRole) {
+    // Get the job step and check machine access
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: jobStepId },
+      select: { machineDetails: true }
+    });
+
+    if (jobStep?.machineDetails && jobStep.machineDetails.length > 0) {
+      const hasAccess = await Promise.all(
+        jobStep.machineDetails.map((machine: any) => 
+          checkMachineAccess(userId, userRole, machine.machineId)
+        )
+      );
+      
+      if (!hasAccess.some(access => access)) {
+        throw new AppError('Access denied: You do not have access to this corrugation machine', 403);
+      }
+    }
+  }
   
   // Validate workflow - Corrugation can run in parallel with Printing
   const workflowValidation = await validateWorkflowStep(jobStepId, 'Corrugation');
@@ -49,8 +74,26 @@ export const getCorrugationById = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: corrugation });
 };
 
-export const getAllCorrugations = async (_req: Request, res: Response) => {
-  const corrugations = await prisma.corrugation.findMany();
+export const getAllCorrugations = async (req: Request, res: Response) => {
+  const userMachineIds = req.userMachineIds; // From middleware
+  
+  // Get job step IDs that are accessible to the user
+  const userRole = req.user?.role || '';
+  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
+  
+  const corrugations = await prisma.corrugation.findMany({
+    where: { jobStepId: { in: jobStepIds } },
+    include: {
+      jobStep: {
+        include: {
+          jobPlanning: {
+            select: { nrcJobNo: true }
+          }
+        }
+      }
+    }
+  });
+  
   res.status(200).json({ success: true, count: corrugations.length, data: corrugations });
 };
 

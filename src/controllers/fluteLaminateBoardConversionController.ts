@@ -2,10 +2,23 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
+import { checkJobStepMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
 
 export const createFluteLaminateBoardConversion = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
   if (!jobStepId) throw new AppError('jobStepId is required', 400);
+  
+  // Check machine access for flute laminate board conversion
+  const userId = req.user?.userId;
+  const userRole = req.user?.role;
+  
+  if (userId && userRole) {
+    const hasAccess = await checkJobStepMachineAccess(userId, userRole, jobStepId);
+    if (!hasAccess) {
+      throw new AppError('Access denied: You do not have access to this flute lamination machine', 403);
+    }
+  }
+  
   const jobStep = await prisma.jobStep.findUnique({ where: { id: jobStepId }, include: { jobPlanning: { include: { steps: true } } } });
   if (!jobStep) throw new AppError('JobStep not found', 404);
   const steps = jobStep.jobPlanning.steps.sort((a, b) => a.stepNo - b.stepNo);
@@ -81,8 +94,25 @@ export const getFluteLaminateBoardConversionById = async (req: Request, res: Res
   res.status(200).json({ success: true, data: flutelam });
 };
 
-export const getAllFluteLaminateBoardConversions = async (_req: Request, res: Response) => {
-  const flutelams = await prisma.fluteLaminateBoardConversion.findMany();
+export const getAllFluteLaminateBoardConversions = async (req: Request, res: Response) => {
+  const userMachineIds = req.userMachineIds; // From middleware
+  
+  const userRole = req.user?.role || '';
+  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
+  
+  const flutelams = await prisma.fluteLaminateBoardConversion.findMany({
+    where: { jobStepId: { in: jobStepIds } },
+    include: {
+      jobStep: {
+        include: {
+          jobPlanning: {
+            select: { nrcJobNo: true }
+          }
+        }
+      }
+    }
+  });
+  
   res.status(200).json({ success: true, count: flutelams.length, data: flutelams });
 };
 

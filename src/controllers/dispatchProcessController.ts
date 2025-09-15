@@ -3,10 +3,22 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { validateWorkflowStep } from '../utils/workflowValidator';
+import { checkJobStepMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
 
 export const createDispatchProcess = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
   if (!jobStepId) throw new AppError('jobStepId is required', 400);
+  
+  // Check machine access for dispatch process
+  const userId = req.user?.userId;
+  const userRole = req.user?.role;
+  
+  if (userId && userRole) {
+    const hasAccess = await checkJobStepMachineAccess(userId, userRole, jobStepId);
+    if (!hasAccess) {
+      throw new AppError('Access denied: You do not have access to this dispatch process machine', 403);
+    }
+  }
   
   // Validate workflow - DispatchProcess requires both Corrugation and Printing to be accepted
   const workflowValidation = await validateWorkflowStep(jobStepId, 'DispatchProcess');
@@ -49,8 +61,25 @@ export const getDispatchProcessById = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: dispatchProcess });
 };
 
-export const getAllDispatchProcesses = async (_req: Request, res: Response) => {
-  const dispatchProcesses = await prisma.dispatchProcess.findMany();
+export const getAllDispatchProcesses = async (req: Request, res: Response) => {
+  const userMachineIds = req.userMachineIds; // From middleware
+  
+  const userRole = req.user?.role || '';
+  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
+  
+  const dispatchProcesses = await prisma.dispatchProcess.findMany({
+    where: { jobStepId: { in: jobStepIds } },
+    include: {
+      jobStep: {
+        include: {
+          jobPlanning: {
+            select: { nrcJobNo: true }
+          }
+        }
+      }
+    }
+  });
+  
   res.status(200).json({ success: true, count: dispatchProcesses.length, data: dispatchProcesses });
 };
 
