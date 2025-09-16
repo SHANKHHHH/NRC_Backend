@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { asyncHandler, addMachineFiltering } from '../middleware';
+import { asyncHandler } from '../middleware';
 import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps } from '../controllers/jobPlanningController';
 
 const router = Router();
@@ -17,7 +17,7 @@ router.get('/summary', asyncHandler(getAllJobPlanningsSimple));
 router.post('/', authenticateToken, asyncHandler(createJobPlanning));
 
 // Get all job plannings
-router.get('/', authenticateToken, addMachineFiltering, asyncHandler(getAllJobPlannings));
+router.get('/', authenticateToken, asyncHandler(getAllJobPlannings));
 
 // Update a specific job step's status, startDate, endDate, and user
 router.patch('/:nrcJobNo/:jobPlanId/steps/:jobStepNo/status', authenticateToken, asyncHandler(updateJobStepStatus));
