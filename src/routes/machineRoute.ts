@@ -28,6 +28,8 @@ router.get('/:id', asyncHandler(getMachineById));
 // Admin and Production Head routes
 router.post('/', asyncHandler(createMachine));
 router.put('/:id', asyncHandler(updateMachine));
+// Support both PATCH and PUT for status updates
+router.put('/:id/status', asyncHandler(updateMachineStatus));
 router.patch('/:id/status', asyncHandler(updateMachineStatus));
 
 // Admin only routes
