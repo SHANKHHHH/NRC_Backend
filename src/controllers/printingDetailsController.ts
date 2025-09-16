@@ -3,10 +3,35 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { validateWorkflowStep } from '../utils/workflowValidator';
+import { checkMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
 
 export const createPrintingDetails = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
   if (!jobStepId) throw new AppError('jobStepId is required', 400);
+  
+  // Check machine access for printing details
+  const userId = req.user?.userId;
+  const userRole = req.user?.role;
+  
+  if (userId && userRole) {
+    // Get the job step and check machine access
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: jobStepId },
+      select: { machineDetails: true }
+    });
+
+    if (jobStep?.machineDetails && jobStep.machineDetails.length > 0) {
+      const hasAccess = await Promise.all(
+        jobStep.machineDetails.map((machine: any) => 
+          checkMachineAccess(userId, userRole, machine.machineId)
+        )
+      );
+      
+      if (!hasAccess.some(access => access)) {
+        throw new AppError('Access denied: You do not have access to this printing machine', 403);
+      }
+    }
+  }
   
   // Validate workflow - PrintingDetails can run in parallel with Corrugation
   const workflowValidation = await validateWorkflowStep(jobStepId, 'PrintingDetails');
@@ -49,8 +74,26 @@ export const getPrintingDetailsById = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: printingDetails });
 };
 
-export const getAllPrintingDetails = async (_req: Request, res: Response) => {
-  const printingDetails = await prisma.printingDetails.findMany();
+export const getAllPrintingDetails = async (req: Request, res: Response) => {
+  const userMachineIds = req.userMachineIds; // From middleware
+  
+  // Get job step IDs that are accessible to the user
+  const userRole = req.user?.role || '';
+  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
+  
+  const printingDetails = await prisma.printingDetails.findMany({
+    where: { jobStepId: { in: jobStepIds } },
+    include: {
+      jobStep: {
+        include: {
+          jobPlanning: {
+            select: { nrcJobNo: true }
+          }
+        }
+      }
+    }
+  });
+  
   res.status(200).json({ success: true, count: printingDetails.length, data: printingDetails });
 };
 

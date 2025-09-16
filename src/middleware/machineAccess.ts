@@ -3,6 +3,15 @@ import { prisma } from '../lib/prisma';
 import { AppError } from './index';
 import { RoleManager } from '../utils/roleUtils';
 
+// Extend Request interface to include userRole
+declare global {
+  namespace Express {
+    interface Request {
+      userRole?: string;
+    }
+  }
+}
+
 // Extend Request interface to include userMachineIds
 declare global {
   namespace Express {
@@ -178,6 +187,7 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
     // Admins and Flying Squad members bypass machine restrictions
     if (userRole && (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole))) {
       req.userMachineIds = null; // Indicate no filtering needed
+      req.userRole = userRole; // Pass user role for high demand filtering
       return next();
     }
 
@@ -187,6 +197,7 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
 
     const userMachineIds = await getUserMachineIds(userId, userRole);
     req.userMachineIds = userMachineIds;
+    req.userRole = userRole; // Pass user role for high demand filtering
     
     next();
   } catch (error) {
@@ -212,4 +223,140 @@ export const checkMachineAccess = async (userId: string, userRole: string, machi
   });
 
   return !!userMachine;
+};
+
+/**
+ * Check machine access for job step operations
+ */
+export const checkJobStepMachineAccess = async (userId: string, userRole: string, jobStepId: number): Promise<boolean> => {
+  // Admins and Flying Squad members have access to all job steps
+  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole)) {
+    return true;
+  }
+
+  // Get the job step and check machine access
+  const jobStep = await prisma.jobStep.findUnique({
+    where: { id: jobStepId },
+    select: { machineDetails: true }
+  });
+
+  if (!jobStep?.machineDetails || !Array.isArray(jobStep.machineDetails) || jobStep.machineDetails.length === 0) {
+    return false; // No machine details means no access
+  }
+
+  const hasAccess = await Promise.all(
+    jobStep.machineDetails.map((machine: any) => 
+      checkMachineAccess(userId, userRole, machine.machineId)
+    )
+  );
+  
+  return hasAccess.some(access => access);
+};
+
+/**
+ * Helper function to check if step matches user's role
+ */
+function isStepForUserRole(stepName: string, userRole: string): boolean {
+  const roleStepMapping = {
+    'printer': 'Printing',
+    'corrugator': 'Corrugation', 
+    'punching_operator': 'Punching',
+    'pasting_operator': 'SideFlapPasting',
+    'flutelaminator': 'FluteLaminateBoardConversion',
+    'paperstore': 'PaperStore',
+    'qc_manager': 'QualityDept',
+    'dispatch_executive': 'DispatchProcess'
+  };
+  
+  return roleStepMapping[userRole as keyof typeof roleStepMapping] === stepName;
+}
+
+/**
+ * Get filtered job step IDs based on user machine access and high demand jobs
+ */
+export const getFilteredJobStepIds = async (userMachineIds: string[] | null, userRole: string): Promise<number[]> => {
+  if (userMachineIds === null || userMachineIds.length === 0) {
+    // Admin/flying squad - return all job step IDs
+    const allJobSteps = await prisma.jobStep.findMany({
+      select: { id: true }
+    });
+    return allJobSteps.map(js => js.id);
+  }
+
+  // Get all job steps with their job planning info
+  const allJobSteps = await prisma.jobStep.findMany({
+    select: { 
+      id: true, 
+      machineDetails: true,
+      stepName: true,
+      jobPlanning: {
+        select: {
+          nrcJobNo: true
+        }
+      }
+    }
+  });
+  
+  // Filter job steps based on machine access OR high demand + role match
+  const filteredJobSteps = [];
+  
+  for (const jobStep of allJobSteps) {
+    // Check if this is a high demand job
+    const job = await prisma.job.findFirst({
+      where: { nrcJobNo: jobStep.jobPlanning.nrcJobNo },
+      select: { jobDemand: true }
+    });
+    
+    // If high demand and step matches user's role, show to all users of that role
+    if (job?.jobDemand === 'high' && isStepForUserRole(jobStep.stepName, userRole)) {
+      filteredJobSteps.push(jobStep);
+      continue;
+    }
+    
+    // For non-high demand jobs, check machine access
+    if (!Array.isArray(jobStep.machineDetails) || jobStep.machineDetails.length === 0) {
+      continue; // No machine details means no access
+    }
+    
+    // Check if any machine in this job step is assigned to the user
+    const hasMachineAccess = jobStep.machineDetails.some((machine: any) => 
+      userMachineIds.includes(machine.machineId)
+    );
+    
+    if (hasMachineAccess) {
+      filteredJobSteps.push(jobStep);
+    }
+  }
+  
+  return filteredJobSteps.map(js => js.id);
+};
+
+/**
+ * Get filtered job numbers based on user machine access (for job-level filtering)
+ */
+export const getFilteredJobNumbers = async (userMachineIds: string[] | null, userRole: string): Promise<string[]> => {
+  if (userMachineIds === null || userMachineIds.length === 0) {
+    // Admin/flying squad - return all job numbers
+    const allJobs = await prisma.job.findMany({
+      select: { nrcJobNo: true }
+    });
+    return allJobs.map(job => job.nrcJobNo);
+  }
+
+  // Get job steps that are accessible to the user
+  const accessibleJobStepIds = await getFilteredJobStepIds(userMachineIds, userRole);
+  
+  // Get job plannings that contain these job steps
+  const jobPlannings = await prisma.jobPlanning.findMany({
+    where: {
+      steps: {
+        some: {
+          id: { in: accessibleJobStepIds }
+        }
+      }
+    },
+    select: { nrcJobNo: true }
+  });
+  
+  return jobPlannings.map(planning => planning.nrcJobNo);
 };
