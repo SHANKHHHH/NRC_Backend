@@ -168,6 +168,21 @@ export const updateCorrugation = async (req: Request, res: Response) => {
       throw new AppError('Corrugation record not found', 404);
     }
 
+    // Enforce machine access for non-admin/non-flying-squad users based on the linked job step
+    if (req.user?.userId && req.user?.role) {
+      const jobStep = await prisma.jobStep.findFirst({
+        where: { corrugation: { id: existingCorrugation.id } },
+        select: { id: true }
+      });
+      if (jobStep) {
+        const { checkJobStepMachineAccess } = await import('../middleware/machineAccess');
+        const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+        if (!hasAccess) {
+          throw new AppError('Access denied: You do not have access to machines for this step', 403);
+        }
+      }
+    }
+
     // Step 2: Update using the unique id
     const corrugation = await prisma.corrugation.update({
       where: { id: existingCorrugation.id },

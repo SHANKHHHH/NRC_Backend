@@ -262,6 +262,15 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
     throw new AppError('JobStep not found for the given jobPlanId and nrcJobNo', 404);
   }
 
+  // Enforce machine access: non-admin/flying squad must have machine assigned on this step
+  if (req.user?.userId && req.user?.role) {
+    const { checkJobStepMachineAccess } = await import('../middleware/machineAccess');
+    const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+    if (!hasAccess) {
+      throw new AppError('Access denied: You do not have access to machines for this step', 403);
+    }
+  }
+
   // Prepare update data
   const updateData: any = { status };
   const now = new Date();
@@ -355,6 +364,15 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   });
   if (!step) {
     throw new AppError('Step not found for that NRC Job No and step number', 404);
+  }
+
+  // Enforce machine access
+  if (req.user?.userId && req.user?.role) {
+    const { checkJobStepMachineAccess } = await import('../middleware/machineAccess');
+    const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, step.id);
+    if (!hasAccess) {
+      throw new AppError('Access denied: You do not have access to machines for this step', 403);
+    }
   }
 
   const updateData: any = {};

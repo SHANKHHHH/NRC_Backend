@@ -7,6 +7,7 @@ import {
   restrictMachineDetailsUpdate, 
   restrictStepTimingUpdate 
 } from '../middleware/flyingSquadPermissions';
+import { addMachineFiltering } from '../middleware';
 import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps } from '../controllers/jobPlanningController';
 
 const router = Router();
@@ -17,13 +18,13 @@ router.get('/test', (req, res) => {
 });
 
 // Place summary route BEFORE any parameterized routes
-router.get('/summary', asyncHandler(getAllJobPlanningsSimple));
+router.get('/summary', addMachineFiltering, asyncHandler(getAllJobPlanningsSimple));
 
 // Create a new job planning
 router.post('/', authenticateToken, asyncHandler(createJobPlanning));
 
 // Get all job plannings
-router.get('/', authenticateToken, asyncHandler(getAllJobPlannings));
+router.get('/', authenticateToken, addMachineFiltering, asyncHandler(getAllJobPlannings));
 
 // Update a specific job step's status, startDate, endDate, and user
 router.patch('/:nrcJobNo/:jobPlanId/steps/:jobStepNo/status', 

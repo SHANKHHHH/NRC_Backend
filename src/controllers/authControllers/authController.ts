@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../../lib/prisma';
 import { validateEmail } from '../../middleware';
-import  AppError  from '../../utils/AppErrors';
+import { AppError } from '../../utils/errorHandler';
 import { loginSchema } from '../../validator/authValidator';
 import { generateAccessToken } from '../../utils/jwtService';
 import { PhoneNumber } from 'libphonenumber-js';

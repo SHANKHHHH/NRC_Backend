@@ -135,6 +135,21 @@ export const updatePrintingDetails = async (req: Request, res: Response) => {
   if (!existingPrintingDetails)
     throw new AppError('PrintingDetails not found', 404);
 
+  // Enforce machine access for non-admin/non-flying-squad users based on the linked job step
+  if (req.user?.userId && req.user?.role) {
+    const jobStep = await prisma.jobStep.findFirst({
+      where: { printingDetails: { id: existingPrintingDetails.id } },
+      select: { id: true }
+    });
+    if (jobStep) {
+      const { checkJobStepMachineAccess } = await import('../middleware/machineAccess');
+      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+      if (!hasAccess) {
+        throw new AppError('Access denied: You do not have access to machines for this step', 403);
+      }
+    }
+  }
+
   const printingDetails = await prisma.printingDetails.update({
     where: { id: existingPrintingDetails.id },
     data: req.body, 
