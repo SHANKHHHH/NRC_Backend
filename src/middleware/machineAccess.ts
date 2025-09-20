@@ -245,9 +245,10 @@ export const checkJobStepMachineAccess = async (userId: string, userRole: string
   }
 
   const hasAccess = await Promise.all(
-    jobStep.machineDetails.map((machine: any) => 
-      checkMachineAccess(userId, userRole, machine.machineId)
-    )
+    jobStep.machineDetails.map((machine: any) => {
+      const machineId = (machine && typeof machine === 'object') ? (machine.machineId || (machine as any).id) : machine;
+      return checkMachineAccess(userId, userRole, machineId);
+    })
   );
   
   return hasAccess.some(access => access);
@@ -298,7 +299,7 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
   });
   
   // Filter job steps based on machine access OR high demand + role match
-  const filteredJobSteps = [];
+  const filteredJobSteps = [] as any[];
   
   for (const jobStep of allJobSteps) {
     // Check if this is a high demand job
@@ -313,15 +314,17 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
       continue;
     }
     
-    // For non-high demand jobs, check machine access
+    // For non-high demand jobs, if no machine details are set yet, allow visibility
     if (!Array.isArray(jobStep.machineDetails) || jobStep.machineDetails.length === 0) {
-      continue; // No machine details means no access
+      filteredJobSteps.push(jobStep);
+      continue;
     }
     
     // Check if any machine in this job step is assigned to the user
-    const hasMachineAccess = jobStep.machineDetails.some((machine: any) => 
-      userMachineIds.includes(machine.machineId)
-    );
+    const hasMachineAccess = jobStep.machineDetails.some((machine: any) => {
+      const mid = (machine && typeof machine === 'object') ? (machine.machineId || (machine as any).id) : machine;
+      return userMachineIds.includes(mid);
+    });
     
     if (hasMachineAccess) {
       filteredJobSteps.push(jobStep);

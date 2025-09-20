@@ -8,6 +8,19 @@ import { logUserActionWithResource, ActionTypes } from '../lib/logger';
  */
 
 let schedulerInterval: NodeJS.Timeout | null = null;
+let isCheckRunning = false;
+let consecutiveDbFailures = 0;
+let lastDbFailureLogAt = 0;
+const MAX_BACKOFF_MS = 5 * 60 * 1000; // cap at 5 minutes
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function computeBackoffMs(attempt: number): number {
+  const base = Math.pow(2, Math.max(0, attempt)); // 1s, 2s, 4s, ...
+  return Math.min(base * 1000, MAX_BACKOFF_MS);
+}
 
 /**
  * Start the auto-completion scheduler
@@ -22,19 +35,11 @@ export const startAutoCompletionScheduler = (intervalMs: number = 5 * 60 * 1000)
   console.log(`Starting auto-completion scheduler with ${intervalMs / 1000} second intervals`);
   
   schedulerInterval = setInterval(async () => {
-    try {
-      await checkAndCompleteReadyJobs();
-    } catch (error) {
-      console.error('Error in auto-completion scheduler:', error);
-      // Don't let scheduler errors crash the server
-    }
+    await safeCheckAndCompleteReadyJobs();
   }, intervalMs);
 
-  // Run once immediately with better error handling
-  checkAndCompleteReadyJobs().catch(error => {
-    console.error('Error in initial auto-completion check:', error);
-    // Don't let initial check errors crash the server
-  });
+  // Run once immediately with better error handling and backoff
+  safeCheckAndCompleteReadyJobs();
 };
 
 /**
@@ -110,6 +115,45 @@ export const checkAndCompleteReadyJobs = async () => {
     console.error('Error in checkAndCompleteReadyJobs:', error);
   }
 };
+
+/**
+ * Wrapper that adds retry with exponential backoff for transient DB connectivity errors (e.g., Prisma P1001)
+ * and prevents overlapping runs / log spamming when the DB is down.
+ */
+async function safeCheckAndCompleteReadyJobs(): Promise<void> {
+  if (isCheckRunning) {
+    return; // avoid overlapping work
+  }
+  isCheckRunning = true;
+  try {
+    await checkAndCompleteReadyJobs();
+    // success clears failure count
+    consecutiveDbFailures = 0;
+  } catch (error: any) {
+    const message: string = (error && error.message) || '';
+    const code: string | undefined = (error && error.code) || undefined;
+
+    const isDbDown = code === 'P1001' || message.includes("Can't reach database server");
+    if (isDbDown) {
+      consecutiveDbFailures += 1;
+      const backoffMs = computeBackoffMs(consecutiveDbFailures);
+      const now = Date.now();
+      // rate-limit failure logs to once per 60s
+      if (now - lastDbFailureLogAt > 60_000) {
+        console.warn(
+          `Auto-completion scheduler: database unreachable (P1001). ` +
+          `Consecutive failures: ${consecutiveDbFailures}. Retrying in ${Math.round(backoffMs / 1000)}s.`
+        );
+        lastDbFailureLogAt = now;
+      }
+      await sleep(backoffMs);
+    } else {
+      console.error('Error in auto-completion scheduler:', error);
+    }
+  } finally {
+    isCheckRunning = false;
+  }
+}
 
 /**
  * Manually trigger a completion check for a specific job

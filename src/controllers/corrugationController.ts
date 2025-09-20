@@ -4,6 +4,7 @@ import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { validateWorkflowStep } from '../utils/workflowValidator';
 import { checkMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
+import { RoleManager } from '../utils/roleUtils';
 
 export const createCorrugation = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -22,9 +23,10 @@ export const createCorrugation = async (req: Request, res: Response) => {
 
     if (jobStep?.machineDetails && jobStep.machineDetails.length > 0) {
       const hasAccess = await Promise.all(
-        jobStep.machineDetails.map((machine: any) => 
-          checkMachineAccess(userId, userRole, machine.machineId)
-        )
+        jobStep.machineDetails.map((machine: any) => {
+          const machineId = (machine && typeof machine === 'object') ? (machine.machineId || (machine as any).id) : machine;
+          return checkMachineAccess(userId, userRole, machineId);
+        })
       );
       
       if (!hasAccess.some(access => access)) {
@@ -81,18 +83,43 @@ export const getAllCorrugations = async (req: Request, res: Response) => {
   const userRole = req.user?.role || '';
   const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
   
-  const corrugations = await prisma.corrugation.findMany({
-    where: { jobStepId: { in: jobStepIds } },
-    include: {
-      jobStep: {
-        include: {
-          jobPlanning: {
-            select: { nrcJobNo: true }
+  // Also include corrugations that don't have jobStepId but belong to accessible jobs (by nrcJobNo)
+  let corrugations;
+  if (userMachineIds === null) {
+    // Admin/Flying Squad: no filtering
+    corrugations = await prisma.corrugation.findMany({
+      include: {
+        jobStep: {
+          include: {
+            jobPlanning: { select: { nrcJobNo: true } }
           }
         }
       }
-    }
-  });
+    });
+  } else {
+    // Get accessible job numbers via jobStepIds → jobPlanning
+    const accessiblePlannings = await prisma.jobPlanning.findMany({
+      where: { steps: { some: { id: { in: jobStepIds } } } },
+      select: { nrcJobNo: true }
+    });
+    const accessibleJobNos = accessiblePlannings.map(p => p.nrcJobNo);
+
+    corrugations = await prisma.corrugation.findMany({
+      where: {
+        OR: [
+          { jobStepId: { in: jobStepIds } },
+          { jobStepId: null, jobNrcJobNo: { in: accessibleJobNos } }
+        ]
+      },
+      include: {
+        jobStep: {
+          include: {
+            jobPlanning: { select: { nrcJobNo: true } }
+          }
+        }
+      }
+    });
+  }
   
   res.status(200).json({ success: true, count: corrugations.length, data: corrugations });
 };
@@ -106,6 +133,30 @@ export const getCorrugationByNrcJobNo = async (req: Request, res: Response) => {
 
 export const updateCorrugation = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const userRole = req.user?.role;
+  // Check if Flying Squad is trying to update non-QC fields
+  if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
+    const allowedFields = ['qcCheckSignBy', 'qcCheckAt', 'remarks'];
+    const bodyKeys = Object.keys(req.body);
+    const restrictedFields = bodyKeys.filter(key => !allowedFields.includes(key));
+    
+    if (restrictedFields.length > 0) {
+      throw new AppError(
+        `Flying Squad can only update QC-related fields. Restricted fields: ${restrictedFields.join(', ')}. Allowed fields: ${allowedFields.join(', ')}`, 
+        403
+      );
+    }
+
+    // Ensure qcCheckSignBy is set to current user
+    if (req.body.qcCheckSignBy !== undefined) {
+      req.body.qcCheckSignBy = req.user?.userId;
+    }
+
+    // Ensure qcCheckAt is set to current timestamp
+    if (req.body.qcCheckAt !== undefined) {
+      req.body.qcCheckAt = new Date();
+    }
+  }
 
   try {
     // Step 1: Find the Corrugation record by jobNrcJobNo

@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
 import { asyncHandler } from '../middleware';
+import { 
+  restrictFlyingSquadToQC, 
+  restrictStepStatusUpdate, 
+  restrictMachineDetailsUpdate, 
+  restrictStepTimingUpdate 
+} from '../middleware/flyingSquadPermissions';
 import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps } from '../controllers/jobPlanningController';
 
 const router = Router();
@@ -20,7 +26,12 @@ router.post('/', authenticateToken, asyncHandler(createJobPlanning));
 router.get('/', authenticateToken, asyncHandler(getAllJobPlannings));
 
 // Update a specific job step's status, startDate, endDate, and user
-router.patch('/:nrcJobNo/:jobPlanId/steps/:jobStepNo/status', authenticateToken, asyncHandler(updateJobStepStatus));
+router.patch('/:nrcJobNo/:jobPlanId/steps/:jobStepNo/status', 
+  authenticateToken, 
+  restrictStepStatusUpdate, 
+  restrictStepTimingUpdate, 
+  asyncHandler(updateJobStepStatus)
+);
 
 // Get all steps for a given nrcJobNo
 router.get('/:nrcJobNo/steps', authenticateToken, asyncHandler(getStepsByNrcJobNo));
@@ -29,7 +40,13 @@ router.get('/:nrcJobNo/steps', authenticateToken, asyncHandler(getStepsByNrcJobN
 router.get('/:nrcJobNo/steps/:stepNo', authenticateToken, asyncHandler(getStepByNrcJobNoAndStepNo));
 
 // Unified update: status and/or machineDetails in one call
-router.put('/:nrcJobNo/steps/:stepNo', authenticateToken, asyncHandler(upsertStepByNrcJobNoAndStepNo));
+router.put('/:nrcJobNo/steps/:stepNo', 
+  authenticateToken, 
+  restrictStepStatusUpdate, 
+  restrictMachineDetailsUpdate, 
+  restrictStepTimingUpdate, 
+  asyncHandler(upsertStepByNrcJobNoAndStepNo)
+);
 
 // Add a test route to verify CORS is working
 router.options('/:nrcJobNo/steps/:stepNo', (req, res) => {
@@ -41,6 +58,19 @@ router.options('/:nrcJobNo/steps/:stepNo', (req, res) => {
 router.get('/:nrcJobNo', authenticateToken, asyncHandler(getJobPlanningByNrcJobNo));
 
 // Bulk update all job steps and their details
-router.put('/:nrcJobNo/bulk-update', authenticateToken, asyncHandler(bulkUpdateJobSteps));
+router.put('/:nrcJobNo/bulk-update', 
+  authenticateToken, 
+  restrictStepStatusUpdate, 
+  restrictMachineDetailsUpdate, 
+  restrictStepTimingUpdate, 
+  asyncHandler(bulkUpdateJobSteps)
+);
+
+// Flying Squad QC-only update endpoint
+router.patch('/:nrcJobNo/steps/:stepNo/qc', 
+  authenticateToken, 
+  restrictFlyingSquadToQC, 
+  asyncHandler(updateJobStepStatus)
+);
 
 export default router;

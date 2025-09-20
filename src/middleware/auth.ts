@@ -1,3 +1,4 @@
+
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
@@ -44,10 +45,13 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     if (!user) throw new AppError('User not found', 401);
     if (!user.isActive) throw new AppError('Account is deactivated', 401);
 
+    // Convert role to string format for RoleManager compatibility
+    const roleString = typeof user.role === 'string' ? user.role : JSON.stringify(user.role);
+    
     req.user = {
       userId: user.id,
       email: user.email || undefined,
-      role: user.role
+      role: roleString
     };
 
     next();
@@ -73,12 +77,15 @@ export const requireAdminJWT = async (req: Request, res: Response, next: NextFun
     const user = await prisma.user.findUnique({ where: { id: decoded.id } });
     if (!user) throw new AppError('User not found', 401);
     if (!user.isActive) throw new AppError('Account is deactivated', 401);
-    if (!RoleManager.isAdmin(user.role)) throw new AppError('Admin role required', 403);
+    
+    // Convert role to string format for RoleManager compatibility
+    const roleString = typeof user.role === 'string' ? user.role : JSON.stringify(user.role);
+    if (!RoleManager.isAdmin(roleString)) throw new AppError('Admin role required', 403);
 
     req.user = {
       userId: user.id,
       email: user.email || undefined,
-      role: user.role
+      role: roleString
     };
 
     next();

@@ -465,6 +465,60 @@ export const getQCStats = async (req: Request, res: Response) => {
   });
 };
 
+/**
+ * Get recent activities for Flying Squad dashboard
+ */
+export const getRecentActivities = async (req: Request, res: Response) => {
+  const userRole = req.user?.role;
+  if (!userRole || !RoleManager.canAccessAllJobSteps(userRole)) {
+    throw new AppError('You are not authorized to access recent activities. Required roles: admin, planner, or flying_squad', 403);
+  }
+
+  const { limit = '20' } = req.query;
+  const limitNum = parseInt(limit as string);
+
+  // Get recent QC checks and step updates
+  const recentActivities = await prisma.activityLog.findMany({
+    where: {
+      action: {
+        in: [
+          'QC_CHECK_PERFORMED',
+          'JOBSTEP_UPDATED',
+          'JOBSTEP_CREATED'
+        ]
+      }
+    },
+    include: {
+      user: {
+        select: {
+          name: true,
+          email: true
+        }
+      }
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limitNum
+  });
+
+  // Format activities for display
+  const formattedActivities = recentActivities.map(activity => ({
+    id: activity.id,
+    action: activity.action,
+    description: activity.details || 'No description',
+    user: activity.user ? activity.user.name || activity.user.email : 'System',
+    createdAt: activity.createdAt,
+    resourceType: 'step',
+    resourceId: activity.id,
+    nrcJobNo: activity.nrcJobNo
+  }));
+
+  res.status(200).json({
+    success: true,
+    count: formattedActivities.length,
+    data: formattedActivities
+  });
+};
+
 // Helper function to get step detail from job step
 function getStepDetail(step: any) {
   const stepName = step.stepName;

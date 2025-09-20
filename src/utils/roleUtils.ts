@@ -168,4 +168,32 @@ export class RoleManager {
   static canAccessAllJobSteps(userRole: string): boolean {
     return this.hasAnyRole(userRole, ['admin', 'planner', 'flyingsquad']);
   }
+
+  /**
+   * Check if user can update step status (not flying squad)
+   */
+  static canUpdateStepStatus(userRole: string): boolean {
+    return this.hasAnyRole(userRole, ['admin', 'planner', 'production_head', 'printer', 'corrugator', 'flutelaminator', 'pasting_operator', 'punching_operator', 'paperstore', 'qc_manager', 'dispatch_executive']);
+  }
+
+  /**
+   * Check if user can update machine details (not flying squad)
+   */
+  static canUpdateMachineDetails(userRole: string): boolean {
+    return this.hasAnyRole(userRole, ['admin', 'planner', 'production_head']);
+  }
+
+  /**
+   * Check if user can update step timing (not flying squad)
+   */
+  static canUpdateStepTiming(userRole: string): boolean {
+    return this.hasAnyRole(userRole, ['admin', 'planner', 'production_head', 'printer', 'corrugator', 'flutelaminator', 'pasting_operator', 'punching_operator', 'paperstore', 'qc_manager', 'dispatch_executive']);
+  }
+
+  /**
+   * Check if user can only perform QC operations (flying squad)
+   */
+  static canOnlyPerformQC(userRole: string): boolean {
+    return this.hasRole(userRole, 'flyingsquad');
+  }
 }

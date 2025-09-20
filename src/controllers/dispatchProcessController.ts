@@ -4,6 +4,7 @@ import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { validateWorkflowStep } from '../utils/workflowValidator';
 import { checkJobStepMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
+import { RoleManager } from '../utils/roleUtils';
 
 export const createDispatchProcess = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -92,6 +93,30 @@ export const getDispatchProcessByNrcJobNo = async (req: Request, res: Response) 
 
 export const updateDispatchProcess = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const userRole = req.user?.role;
+  // Check if Flying Squad is trying to update non-QC fields
+  if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
+    const allowedFields = ['qcCheckSignBy', 'qcCheckAt', 'remarks'];
+    const bodyKeys = Object.keys(req.body);
+    const restrictedFields = bodyKeys.filter(key => !allowedFields.includes(key));
+    
+    if (restrictedFields.length > 0) {
+      throw new AppError(
+        `Flying Squad can only update QC-related fields. Restricted fields: ${restrictedFields.join(', ')}. Allowed fields: ${allowedFields.join(', ')}`, 
+        403
+      );
+    }
+
+    // Ensure qcCheckSignBy is set to current user
+    if (req.body.qcCheckSignBy !== undefined) {
+      req.body.qcCheckSignBy = req.user?.userId;
+    }
+
+    // Ensure qcCheckAt is set to current timestamp
+    if (req.body.qcCheckAt !== undefined) {
+      req.body.qcCheckAt = new Date();
+    }
+  }
 
   try {
     // Step 1: Find the DispatchProcess record by jobNrcJobNo
