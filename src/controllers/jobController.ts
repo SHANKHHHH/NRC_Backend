@@ -28,63 +28,86 @@ export const createJob = async (req: Request, res: Response) => {
   // Always generate nrcJobNo (ignore if provided in request)
   // Get first 3 letters of customer name (uppercase, remove spaces)
   const customerPrefix = customerName.replace(/\s+/g, '').substring(0, 3).toUpperCase();
-  
+
   // Get current year and month
   const now = new Date();
   const year = now.getFullYear().toString().slice(-2); // Last 2 digits
   const month = (now.getMonth() + 1).toString().padStart(2, '0'); // Month with leading zero
-  
-  // Get serial number for this month
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  
-  const existingJobsThisMonth = await prisma.job.count({
-    where: {
-      createdAt: {
-        gte: startOfMonth,
-        lte: endOfMonth,
-      },
-      customerName: customerName,
-    },
-  });
-  
-  const serialNumber = (existingJobsThisMonth + 1).toString().padStart(2, '0');
-  
-  // Format: SAK24-01-01 (Customer-Year-Month-Serial) - using hyphens instead of slashes
-  const generatedNrcJobNo = `${customerPrefix}${year}-${month}-${serialNumber}`;
 
-  const job = await prisma.job.create({
-    data: {
-      nrcJobNo: generatedNrcJobNo,  
-      styleItemSKU,
-      customerName,
-      imageURL: imageURL || null,
-      sharedCardDiffDate: calculateSharedCardDiffDate(rest.shadeCardApprovalDate),
-      ...rest,
-    },
-  });
+  // Collision-safe generator: find highest existing serial for this prefix and retry if needed
+  const prefix = `${customerPrefix}${year}-${month}-`; // e.g., SAK24-09-
+  let generatedNrcJobNo = '';
+  let attempts = 0;
+  const maxAttempts = 5;
 
-  // Log the job creation action
-  if (req.user?.userId) {
-    await logUserActionWithResource(
-      req.user.userId,
-      ActionTypes.JOB_CREATED,
-      JSON.stringify({
-        message: 'Job created',
-        jobNo: generatedNrcJobNo,
-        customerName,
-        styleItemSKU
-      }),
-      'Job',
-      generatedNrcJobNo
-    );
+  while (attempts < maxAttempts) {
+    attempts++;
+    // Find current highest serial for this prefix
+    const highest = await prisma.job.findFirst({
+      where: { nrcJobNo: { startsWith: prefix } },
+      select: { nrcJobNo: true },
+      orderBy: { nrcJobNo: 'desc' }
+    });
+
+    let nextSerial = 1;
+    if (highest?.nrcJobNo) {
+      const parts = highest.nrcJobNo.split('-');
+      const last = parts[parts.length - 1];
+      const num = parseInt(last, 10);
+      if (!isNaN(num)) nextSerial = num + 1;
+    }
+    const serialString = nextSerial.toString().padStart(2, '0');
+    generatedNrcJobNo = `${prefix}${serialString}`; // e.g., SAK24-09-01
+
+    try {
+      // Attempt creation with this generated number
+      const job = await prisma.job.create({
+        data: {
+          nrcJobNo: generatedNrcJobNo,
+          styleItemSKU,
+          customerName,
+          imageURL: imageURL || null,
+          sharedCardDiffDate: calculateSharedCardDiffDate(rest.shadeCardApprovalDate),
+          ...rest,
+        },
+      });
+
+      // Log the job creation action
+      if (req.user?.userId) {
+        await logUserActionWithResource(
+          req.user.userId,
+          ActionTypes.JOB_CREATED,
+          JSON.stringify({
+            message: 'Job created',
+            jobNo: generatedNrcJobNo,
+            customerName,
+            styleItemSKU
+          }),
+          'Job',
+          generatedNrcJobNo
+        );
+      }
+
+      return res.status(201).json({
+        success: true,
+        data: job,
+        message: 'Job created successfully',
+      });
+    } catch (error: any) {
+      // Prisma unique constraint error code P2002
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
+        if (attempts < maxAttempts) {
+          // Retry with next serial
+          continue;
+        }
+        throw new AppError('Failed to generate unique job number. Please retry.', 409);
+      }
+      throw error;
+    }
   }
 
-  res.status(201).json({
-    success: true,
-    data: job,
-    message: 'Job created successfully',
-  });
+  // Fallback (should not reach here)
+  throw new AppError('Unexpected error generating job number', 500);
 };
 
 

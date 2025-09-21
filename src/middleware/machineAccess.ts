@@ -259,7 +259,7 @@ export const checkJobStepMachineAccess = async (userId: string, userRole: string
  */
 function isStepForUserRole(stepName: string, userRole: string): boolean {
   const roleStepMapping = {
-    'printer': 'Printing',
+    'printer': 'PrintingDetails',
     'corrugator': 'Corrugation', 
     'punching_operator': 'Punching',
     'pasting_operator': 'SideFlapPasting',
@@ -267,9 +267,17 @@ function isStepForUserRole(stepName: string, userRole: string): boolean {
     'paperstore': 'PaperStore',
     'qc_manager': 'QualityDept',
     'dispatch_executive': 'DispatchProcess'
-  };
-  
-  return roleStepMapping[userRole as keyof typeof roleStepMapping] === stepName;
+  } as const;
+
+  try {
+    const roles = JSON.parse(userRole);
+    if (Array.isArray(roles)) {
+      return roles.some(r => (roleStepMapping as any)[r] === stepName);
+    }
+  } catch {
+    // Single role string
+  }
+  return (roleStepMapping as any)[userRole] === stepName;
 }
 
 /**
@@ -282,17 +290,30 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
     return allJobSteps.map(js => js.id);
   }
 
-  // Get all job steps with their machine details
+  // Get all job steps with their machine details and planning/job info
   const allJobSteps = await prisma.jobStep.findMany({
-    select: { id: true, machineDetails: true }
+    select: { 
+      id: true, 
+      machineDetails: true,
+      stepName: true,
+      jobPlanning: { select: { nrcJobNo: true } }
+    }
   });
 
-  // Visibility when machine details not set yet: hide by default to prevent leakage
-  // Only show if at least one machine matches user's assigned machines
   const filteredJobSteps: number[] = [];
   for (const jobStep of allJobSteps) {
+    // High-demand visibility: role-based visibility regardless of machine
+    const job = await prisma.job.findFirst({
+      where: { nrcJobNo: jobStep.jobPlanning.nrcJobNo },
+      select: { jobDemand: true }
+    });
+    if (job?.jobDemand === 'high' && isStepForUserRole(jobStep.stepName, userRole)) {
+      filteredJobSteps.push(jobStep.id);
+      continue;
+    }
+
+    // Normal visibility: must match at least one machine
     if (!Array.isArray(jobStep.machineDetails) || jobStep.machineDetails.length === 0) {
-      // No machine assigned to step → not visible to non-admin users
       continue;
     }
     const hasMachineAccess = jobStep.machineDetails.some((machine: any) => {
@@ -319,21 +340,27 @@ export const getFilteredJobNumbers = async (userMachineIds: string[] | null, use
 
   // Include job-level machine filtering (job.machineId) OR step-level machine filtering
   const [jobs, jobPlannings] = await Promise.all([
-    prisma.job.findMany({ select: { nrcJobNo: true, machineId: true } }),
+    prisma.job.findMany({ select: { nrcJobNo: true, machineId: true, jobDemand: true } }),
     prisma.jobPlanning.findMany({
-      select: { nrcJobNo: true, steps: { select: { machineDetails: true } } }
+      select: { nrcJobNo: true, steps: { select: { machineDetails: true, stepNo: true, stepName: true } } }
     })
   ]);
 
   const jobLevelAccessible = jobs
-    .filter(j => j.machineId && userMachineIds.includes(j.machineId))
+    .filter(j => (j.machineId && userMachineIds.includes(j.machineId)) || j.jobDemand === 'high')
     .map(j => j.nrcJobNo);
 
   const planningLevelAccessible = jobPlannings
-    .filter(p => p.steps.some(s => Array.isArray(s.machineDetails) && s.machineDetails.some((m: any) => {
-      const mid = (m && typeof m === 'object') ? (m.machineId || (m as any).id) : m;
-      return typeof mid === 'string' && userMachineIds.includes(mid);
-    })))
+    .filter(p => p.steps.some(s => {
+      // High-demand grants role-based visibility regardless of machine
+      const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
+      if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
+      // Otherwise require machine match
+      return Array.isArray(s.machineDetails) && s.machineDetails.some((m: any) => {
+        const mid = (m && typeof m === 'object') ? (m.machineId || (m as any).id) : m;
+        return typeof mid === 'string' && userMachineIds.includes(mid);
+      });
+    }))
     .map(p => p.nrcJobNo);
 
   const set = new Set<string>([...jobLevelAccessible, ...planningLevelAccessible]);
