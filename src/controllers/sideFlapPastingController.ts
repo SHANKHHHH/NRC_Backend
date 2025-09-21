@@ -129,6 +129,24 @@ export const updateSideFlapPasting = async (req: Request, res: Response) => {
       throw new AppError('SideFlapPasting record not found', 404);
     }
 
+    // Enforce high-demand bypass or machine access
+    if (req.user?.userId && req.user?.role) {
+      const jobStep = await prisma.jobStep.findFirst({
+        where: { sideFlapPasting: { id: existingSideFlap.id } },
+        select: { id: true, stepName: true }
+      });
+      if (jobStep) {
+        const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+        const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+        if (!bypass) {
+          const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+          if (!hasAccess) {
+            throw new AppError('Access denied: You do not have access to machines for this step', 403);
+          }
+        }
+      }
+    }
+
     // Step 2: Update using its unique `id`
     const sideFlapPasting = await prisma.sideFlapPasting.update({
       where: { id: existingSideFlap.id },

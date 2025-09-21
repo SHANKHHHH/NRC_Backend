@@ -161,6 +161,24 @@ export const updateFluteLaminateBoardConversion = async (req: Request, res: Resp
       throw new AppError('FluteLaminateBoardConversion record not found', 404);
     }
 
+    // Enforce high-demand bypass or machine access
+    if (req.user?.userId && req.user?.role) {
+      const jobStep = await prisma.jobStep.findFirst({
+        where: { flutelam: { id: existingRecord.id } },
+        select: { id: true, stepName: true }
+      });
+      if (jobStep) {
+        const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+        const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+        if (!bypass) {
+          const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+          if (!hasAccess) {
+            throw new AppError('Access denied: You do not have access to machines for this step', 403);
+          }
+        }
+      }
+    }
+
     // Step 2: Update using the unique ID
     const fluteLaminateBoardConversion = await prisma.fluteLaminateBoardConversion.update({
       where: { id: existingRecord.id },

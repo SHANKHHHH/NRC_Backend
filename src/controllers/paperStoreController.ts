@@ -179,6 +179,24 @@ if (!existing) {
   return res.status(404).json({ success: false, message: 'PaperStore not found' });
 }
 
+// Enforce high-demand bypass or machine access
+if (req.user?.userId && req.user?.role) {
+  const jobStep = await prisma.jobStep.findFirst({
+    where: { paperStore: { id: existing.id } },
+    select: { id: true, stepName: true }
+  });
+  if (jobStep) {
+    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+    const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+    if (!bypass) {
+      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+      if (!hasAccess) {
+        throw new AppError('Access denied: You do not have access to machines for this step', 403);
+      }
+    }
+  }
+}
+
 // Step 2: Use its ID to update (since ID is unique)
 const updated = await prisma.paperStore.update({
   where: { id: existing.id },

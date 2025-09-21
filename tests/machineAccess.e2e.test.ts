@@ -42,8 +42,8 @@ describe('Machine Access Control & High-Demand Mode (Corrugation)', () => {
     await prisma.userMachine.create({ data: { userId: userY.id, machineId: machineC02.id } });
 
     // Create two jobs
-    const jobA = await prisma.job.create({ data: { nrcJobNo: `TEST-CORR-A-${Date.now()}`, styleItemSKU: 'SKU-A', customerName: 'CustA', jobDemand: 'medium' as any } });
-    const jobB = await prisma.job.create({ data: { nrcJobNo: `TEST-CORR-B-${Date.now()}`, styleItemSKU: 'SKU-B', customerName: 'CustB', jobDemand: 'medium' as any } });
+    const jobA = await prisma.job.create({ data: { nrcJobNo: `TEST-CORR-A-${Date.now()}`, styleItemSKU: 'SKU-A', customerName: 'CustA', jobDemand: 'medium' } });
+    const jobB = await prisma.job.create({ data: { nrcJobNo: `TEST-CORR-B-${Date.now()}`, styleItemSKU: 'SKU-B', customerName: 'CustB', jobDemand: 'medium' } });
     nrcA = jobA.nrcJobNo;
     nrcB = jobB.nrcJobNo;
 
@@ -51,10 +51,10 @@ describe('Machine Access Control & High-Demand Mode (Corrugation)', () => {
     await prisma.jobPlanning.create({
       data: {
         nrcJobNo: nrcA,
-        jobDemand: 'medium' as any,
+        jobDemand: 'medium',
         steps: {
           create: [
-            { stepNo: 1, stepName: 'Corrugation', machineDetails: [{ machineId: machineC01.id, unit: machineC01.unit, machineCode: machineC01.machineCode, machineType: machineC01.machineType }] as any[] },
+            { stepNo: 1, stepName: 'Corrugation', machineDetails: [{ machineId: machineC01.id, unit: machineC01.unit, machineCode: machineC01.machineCode, machineType: machineC01.machineType }] },
           ]
         }
       }
@@ -63,10 +63,10 @@ describe('Machine Access Control & High-Demand Mode (Corrugation)', () => {
     await prisma.jobPlanning.create({
       data: {
         nrcJobNo: nrcB,
-        jobDemand: 'medium' as any,
+        jobDemand: 'medium',
         steps: {
           create: [
-            { stepNo: 1, stepName: 'Corrugation', machineDetails: [{ machineId: machineC02.id, unit: machineC02.unit, machineCode: machineC02.machineCode, machineType: machineC02.machineType }] as any[] },
+            { stepNo: 1, stepName: 'Corrugation', machineDetails: [{ machineId: machineC02.id, unit: machineC02.unit, machineCode: machineC02.machineCode, machineType: machineC02.machineType }] },
           ]
         }
       }
@@ -100,7 +100,7 @@ describe('Machine Access Control & High-Demand Mode (Corrugation)', () => {
       .set('Authorization', `Bearer ${tokenX}`)
       .expect(200);
     const jobsX = (listX.body && listX.body.data) || [];
-    const jobNosX = jobsX.map((p: any) => p.nrcJobNo);
+    const jobNosX = jobsX.map((p) => p.nrcJobNo);
     expect(jobNosX).toContain(nrcA);
     expect(jobNosX).not.toContain(nrcB);
 
@@ -110,22 +110,22 @@ describe('Machine Access Control & High-Demand Mode (Corrugation)', () => {
       .set('Authorization', `Bearer ${tokenY}`)
       .expect(200);
     const jobsY = (listY.body && listY.body.data) || [];
-    const jobNosY = jobsY.map((p: any) => p.nrcJobNo);
+    const jobNosY = jobsY.map((p) => p.nrcJobNo);
     expect(jobNosY).toContain(nrcB);
     expect(jobNosY).not.toContain(nrcA);
   });
 
   test('High-demand: Both users see both Corrugation jobs', async () => {
     // Enable high-demand on both jobs
-    await prisma.job.update({ where: { nrcJobNo: nrcA }, data: { jobDemand: 'high' as any } });
-    await prisma.job.update({ where: { nrcJobNo: nrcB }, data: { jobDemand: 'high' as any } });
+    await prisma.job.update({ where: { nrcJobNo: nrcA }, data: { jobDemand: 'high' } });
+    await prisma.job.update({ where: { nrcJobNo: nrcB }, data: { jobDemand: 'high' } });
 
     // User X now sees both
     const listX = await request(app)
       .get('/api/job-planning')
       .set('Authorization', `Bearer ${tokenX}`)
       .expect(200);
-    const jobNosX = ((listX.body && listX.body.data) || []).map((p: any) => p.nrcJobNo);
+    const jobNosX = ((listX.body && listX.body.data) || []).map((p) => p.nrcJobNo);
     expect(jobNosX).toEqual(expect.arrayContaining([nrcA, nrcB]));
 
     // User Y now sees both
@@ -133,7 +133,7 @@ describe('Machine Access Control & High-Demand Mode (Corrugation)', () => {
       .get('/api/job-planning')
       .set('Authorization', `Bearer ${tokenY}`)
       .expect(200);
-    const jobNosY = ((listY.body && listY.body.data) || []).map((p: any) => p.nrcJobNo);
+    const jobNosY = ((listY.body && listY.body.data) || []).map((p) => p.nrcJobNo);
     expect(jobNosY).toEqual(expect.arrayContaining([nrcA, nrcB]));
   });
 });

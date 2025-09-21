@@ -264,10 +264,13 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
 
   // Enforce machine access: non-admin/flying squad must have machine assigned on this step
   if (req.user?.userId && req.user?.role) {
-    const { checkJobStepMachineAccess } = await import('../middleware/machineAccess');
-    const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
-    if (!hasAccess) {
-      throw new AppError('Access denied: You do not have access to machines for this step', 403);
+    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+    const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+    if (!bypass) {
+      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+      if (!hasAccess) {
+        throw new AppError('Access denied: You do not have access to machines for this step', 403);
+      }
     }
   }
 
@@ -368,10 +371,13 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
 
   // Enforce machine access
   if (req.user?.userId && req.user?.role) {
-    const { checkJobStepMachineAccess } = await import('../middleware/machineAccess');
-    const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, step.id);
-    if (!hasAccess) {
-      throw new AppError('Access denied: You do not have access to machines for this step', 403);
+    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+    const bypass = await allowHighDemandBypass(req.user.role, step.stepName, nrcJobNo);
+    if (!bypass) {
+      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, step.id);
+      if (!hasAccess) {
+        throw new AppError('Access denied: You do not have access to machines for this step', 403);
+      }
     }
   }
 

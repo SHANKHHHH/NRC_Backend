@@ -172,13 +172,16 @@ export const updateCorrugation = async (req: Request, res: Response) => {
     if (req.user?.userId && req.user?.role) {
       const jobStep = await prisma.jobStep.findFirst({
         where: { corrugation: { id: existingCorrugation.id } },
-        select: { id: true }
+        select: { id: true, stepName: true }
       });
       if (jobStep) {
-        const { checkJobStepMachineAccess } = await import('../middleware/machineAccess');
-        const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
-        if (!hasAccess) {
-          throw new AppError('Access denied: You do not have access to machines for this step', 403);
+        const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+        const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+        if (!bypass) {
+          const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+          if (!hasAccess) {
+            throw new AppError('Access denied: You do not have access to machines for this step', 403);
+          }
         }
       }
     }

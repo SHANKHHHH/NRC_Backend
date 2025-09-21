@@ -281,6 +281,25 @@ function isStepForUserRole(stepName: string, userRole: string): boolean {
 }
 
 /**
+ * Allow role-based bypass of machine access in high-demand mode
+ */
+export const allowHighDemandBypass = async (
+  userRole: string,
+  stepName: string,
+  nrcJobNo: string
+): Promise<boolean> => {
+  try {
+    const job = await prisma.job.findFirst({ where: { nrcJobNo }, select: { jobDemand: true } });
+    if (job?.jobDemand === 'high' && isStepForUserRole(stepName, userRole)) {
+      return true;
+    }
+  } catch {
+    // fallthrough: no bypass
+  }
+  return false;
+};
+
+/**
  * Get filtered job step IDs based on user machine access and high demand jobs
  */
 export const getFilteredJobStepIds = async (userMachineIds: string[] | null, userRole: string): Promise<number[]> => {
@@ -312,8 +331,12 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
       continue;
     }
 
-    // Normal visibility: must match at least one machine
+    // Normal visibility:
+    // - If no machines assigned to the step, allow role-based visibility
     if (!Array.isArray(jobStep.machineDetails) || jobStep.machineDetails.length === 0) {
+      if (isStepForUserRole(jobStep.stepName, userRole)) {
+        filteredJobSteps.push(jobStep.id);
+      }
       continue;
     }
     const hasMachineAccess = jobStep.machineDetails.some((machine: any) => {
@@ -355,7 +378,12 @@ export const getFilteredJobNumbers = async (userMachineIds: string[] | null, use
       // High-demand grants role-based visibility regardless of machine
       const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
       if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
-      // Otherwise require machine match
+      // Otherwise in normal mode:
+      // - If step has no machine assignment, allow role-based visibility
+      if (!Array.isArray(s.machineDetails) || s.machineDetails.length === 0) {
+        return isStepForUserRole(s.stepName, userRole);
+      }
+      // - Or require machine match
       return Array.isArray(s.machineDetails) && s.machineDetails.some((m: any) => {
         const mid = (m && typeof m === 'object') ? (m.machineId || (m as any).id) : m;
         return typeof mid === 'string' && userMachineIds.includes(mid);
