@@ -262,14 +262,16 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
     throw new AppError('JobStep not found for the given jobPlanId and nrcJobNo', 404);
   }
 
-  // Enforce machine access: non-admin/flying squad must have machine assigned on this step
+  // Enforce machine access for most steps, but bypass for PaperStore as requested
   if (req.user?.userId && req.user?.role) {
-    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
-    const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
-    if (!bypass) {
-      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
-      if (!hasAccess) {
-        throw new AppError('Access denied: You do not have access to machines for this step', 403);
+    if (jobStep.stepName !== 'PaperStore') {
+      const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+      const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+      if (!bypass) {
+        const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+        if (!hasAccess) {
+          throw new AppError('Access denied: You do not have access to machines for this step', 403);
+        }
       }
     }
   }
@@ -369,14 +371,16 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     throw new AppError('Step not found for that NRC Job No and step number', 404);
   }
 
-  // Enforce machine access
+  // Enforce machine access, but bypass for PaperStore step per requirement
   if (req.user?.userId && req.user?.role) {
-    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
-    const bypass = await allowHighDemandBypass(req.user.role, step.stepName, nrcJobNo);
-    if (!bypass) {
-      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, step.id);
-      if (!hasAccess) {
-        throw new AppError('Access denied: You do not have access to machines for this step', 403);
+    if (step.stepName !== 'PaperStore') {
+      const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+      const bypass = await allowHighDemandBypass(req.user.role, step.stepName, nrcJobNo);
+      if (!bypass) {
+        const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, step.id);
+        if (!hasAccess) {
+          throw new AppError('Access denied: You do not have access to machines for this step', 403);
+        }
       }
     }
   }
