@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
-import { checkJobStepMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
+// Machine access checks removed for PaperStore create/update per requirement
 import { RoleManager } from '../utils/roleUtils';
 
 // Create PaperStore step detail, only if previous step is accepted
@@ -14,12 +14,7 @@ export const createPaperStore = async (req: Request, res: Response) => {
   const userId = req.user?.userId;
   const userRole = req.user?.role;
   
-  if (userId && userRole) {
-    const hasAccess = await checkJobStepMachineAccess(userId, userRole, jobStepId);
-    if (!hasAccess) {
-      throw new AppError('Access denied: You do not have access to this paper store machine', 403);
-    }
-  }
+  // Machine access check removed: allow creating PaperStore regardless of machine assignment
   
   // Find the JobStep
   const jobStep = await prisma.jobStep.findUnique({ where: { id: jobStepId }, include: { jobPlanning: { include: { steps: true } } } });
@@ -102,13 +97,8 @@ export const getPaperStoreById = async (req: Request, res: Response) => {
 };
 
 export const getAllPaperStores = async (req: Request, res: Response) => {
-  const userMachineIds = req.userMachineIds; // From middleware
-  
-  const userRole = req.user?.role || '';
-  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
-  
+  // Return all PaperStore records without machine-based filtering
   const paperStores = await prisma.paperStore.findMany({
-    where: { jobStepId: { in: jobStepIds } },
     include: {
       jobStep: {
         include: {
@@ -119,7 +109,7 @@ export const getAllPaperStores = async (req: Request, res: Response) => {
       }
     }
   });
-  
+
   res.status(200).json({ success: true, count: paperStores.length, data: paperStores });
 };
 
@@ -179,23 +169,7 @@ if (!existing) {
   return res.status(404).json({ success: false, message: 'PaperStore not found' });
 }
 
-// Enforce high-demand bypass or machine access
-if (req.user?.userId && req.user?.role) {
-  const jobStep = await prisma.jobStep.findFirst({
-    where: { paperStore: { id: existing.id } },
-    select: { id: true, stepName: true }
-  });
-  if (jobStep) {
-    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
-    const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
-    if (!bypass) {
-      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
-      if (!hasAccess) {
-        throw new AppError('Access denied: You do not have access to machines for this step', 403);
-      }
-    }
-  }
-}
+// Machine access enforcement removed for update as well
 
 // Step 2: Use its ID to update (since ID is unique)
 const updated = await prisma.paperStore.update({
