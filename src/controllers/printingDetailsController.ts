@@ -80,9 +80,9 @@ export const getAllPrintingDetails = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
   
-  // Get role-based step data from job plannings
-  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
-  const printingSteps = await getRoleBasedStepData(userMachineIds, userRole, 'PrintingDetails');
+  // Get unified role-specific step data
+  const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
+  const printingSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'PrintingDetails');
   
   res.status(200).json({ 
     success: true, 

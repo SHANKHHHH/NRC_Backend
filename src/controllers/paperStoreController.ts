@@ -100,9 +100,9 @@ export const getAllPaperStores = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
   
-  // Get role-based step data from job plannings
-  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
-  const paperStoreSteps = await getRoleBasedStepData(userMachineIds, userRole, 'PaperStore');
+  // Get unified role-specific step data
+  const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
+  const paperStoreSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'PaperStore');
   
   res.status(200).json({ 
     success: true, 

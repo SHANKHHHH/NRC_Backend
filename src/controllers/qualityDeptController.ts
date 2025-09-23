@@ -66,9 +66,9 @@ export const getAllQualityDepts = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
   
-  // Get role-based step data from job plannings
-  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
-  const qualityDeptSteps = await getRoleBasedStepData(userMachineIds, userRole, 'QualityDept');
+  // Get unified role-specific step data
+  const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
+  const qualityDeptSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'QualityDept');
   
   res.status(200).json({ 
     success: true, 

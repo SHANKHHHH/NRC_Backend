@@ -154,32 +154,9 @@ export const getAllJobs = async (req: Request, res: Response) => {
       }
     });
 
-    // Get role-based step data for all jobs
-    const { getAllRoleBasedStepData } = await import('../utils/stepDataHelper');
-    const stepsByJob = await getAllRoleBasedStepData(userMachineIds, userRole);
-
-    // Transform the data to ensure relations are never null and include step data
-    const safeJobs = jobs.map(job => {
-      const jobStepData = stepsByJob[job.nrcJobNo] || {
-        printingDetails: [],
-        fluteLaminateBoardConversions: [],
-        corrugations: [],
-        punchings: [],
-        sideFlapPastings: [],
-        qualityDepts: [],
-        dispatchProcesses: [],
-        paperStores: []
-      };
-
-      return {
-        ...job,
-        // Include step data from job plannings
-        ...jobStepData,
-        // Keep original relations for backward compatibility
-        purchaseOrders: job.purchaseOrders || [],
-        artworks: job.artworks || []
-      };
-    });
+    // Get unified role-based job data
+    const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
+    const safeJobs = await UnifiedJobDataHelper.getRoleBasedJobData(userMachineIds, userRole);
 
     res.status(200).json({
       success: true,

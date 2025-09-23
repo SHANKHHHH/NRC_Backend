@@ -66,9 +66,9 @@ export const getAllSideFlapPastings = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
   
-  // Get role-based step data from job plannings
-  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
-  const sideFlapPastingSteps = await getRoleBasedStepData(userMachineIds, userRole, 'SideFlapPasting');
+  // Get unified role-specific step data
+  const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
+  const sideFlapPastingSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'SideFlapPasting');
   
   res.status(200).json({ 
     success: true, 

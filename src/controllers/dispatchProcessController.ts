@@ -66,9 +66,9 @@ export const getAllDispatchProcesses = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
   
-  // Get role-based step data from job plannings
-  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
-  const dispatchProcessSteps = await getRoleBasedStepData(userMachineIds, userRole, 'DispatchProcess');
+  // Get unified role-specific step data
+  const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
+  const dispatchProcessSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'DispatchProcess');
   
   res.status(200).json({ 
     success: true, 

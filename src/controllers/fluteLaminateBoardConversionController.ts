@@ -99,9 +99,9 @@ export const getAllFluteLaminateBoardConversions = async (req: Request, res: Res
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
   
-  // Get role-based step data from job plannings
-  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
-  const flutelamSteps = await getRoleBasedStepData(userMachineIds, userRole, 'FluteLaminateBoardConversion');
+  // Get unified role-specific step data
+  const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
+  const flutelamSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'FluteLaminateBoardConversion');
   
   res.status(200).json({ 
     success: true, 

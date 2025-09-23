@@ -66,9 +66,9 @@ export const getAllPunchings = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
   
-  // Get role-based step data from job plannings
-  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
-  const punchingSteps = await getRoleBasedStepData(userMachineIds, userRole, 'Punching');
+  // Get unified role-specific step data
+  const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
+  const punchingSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'Punching');
   
   res.status(200).json({ 
     success: true, 
