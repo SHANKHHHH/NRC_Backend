@@ -225,9 +225,10 @@ export const getStepsByNrcJobNo = async (req: Request, res: Response) => {
 // Get a specific step for a given nrcJobNo and stepNo
 export const getStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
+  const userRole = req.user?.role;
   
-  // Find the specific step by looking through all plannings for this job
-  const step = await prisma.jobStep.findFirst({
+  // Find all steps with the given step number for this job
+  const steps = await prisma.jobStep.findMany({
     where: {
       stepNo: Number(stepNo),
       jobPlanning: {
@@ -241,8 +242,23 @@ export const getStepByNrcJobNoAndStepNo = async (req: Request, res: Response) =>
     }
   });
   
-  if (!step) {
+  if (steps.length === 0) {
     throw new AppError('Step not found for that NRC Job No and step number', 404);
+  }
+
+  // If user has a role, filter by role-appropriate step name
+  let step = steps[0]; // Default to first step
+  
+  if (userRole) {
+    const { isStepForUserRole } = await import('../middleware/machineAccess');
+    
+    // Find the step that matches the user's role
+    const roleMatchedStep = steps.find(s => isStepForUserRole(s.stepName, userRole));
+    
+    if (roleMatchedStep) {
+      step = roleMatchedStep;
+    }
+    // If no role match found, use the first step (backward compatibility)
   }
   
   res.status(200).json({
@@ -366,9 +382,10 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   const { nrcJobNo, stepNo } = req.params;
   let userId = req.user?.userId || req.headers['user-id'];
   if (Array.isArray(userId)) userId = userId[0];
+  const userRole = req.user?.role;
 
-  // Find the specific step by looking through all plannings for this job
-  const step = await prisma.jobStep.findFirst({
+  // Find all steps with the given step number for this job
+  const steps = await prisma.jobStep.findMany({
     where: {
       stepNo: Number(stepNo),
       jobPlanning: {
@@ -382,8 +399,23 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     }
   });
   
-  if (!step) {
+  if (steps.length === 0) {
     throw new AppError('Step not found for that NRC Job No and step number', 404);
+  }
+
+  // If user has a role, filter by role-appropriate step name
+  let step = steps[0]; // Default to first step
+  
+  if (userRole) {
+    const { isStepForUserRole } = await import('../middleware/machineAccess');
+    
+    // Find the step that matches the user's role
+    const roleMatchedStep = steps.find(s => isStepForUserRole(s.stepName, userRole));
+    
+    if (roleMatchedStep) {
+      step = roleMatchedStep;
+    }
+    // If no role match found, use the first step (backward compatibility)
   }
 
   // Enforce machine access, but bypass for PaperStore step per requirement
@@ -488,13 +520,14 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
   const { status } = req.body;
   let userId = req.user?.userId || req.headers['user-id'];
   if (Array.isArray(userId)) userId = userId[0];
+  const userRole = req.user?.role;
 
   if (!['planned', 'start', 'stop'].includes(status)) {
     throw new AppError('Invalid status value. Must be one of: planned, start, stop', 400);
   }
 
-  // Find the specific step by looking through all plannings for this job
-  const step = await prisma.jobStep.findFirst({
+  // Find all steps with the given step number for this job
+  const steps = await prisma.jobStep.findMany({
     where: {
       stepNo: Number(stepNo),
       jobPlanning: {
@@ -508,8 +541,23 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
     }
   });
   
-  if (!step) {
+  if (steps.length === 0) {
     throw new AppError('Step not found for that NRC Job No and step number', 404);
+  }
+
+  // If user has a role, filter by role-appropriate step name
+  let step = steps[0]; // Default to first step
+  
+  if (userRole) {
+    const { isStepForUserRole } = await import('../middleware/machineAccess');
+    
+    // Find the step that matches the user's role
+    const roleMatchedStep = steps.find(s => isStepForUserRole(s.stepName, userRole));
+    
+    if (roleMatchedStep) {
+      step = roleMatchedStep;
+    }
+    // If no role match found, use the first step (backward compatibility)
   }
 
   // Prepare update data
@@ -588,9 +636,10 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
 // Update any field of a specific step for a given nrcJobNo and stepNo
 export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
+  const userRole = req.user?.role;
   
-  // Find the specific step by looking through all plannings for this job
-  const step = await prisma.jobStep.findFirst({
+  // Find all steps with the given step number for this job
+  const steps = await prisma.jobStep.findMany({
     where: {
       stepNo: Number(stepNo),
       jobPlanning: {
@@ -604,8 +653,23 @@ export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     }
   });
   
-  if (!step) {
+  if (steps.length === 0) {
     throw new AppError('Step not found for that NRC Job No and step number', 404);
+  }
+
+  // If user has a role, filter by role-appropriate step name
+  let step = steps[0]; // Default to first step
+  
+  if (userRole) {
+    const { isStepForUserRole } = await import('../middleware/machineAccess');
+    
+    // Find the step that matches the user's role
+    const roleMatchedStep = steps.find(s => isStepForUserRole(s.stepName, userRole));
+    
+    if (roleMatchedStep) {
+      step = roleMatchedStep;
+    }
+    // If no role match found, use the first step (backward compatibility)
   }
   // Process machine details if provided
   const updateData = { ...req.body };
