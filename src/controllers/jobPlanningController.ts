@@ -548,7 +548,7 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
       JSON.stringify({
         message: `Job step status updated to ${status}`,
         nrcJobNo,
-        jobPlanId: jobPlanning.jobPlanId,
+        jobPlanId: step.jobPlanning.jobPlanId,
         stepNo,
         status,
         startDate: updatedStep.startDate,
