@@ -367,21 +367,29 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
 
   // Log the job step status update action
   if (userId && typeof userId === 'string') {
-    await logUserActionWithResource(
-      userId,
-      ActionTypes.JOBSTEP_UPDATED,
-      JSON.stringify({
-        message: `Job step status updated to ${status}`,
-        nrcJobNo,
-        jobPlanId,
-        jobStepNo,
-        status,
-        startDate: updatedStep.startDate,
-        endDate: updatedStep.endDate
-      }),
-      'JobStep',
-      jobStepNo
-    );
+    try {
+      console.log(`Attempting to log activity for user ${userId}, step ${jobStepNo}, status ${status}`);
+      await logUserActionWithResource(
+        userId,
+        ActionTypes.JOBSTEP_UPDATED,
+        JSON.stringify({
+          message: `Job step status updated to ${status}`,
+          nrcJobNo,
+          jobPlanId,
+          jobStepNo,
+          status,
+          startDate: updatedStep.startDate,
+          endDate: updatedStep.endDate
+        }),
+        'JobStep',
+        jobStepNo
+      );
+      console.log(`Successfully logged activity for user ${userId}, step ${jobStepNo}`);
+    } catch (error) {
+      console.error(`Failed to log activity for user ${userId}, step ${jobStepNo}:`, error);
+    }
+  } else {
+    console.log(`Skipping activity log - userId: ${userId}, type: ${typeof userId}`);
   }
 
   // Check if job should be automatically completed when step is set to 'stop'
@@ -649,21 +657,29 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
 
   // Log the job step status update action
   if (userId && typeof userId === 'string') {
-    await logUserActionWithResource(
-      userId,
-      ActionTypes.JOBSTEP_UPDATED,
-      JSON.stringify({
-        message: `Job step status updated to ${status}`,
-        nrcJobNo,
-        jobPlanId: step.jobPlanning.jobPlanId,
-        stepNo,
-        status,
-        startDate: updatedStep.startDate,
-        endDate: updatedStep.endDate
-      }),
-      'JobStep',
-      stepNo
-    );
+    try {
+      console.log(`Attempting to log activity for user ${userId}, step ${step.id}, status ${status}`);
+      await logUserActionWithResource(
+        userId,
+        ActionTypes.JOBSTEP_UPDATED,
+        JSON.stringify({
+          message: `Job step status updated to ${status}`,
+          nrcJobNo,
+          jobPlanId: step.jobPlanning.jobPlanId,
+          stepNo,
+          status,
+          startDate: updatedStep.startDate,
+          endDate: updatedStep.endDate
+        }),
+        'JobStep',
+        stepNo
+      );
+      console.log(`Successfully logged activity for user ${userId}, step ${step.id}`);
+    } catch (error) {
+      console.error(`Failed to log activity for user ${userId}, step ${step.id}:`, error);
+    }
+  } else {
+    console.log(`Skipping activity log - userId: ${userId}, type: ${typeof userId}`);
   }
 
   // Check if job should be automatically completed when step is set to 'stop'
