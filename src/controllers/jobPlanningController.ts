@@ -192,19 +192,29 @@ export const getJobPlanningByNrcJobNo = async (req: Request, res: Response) => {
 // Get all steps for a given nrcJobNo
 export const getStepsByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
-  // Find the job planning for the given nrcJobNo
-  const jobPlanning = await prisma.jobPlanning.findFirst({
-    where: { nrcJobNo },
-    select: { jobPlanId: true },
-  });
-  if (!jobPlanning) {
-    throw new AppError('JobPlanning not found for that NRC Job No', 404);
-  }
-  // Find all steps for the jobPlanning
+  
+  // Find all steps from all plannings for this job
   const steps = await prisma.jobStep.findMany({
-    where: { jobPlanningId: jobPlanning.jobPlanId },
-    orderBy: { stepNo: 'asc' },
+    where: {
+      jobPlanning: {
+        nrcJobNo: nrcJobNo
+      }
+    },
+    include: {
+      jobPlanning: {
+        select: { jobPlanId: true, nrcJobNo: true }
+      }
+    },
+    orderBy: [
+      { jobPlanningId: 'asc' },
+      { stepNo: 'asc' }
+    ],
   });
+  
+  if (steps.length === 0) {
+    throw new AppError('No steps found for that NRC Job No', 404);
+  }
+  
   res.status(200).json({
     success: true,
     count: steps.length,
@@ -215,24 +225,26 @@ export const getStepsByNrcJobNo = async (req: Request, res: Response) => {
 // Get a specific step for a given nrcJobNo and stepNo
 export const getStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
-  // Find the job planning for the given nrcJobNo
-  const jobPlanning = await prisma.jobPlanning.findFirst({
-    where: { nrcJobNo },
-    select: { jobPlanId: true },
-  });
-  if (!jobPlanning) {
-    throw new AppError('JobPlanning not found for that NRC Job No', 404);
-  }
-  // Find the specific step for the jobPlanning
+  
+  // Find the specific step by looking through all plannings for this job
   const step = await prisma.jobStep.findFirst({
     where: {
-      jobPlanningId: jobPlanning.jobPlanId,
       stepNo: Number(stepNo),
+      jobPlanning: {
+        nrcJobNo: nrcJobNo
+      }
     },
+    include: {
+      jobPlanning: {
+        select: { jobPlanId: true, nrcJobNo: true }
+      }
+    }
   });
+  
   if (!step) {
     throw new AppError('Step not found for that NRC Job No and step number', 404);
   }
+  
   res.status(200).json({
     success: true,
     data: step,
@@ -355,18 +367,21 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   let userId = req.user?.userId || req.headers['user-id'];
   if (Array.isArray(userId)) userId = userId[0];
 
-  // Find the job planning and step
-  const jobPlanning = await prisma.jobPlanning.findFirst({
-    where: { nrcJobNo },
-    select: { jobPlanId: true },
-  });
-  if (!jobPlanning) {
-    throw new AppError('JobPlanning not found for that NRC Job No', 404);
-  }
-
+  // Find the specific step by looking through all plannings for this job
   const step = await prisma.jobStep.findFirst({
-    where: { jobPlanningId: jobPlanning.jobPlanId, stepNo: Number(stepNo) },
+    where: {
+      stepNo: Number(stepNo),
+      jobPlanning: {
+        nrcJobNo: nrcJobNo
+      }
+    },
+    include: {
+      jobPlanning: {
+        select: { jobPlanId: true, nrcJobNo: true }
+      }
+    }
   });
+  
   if (!step) {
     throw new AppError('Step not found for that NRC Job No and step number', 404);
   }
@@ -478,22 +493,21 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
     throw new AppError('Invalid status value. Must be one of: planned, start, stop', 400);
   }
 
-  // Find the job planning for the given nrcJobNo
-  const jobPlanning = await prisma.jobPlanning.findFirst({
-    where: { nrcJobNo },
-    select: { jobPlanId: true },
-  });
-  if (!jobPlanning) {
-    throw new AppError('JobPlanning not found for that NRC Job No', 404);
-  }
-
-  // Find the specific step for the jobPlanning
+  // Find the specific step by looking through all plannings for this job
   const step = await prisma.jobStep.findFirst({
     where: {
-      jobPlanningId: jobPlanning.jobPlanId,
       stepNo: Number(stepNo),
+      jobPlanning: {
+        nrcJobNo: nrcJobNo
+      }
     },
+    include: {
+      jobPlanning: {
+        select: { jobPlanId: true, nrcJobNo: true }
+      }
+    }
   });
+  
   if (!step) {
     throw new AppError('Step not found for that NRC Job No and step number', 404);
   }
@@ -574,21 +588,22 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
 // Update any field of a specific step for a given nrcJobNo and stepNo
 export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
-  // Find the job planning for the given nrcJobNo
-  const jobPlanning = await prisma.jobPlanning.findFirst({
-    where: { nrcJobNo },
-    select: { jobPlanId: true },
-  });
-  if (!jobPlanning) {
-    throw new AppError('JobPlanning not found for that NRC Job No', 404);
-  }
-  // Find the specific step for the jobPlanning
+  
+  // Find the specific step by looking through all plannings for this job
   const step = await prisma.jobStep.findFirst({
     where: {
-      jobPlanningId: jobPlanning.jobPlanId,
       stepNo: Number(stepNo),
+      jobPlanning: {
+        nrcJobNo: nrcJobNo
+      }
     },
+    include: {
+      jobPlanning: {
+        select: { jobPlanId: true, nrcJobNo: true }
+      }
+    }
   });
+  
   if (!step) {
     throw new AppError('Step not found for that NRC Job No and step number', 404);
   }

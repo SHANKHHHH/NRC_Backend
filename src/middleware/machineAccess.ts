@@ -237,27 +237,74 @@ export const checkJobStepMachineAccess = async (userId: string, userRole: string
   // Get the job step and check machine access
   const jobStep = await prisma.jobStep.findUnique({
     where: { id: jobStepId },
-    select: { machineDetails: true }
+    select: { 
+      machineDetails: true,
+      stepName: true,
+      jobPlanning: { 
+        select: { nrcJobNo: true } 
+      }
+    }
   });
 
-  if (!jobStep?.machineDetails || !Array.isArray(jobStep.machineDetails) || jobStep.machineDetails.length === 0) {
-    return false; // No machine details means no access
+  if (!jobStep) {
+    return false;
   }
 
+  // Check for role-based access first
+  if (isStepForUserRole(jobStep.stepName, userRole)) {
+    return true;
+  }
+
+  // Parse machine details using enhanced parser
+  const stepMachineIds = parseMachineDetails(jobStep.machineDetails);
+  
+  // If no machine details, no access (unless role-based access above)
+  if (stepMachineIds.length === 0) {
+    return false;
+  }
+
+  // Check machine-based access
   const hasAccess = await Promise.all(
-    jobStep.machineDetails.map((machine: any) => {
-      const machineId = (machine && typeof machine === 'object') ? (machine.machineId || (machine as any).id) : machine;
-      return checkMachineAccess(userId, userRole, machineId);
-    })
+    stepMachineIds.map(machineId => checkMachineAccess(userId, userRole, machineId))
   );
   
   return hasAccess.some(access => access);
 };
 
 /**
- * Helper function to check if step matches user's role
+ * Enhanced machine details parser that handles all database edge cases
+ * Handles: 0 values, empty arrays, typos (machineld), valid JSON objects
  */
-function isStepForUserRole(stepName: string, userRole: string): boolean {
+function parseMachineDetails(machineDetails: any): string[] {
+  if (!machineDetails) return [];
+  
+  // Handle 0 values (converted to empty array)
+  if (machineDetails === 0) return [];
+  
+  // Handle empty arrays
+  if (Array.isArray(machineDetails) && machineDetails.length === 0) return [];
+  
+  // Handle valid JSON arrays
+  if (Array.isArray(machineDetails)) {
+    return machineDetails
+      .map((machine: any) => {
+        if (machine && typeof machine === 'object') {
+          // Handle both correct and typo versions (machineld -> machineId)
+          return machine.machineId || machine.machineld || machine.id;
+        }
+        return machine;
+      })
+      .filter((id: any) => typeof id === 'string' && id.length > 0);
+  }
+  
+  return [];
+}
+
+/**
+ * Helper function to check if step matches user's role
+ * Enhanced to handle all role formats from database
+ */
+function isStepForUserRole(stepName: string, userRole: string | string[]): boolean {
   const roleStepMapping = {
     'printer': 'PrintingDetails',
     'corrugator': 'Corrugation', 
@@ -269,15 +316,25 @@ function isStepForUserRole(stepName: string, userRole: string): boolean {
     'dispatch_executive': 'DispatchProcess'
   } as const;
 
-  try {
-    const roles = JSON.parse(userRole);
-    if (Array.isArray(roles)) {
-      return roles.some(r => (roleStepMapping as any)[r] === stepName);
-    }
-  } catch {
-    // Single role string
+  // Handle array roles directly
+  if (Array.isArray(userRole)) {
+    return userRole.some(r => (roleStepMapping as any)[r] === stepName);
   }
-  return (roleStepMapping as any)[userRole] === stepName;
+
+  // Handle string roles - try to parse as JSON first
+  if (typeof userRole === 'string') {
+    try {
+      const roles = JSON.parse(userRole);
+      if (Array.isArray(roles)) {
+        return roles.some(r => (roleStepMapping as any)[r] === stepName);
+      }
+    } catch {
+      // Not JSON, treat as single role string
+    }
+    return (roleStepMapping as any)[userRole] === stepName;
+  }
+
+  return false;
 }
 
 /**
@@ -338,11 +395,11 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
     }
 
     // Machine-based visibility: If step has machine assignment, require machine match
-    if (Array.isArray(jobStep.machineDetails) && jobStep.machineDetails.length > 0) {
-      const hasMachineAccess = jobStep.machineDetails.some((machine: any) => {
-        const mid = (machine && typeof machine === 'object') ? (machine.machineId || (machine as any).id) : machine;
-        return typeof mid === 'string' && userMachineIds.includes(mid);
-      });
+    const stepMachineIds = parseMachineDetails(jobStep.machineDetails);
+    if (stepMachineIds.length > 0) {
+      const hasMachineAccess = stepMachineIds.some(machineId => 
+        userMachineIds.includes(machineId)
+      );
       if (hasMachineAccess) filteredJobSteps.push(jobStep.id);
     }
   }
@@ -384,11 +441,9 @@ export const getFilteredJobNumbers = async (userMachineIds: string[] | null, use
       if (isStepForUserRole(s.stepName, userRole)) return true;
       
       // Machine-based visibility: If step has machine assignment, require machine match
-      if (Array.isArray(s.machineDetails) && s.machineDetails.length > 0) {
-        return s.machineDetails.some((m: any) => {
-          const mid = (m && typeof m === 'object') ? (m.machineId || (m as any).id) : m;
-          return typeof mid === 'string' && userMachineIds.includes(mid);
-        });
+      const stepMachineIds = parseMachineDetails(s.machineDetails);
+      if (stepMachineIds.length > 0) {
+        return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
       }
       
       return false;
