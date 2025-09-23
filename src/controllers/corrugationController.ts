@@ -78,50 +78,17 @@ export const getCorrugationById = async (req: Request, res: Response) => {
 
 export const getAllCorrugations = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
-  
-  // Get job step IDs that are accessible to the user
   const userRole = req.user?.role || '';
-  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
   
-  // Also include corrugations that don't have jobStepId but belong to accessible jobs (by nrcJobNo)
-  let corrugations;
-  if (userMachineIds === null) {
-    // Admin/Flying Squad: no filtering
-    corrugations = await prisma.corrugation.findMany({
-      include: {
-        jobStep: {
-          include: {
-            jobPlanning: { select: { nrcJobNo: true } }
-          }
-        }
-      }
-    });
-  } else {
-    // Get accessible job numbers via jobStepIds → jobPlanning
-    const accessiblePlannings = await prisma.jobPlanning.findMany({
-      where: { steps: { some: { id: { in: jobStepIds } } } },
-      select: { nrcJobNo: true }
-    });
-    const accessibleJobNos = accessiblePlannings.map(p => p.nrcJobNo);
-
-    corrugations = await prisma.corrugation.findMany({
-      where: {
-        OR: [
-          { jobStepId: { in: jobStepIds } },
-          { jobStepId: null, jobNrcJobNo: { in: accessibleJobNos } }
-        ]
-      },
-      include: {
-        jobStep: {
-          include: {
-            jobPlanning: { select: { nrcJobNo: true } }
-          }
-        }
-      }
-    });
-  }
+  // Get role-based step data from job plannings
+  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
+  const corrugationSteps = await getRoleBasedStepData(userMachineIds, userRole, 'Corrugation');
   
-  res.status(200).json({ success: true, count: corrugations.length, data: corrugations });
+  res.status(200).json({ 
+    success: true, 
+    count: corrugationSteps.length, 
+    data: corrugationSteps 
+  });
 };
 
 export const getCorrugationByNrcJobNo = async (req: Request, res: Response) => {

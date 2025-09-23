@@ -154,21 +154,32 @@ export const getAllJobs = async (req: Request, res: Response) => {
       }
     });
 
-    // Transform the data to ensure relations are never null
-    const safeJobs = jobs.map(job => ({
-      ...job,
-      // Ensure all relations are arrays (never null)
-      purchaseOrders: job.purchaseOrders || [],
-      paperStores: job.paperStores || [],
-      printingDetails: job.printingDetails || [],
-      corrugations: job.corrugations || [],
-      fluteLaminateBoardConversions: job.fluteLaminateBoardConversions || [],
-      punchings: job.punchings || [],
-      sideFlapPastings: job.sideFlapPastings || [],
-      qualityDepts: job.qualityDepts || [],
-      dispatchProcesses: job.dispatchProcesses || [],
-      artworks: job.artworks || [],
-    }));
+    // Get role-based step data for all jobs
+    const { getAllRoleBasedStepData } = await import('../utils/stepDataHelper');
+    const stepsByJob = await getAllRoleBasedStepData(userMachineIds, userRole);
+
+    // Transform the data to ensure relations are never null and include step data
+    const safeJobs = jobs.map(job => {
+      const jobStepData = stepsByJob[job.nrcJobNo] || {
+        printingDetails: [],
+        fluteLaminateBoardConversions: [],
+        corrugations: [],
+        punchings: [],
+        sideFlapPastings: [],
+        qualityDepts: [],
+        dispatchProcesses: [],
+        paperStores: []
+      };
+
+      return {
+        ...job,
+        // Include step data from job plannings
+        ...jobStepData,
+        // Keep original relations for backward compatibility
+        purchaseOrders: job.purchaseOrders || [],
+        artworks: job.artworks || []
+      };
+    });
 
     res.status(200).json({
       success: true,

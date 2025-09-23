@@ -97,20 +97,18 @@ export const getPaperStoreById = async (req: Request, res: Response) => {
 };
 
 export const getAllPaperStores = async (req: Request, res: Response) => {
-  // Return all PaperStore records without machine-based filtering
-  const paperStores = await prisma.paperStore.findMany({
-    include: {
-      jobStep: {
-        include: {
-          jobPlanning: {
-            select: { nrcJobNo: true }
-          }
-        }
-      }
-    }
+  const userMachineIds = req.userMachineIds; // From middleware
+  const userRole = req.user?.role || '';
+  
+  // Get role-based step data from job plannings
+  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
+  const paperStoreSteps = await getRoleBasedStepData(userMachineIds, userRole, 'PaperStore');
+  
+  res.status(200).json({ 
+    success: true, 
+    count: paperStoreSteps.length, 
+    data: paperStoreSteps 
   });
-
-  res.status(200).json({ success: true, count: paperStores.length, data: paperStores });
 };
 
 export const getPaperStoreByNrcJobNo = async (req: Request, res: Response) => {

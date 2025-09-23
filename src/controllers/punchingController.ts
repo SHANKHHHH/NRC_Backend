@@ -64,24 +64,17 @@ export const getPunchingById = async (req: Request, res: Response) => {
 
 export const getAllPunchings = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
-  
   const userRole = req.user?.role || '';
-  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
   
-  const punchings = await prisma.punching.findMany({
-    where: { jobStepId: { in: jobStepIds } },
-    include: {
-      jobStep: {
-        include: {
-          jobPlanning: {
-            select: { nrcJobNo: true }
-          }
-        }
-      }
-    }
+  // Get role-based step data from job plannings
+  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
+  const punchingSteps = await getRoleBasedStepData(userMachineIds, userRole, 'Punching');
+  
+  res.status(200).json({ 
+    success: true, 
+    count: punchingSteps.length, 
+    data: punchingSteps 
   });
-  
-  res.status(200).json({ success: true, count: punchings.length, data: punchings });
 };
 
 

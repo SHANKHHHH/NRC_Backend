@@ -64,24 +64,17 @@ export const getDispatchProcessById = async (req: Request, res: Response) => {
 
 export const getAllDispatchProcesses = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
-  
   const userRole = req.user?.role || '';
-  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
   
-  const dispatchProcesses = await prisma.dispatchProcess.findMany({
-    where: { jobStepId: { in: jobStepIds } },
-    include: {
-      jobStep: {
-        include: {
-          jobPlanning: {
-            select: { nrcJobNo: true }
-          }
-        }
-      }
-    }
+  // Get role-based step data from job plannings
+  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
+  const dispatchProcessSteps = await getRoleBasedStepData(userMachineIds, userRole, 'DispatchProcess');
+  
+  res.status(200).json({ 
+    success: true, 
+    count: dispatchProcessSteps.length, 
+    data: dispatchProcessSteps 
   });
-  
-  res.status(200).json({ success: true, count: dispatchProcesses.length, data: dispatchProcesses });
 };
 
 export const getDispatchProcessByNrcJobNo = async (req: Request, res: Response) => {

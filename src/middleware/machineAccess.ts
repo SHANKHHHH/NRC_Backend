@@ -27,7 +27,7 @@ declare global {
  */
 export const getUserMachineIds = async (userId: string, userRole: string): Promise<string[] | null> => {
   // Parse role if it's a JSON string
-  let parsedRole = userRole;
+  let parsedRole: string | string[] = userRole;
   if (typeof userRole === 'string') {
     try {
       const roles = JSON.parse(userRole);
@@ -40,7 +40,8 @@ export const getUserMachineIds = async (userId: string, userRole: string): Promi
   }
 
   // Admins, Flying Squad members, and Planners bypass machine restrictions
-  if (RoleManager.isAdmin(parsedRole) || RoleManager.isFlyingSquad(parsedRole) || RoleManager.isPlanner(parsedRole)) {
+  const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
+  if (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.isPlanner(roleString)) {
     return null;
   }
 
@@ -198,7 +199,7 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
     const userRole = req.user?.role;
 
     // Parse role if it's a JSON string
-    let parsedRole = userRole;
+    let parsedRole: string | string[] = userRole || '';
     if (userRole && typeof userRole === 'string') {
       try {
         const roles = JSON.parse(userRole);
@@ -211,7 +212,8 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
     }
 
     // Admins, Flying Squad members, and Planners bypass machine restrictions
-    if (userRole && (RoleManager.isAdmin(parsedRole) || RoleManager.isFlyingSquad(parsedRole) || RoleManager.isPlanner(parsedRole))) {
+    const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
+    if (userRole && (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.isPlanner(roleString))) {
       req.userMachineIds = null; // Indicate no filtering needed
       req.userRole = userRole; // Pass user role for high demand filtering
       return next();

@@ -78,25 +78,17 @@ export const getPrintingDetailsById = async (req: Request, res: Response) => {
 
 export const getAllPrintingDetails = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
-  
-  // Get job step IDs that are accessible to the user
   const userRole = req.user?.role || '';
-  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
   
-  const printingDetails = await prisma.printingDetails.findMany({
-    where: { jobStepId: { in: jobStepIds } },
-    include: {
-      jobStep: {
-        include: {
-          jobPlanning: {
-            select: { nrcJobNo: true }
-          }
-        }
-      }
-    }
+  // Get role-based step data from job plannings
+  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
+  const printingSteps = await getRoleBasedStepData(userMachineIds, userRole, 'PrintingDetails');
+  
+  res.status(200).json({ 
+    success: true, 
+    count: printingSteps.length, 
+    data: printingSteps 
   });
-  
-  res.status(200).json({ success: true, count: printingDetails.length, data: printingDetails });
 };
 
 

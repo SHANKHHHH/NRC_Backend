@@ -97,24 +97,17 @@ export const getFluteLaminateBoardConversionById = async (req: Request, res: Res
 
 export const getAllFluteLaminateBoardConversions = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
-  
   const userRole = req.user?.role || '';
-  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
   
-  const flutelams = await prisma.fluteLaminateBoardConversion.findMany({
-    where: { jobStepId: { in: jobStepIds } },
-    include: {
-      jobStep: {
-        include: {
-          jobPlanning: {
-            select: { nrcJobNo: true }
-          }
-        }
-      }
-    }
+  // Get role-based step data from job plannings
+  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
+  const flutelamSteps = await getRoleBasedStepData(userMachineIds, userRole, 'FluteLaminateBoardConversion');
+  
+  res.status(200).json({ 
+    success: true, 
+    count: flutelamSteps.length, 
+    data: flutelamSteps 
   });
-  
-  res.status(200).json({ success: true, count: flutelams.length, data: flutelams });
 };
 
 export const getFluteLaminateBoardConversionByNrcJobNo = async (req: Request, res: Response) => {

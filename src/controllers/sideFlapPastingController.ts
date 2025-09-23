@@ -64,24 +64,17 @@ export const getSideFlapPastingById = async (req: Request, res: Response) => {
 
 export const getAllSideFlapPastings = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
-  
   const userRole = req.user?.role || '';
-  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
   
-  const sideFlapPastings = await prisma.sideFlapPasting.findMany({
-    where: { jobStepId: { in: jobStepIds } },
-    include: {
-      jobStep: {
-        include: {
-          jobPlanning: {
-            select: { nrcJobNo: true }
-          }
-        }
-      }
-    }
+  // Get role-based step data from job plannings
+  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
+  const sideFlapPastingSteps = await getRoleBasedStepData(userMachineIds, userRole, 'SideFlapPasting');
+  
+  res.status(200).json({ 
+    success: true, 
+    count: sideFlapPastingSteps.length, 
+    data: sideFlapPastingSteps 
   });
-  
-  res.status(200).json({ success: true, count: sideFlapPastings.length, data: sideFlapPastings });
 };
 
 export const getSideFlapPastingByNrcJobNo = async (req: Request, res: Response) => {

@@ -64,24 +64,17 @@ export const getQualityDeptById = async (req: Request, res: Response) => {
 
 export const getAllQualityDepts = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
-  
   const userRole = req.user?.role || '';
-  const jobStepIds = await getFilteredJobStepIds(userMachineIds || null, userRole);
   
-  const qualityDepts = await prisma.qualityDept.findMany({
-    where: { jobStepId: { in: jobStepIds } },
-    include: {
-      jobStep: {
-        include: {
-          jobPlanning: {
-            select: { nrcJobNo: true }
-          }
-        }
-      }
-    }
+  // Get role-based step data from job plannings
+  const { getRoleBasedStepData } = await import('../utils/stepDataHelper');
+  const qualityDeptSteps = await getRoleBasedStepData(userMachineIds, userRole, 'QualityDept');
+  
+  res.status(200).json({ 
+    success: true, 
+    count: qualityDeptSteps.length, 
+    data: qualityDeptSteps 
   });
-  
-  res.status(200).json({ success: true, count: qualityDepts.length, data: qualityDepts });
 };
 
 export const getQualityDeptByNrcJobNo = async (req: Request, res: Response) => {
