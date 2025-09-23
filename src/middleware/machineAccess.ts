@@ -331,19 +331,20 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
       continue;
     }
 
-    // Normal visibility:
-    // - If no machines assigned to the step, allow role-based visibility
-    if (!Array.isArray(jobStep.machineDetails) || jobStep.machineDetails.length === 0) {
-      if (isStepForUserRole(jobStep.stepName, userRole)) {
-        filteredJobSteps.push(jobStep.id);
-      }
+    // Role-based visibility: If step matches user role, allow access regardless of machine
+    if (isStepForUserRole(jobStep.stepName, userRole)) {
+      filteredJobSteps.push(jobStep.id);
       continue;
     }
-    const hasMachineAccess = jobStep.machineDetails.some((machine: any) => {
-      const mid = (machine && typeof machine === 'object') ? (machine.machineId || (machine as any).id) : machine;
-      return typeof mid === 'string' && userMachineIds.includes(mid);
-    });
-    if (hasMachineAccess) filteredJobSteps.push(jobStep.id);
+
+    // Machine-based visibility: If step has machine assignment, require machine match
+    if (Array.isArray(jobStep.machineDetails) && jobStep.machineDetails.length > 0) {
+      const hasMachineAccess = jobStep.machineDetails.some((machine: any) => {
+        const mid = (machine && typeof machine === 'object') ? (machine.machineId || (machine as any).id) : machine;
+        return typeof mid === 'string' && userMachineIds.includes(mid);
+      });
+      if (hasMachineAccess) filteredJobSteps.push(jobStep.id);
+    }
   }
 
   return filteredJobSteps;
@@ -378,16 +379,19 @@ export const getFilteredJobNumbers = async (userMachineIds: string[] | null, use
       // High-demand grants role-based visibility regardless of machine
       const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
       if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
-      // Otherwise in normal mode:
-      // - If step has no machine assignment, allow role-based visibility
-      if (!Array.isArray(s.machineDetails) || s.machineDetails.length === 0) {
-        return isStepForUserRole(s.stepName, userRole);
+      
+      // Role-based visibility: If step matches user role, allow access regardless of machine
+      if (isStepForUserRole(s.stepName, userRole)) return true;
+      
+      // Machine-based visibility: If step has machine assignment, require machine match
+      if (Array.isArray(s.machineDetails) && s.machineDetails.length > 0) {
+        return s.machineDetails.some((m: any) => {
+          const mid = (m && typeof m === 'object') ? (m.machineId || (m as any).id) : m;
+          return typeof mid === 'string' && userMachineIds.includes(mid);
+        });
       }
-      // - Or require machine match
-      return Array.isArray(s.machineDetails) && s.machineDetails.some((m: any) => {
-        const mid = (m && typeof m === 'object') ? (m.machineId || (m as any).id) : m;
-        return typeof mid === 'string' && userMachineIds.includes(mid);
-      });
+      
+      return false;
     }))
     .map(p => p.nrcJobNo);
 
