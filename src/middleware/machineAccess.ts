@@ -304,7 +304,7 @@ function parseMachineDetails(machineDetails: any): string[] {
  * Helper function to check if step matches user's role
  * Enhanced to handle all role formats from database
  */
-function isStepForUserRole(stepName: string, userRole: string | string[]): boolean {
+export function isStepForUserRole(stepName: string, userRole: string | string[]): boolean {
   const roleStepMapping = {
     'printer': 'PrintingDetails',
     'corrugator': 'Corrugation', 
