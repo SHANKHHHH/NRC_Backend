@@ -257,8 +257,41 @@ export const getStepByNrcJobNoAndStepNo = async (req: Request, res: Response) =>
     
     if (roleMatchedStep) {
       step = roleMatchedStep;
+    } else {
+      // If no role match found in this step number, try to find the correct step number for this role
+      const allJobSteps = await prisma.jobStep.findMany({
+        where: {
+          jobPlanning: {
+            nrcJobNo: nrcJobNo
+          }
+        },
+        include: {
+          jobPlanning: {
+            select: { jobPlanId: true, nrcJobNo: true }
+          }
+        },
+        orderBy: [
+          { jobPlanningId: 'asc' },
+          { stepNo: 'asc' }
+        ]
+      });
+
+      // Find the first step that matches the user's role
+      const correctStep = allJobSteps.find(s => isStepForUserRole(s.stepName, userRole));
+      
+      if (correctStep) {
+        // Return the correct step with a message indicating the step number change
+        return res.status(200).json({
+          success: true,
+          data: correctStep,
+          message: `Step ${stepNo} not available for your role. Redirected to step ${correctStep.stepNo}.`,
+          redirected: true,
+          originalStepNo: stepNo,
+          correctStepNo: correctStep.stepNo
+        });
+      }
+      // If still no match, use the first step (backward compatibility)
     }
-    // If no role match found, use the first step (backward compatibility)
   }
   
   res.status(200).json({
@@ -414,8 +447,34 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     
     if (roleMatchedStep) {
       step = roleMatchedStep;
+    } else {
+      // If no role match found in this step number, try to find the correct step number for this role
+      const allJobSteps = await prisma.jobStep.findMany({
+        where: {
+          jobPlanning: {
+            nrcJobNo: nrcJobNo
+          }
+        },
+        include: {
+          jobPlanning: {
+            select: { jobPlanId: true, nrcJobNo: true }
+          }
+        },
+        orderBy: [
+          { jobPlanningId: 'asc' },
+          { stepNo: 'asc' }
+        ]
+      });
+
+      // Find the first step that matches the user's role
+      const correctStep = allJobSteps.find(s => isStepForUserRole(s.stepName, userRole));
+      
+      if (correctStep) {
+        // Update the correct step instead of the requested step
+        step = correctStep;
+      }
+      // If still no match, use the first step (backward compatibility)
     }
-    // If no role match found, use the first step (backward compatibility)
   }
 
   // Enforce machine access, but bypass for PaperStore step per requirement
