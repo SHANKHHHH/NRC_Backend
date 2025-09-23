@@ -416,10 +416,22 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
       continue;
     }
 
-    // Role-based visibility: If step matches user role, allow access regardless of machine
+    // Role-based visibility: If step matches user role AND has machine assignment, require machine match
     if (isStepForUserRole(jobStep.stepName, userRole)) {
-      filteredJobSteps.push(jobStep.id);
-      continue;
+      const stepMachineIds = parseMachineDetails(jobStep.machineDetails);
+      if (stepMachineIds.length > 0) {
+        const hasMachineAccess = stepMachineIds.some(machineId => 
+          userMachineIds.includes(machineId)
+        );
+        if (hasMachineAccess) {
+          filteredJobSteps.push(jobStep.id);
+          continue;
+        }
+      } else {
+        // If no machine details, allow access (for backward compatibility)
+        filteredJobSteps.push(jobStep.id);
+        continue;
+      }
     }
 
     // Machine-based visibility: If step has machine assignment, require machine match
@@ -465,8 +477,15 @@ export const getFilteredJobNumbers = async (userMachineIds: string[] | null, use
       const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
       if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
       
-      // Role-based visibility: If step matches user role, allow access regardless of machine
-      if (isStepForUserRole(s.stepName, userRole)) return true;
+      // Role-based visibility: If step matches user role AND has machine assignment, require machine match
+      if (isStepForUserRole(s.stepName, userRole)) {
+        const stepMachineIds = parseMachineDetails(s.machineDetails);
+        if (stepMachineIds.length > 0) {
+          return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
+        }
+        // If no machine details, allow access (for backward compatibility)
+        return true;
+      }
       
       // Machine-based visibility: If step has machine assignment, require machine match
       const stepMachineIds = parseMachineDetails(s.machineDetails);
