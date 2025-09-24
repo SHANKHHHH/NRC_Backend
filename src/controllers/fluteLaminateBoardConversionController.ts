@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
-import { checkJobStepMachineAccess } from '../middleware/machineAccess';
+import { checkJobStepMachineAccess, getFilteredJobNumbers } from '../middleware/machineAccess';
 import { RoleManager } from '../utils/roleUtils';
 
 export const createFluteLaminateBoardConversion = async (req: Request, res: Response) => {

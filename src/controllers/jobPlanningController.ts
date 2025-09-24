@@ -964,3 +964,73 @@ export const bulkUpdateJobSteps = async (req: Request, res: Response) => {
     });
   }
 };
+
+// Update job step by job step ID directly (solves multiple job plannings issue)
+export const updateJobStepById = async (req: Request, res: Response) => {
+  const { jobStepId } = req.params;
+  const userRole = req.user?.role;
+  
+  try {
+    // Find the specific job step by ID
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: Number(jobStepId) },
+      include: {
+        jobPlanning: {
+          select: { jobPlanId: true, nrcJobNo: true, jobDemand: true }
+        }
+      }
+    });
+    
+    if (!jobStep) {
+      throw new AppError(`Job step with ID ${jobStepId} not found`, 404);
+    }
+
+    // Check if user has access to this step based on role
+    if (userRole) {
+      const { isStepForUserRole } = await import('../middleware/machineAccess');
+      
+      // For high demand jobs, allow any role to work on any step
+      // For regular jobs, check if the step matches the user's role
+      if (jobStep.jobPlanning.jobDemand !== 'high' && !isStepForUserRole(jobStep.stepName, userRole)) {
+        throw new AppError(`User role '${userRole}' does not have access to step '${jobStep.stepName}'`, 403);
+      }
+    }
+
+    // Process machine details if provided
+    const updateData = { ...req.body };
+    
+    // If machineDetails is provided, process it to match the format
+    if (req.body.machineDetails) {
+      updateData.machineDetails = req.body.machineDetails.map((machine: any) => ({
+        id: machine.machineId || machine.id,
+        unit: machine.unit,
+        machineCode: machine.machineCode,
+        machineType: machine.machineType
+      }));
+    }
+
+    // Update the job step
+    const updatedStep = await prisma.jobStep.update({
+      where: { id: Number(jobStepId) },
+      data: updateData,
+    });
+
+    // If machineDetails were updated, automatically update the job's machine details flag
+    if (req.body.machineDetails !== undefined) {
+      await updateJobMachineDetailsFlag(jobStep.jobPlanning.nrcJobNo);
+    }
+
+    res.status(200).json({
+      success: true,
+      data: updatedStep,
+      message: `Job step ${jobStepId} updated successfully`
+    });
+
+  } catch (error) {
+    console.error(`Error updating job step ${jobStepId}:`, error);
+    if (error instanceof AppError) {
+      throw error;
+    }
+    throw new AppError('Failed to update job step', 500);
+  }
+};

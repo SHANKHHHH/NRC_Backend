@@ -8,7 +8,7 @@ import {
   restrictStepTimingUpdate 
 } from '../middleware/flyingSquadPermissions';
 import { addMachineFiltering } from '../middleware';
-import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps } from '../controllers/jobPlanningController';
+import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps, updateJobStepById } from '../controllers/jobPlanningController';
 
 const router = Router();
 
@@ -72,6 +72,15 @@ router.patch('/:nrcJobNo/steps/:stepNo/qc',
   authenticateToken, 
   restrictFlyingSquadToQC, 
   asyncHandler(updateJobStepStatus)
+);
+
+// Update job step by job step ID directly (solves multiple job plannings issue)
+router.put('/step/:jobStepId', 
+  authenticateToken, 
+  restrictStepStatusUpdate, 
+  restrictMachineDetailsUpdate, 
+  restrictStepTimingUpdate, 
+  asyncHandler(updateJobStepById)
 );
 
 export default router;

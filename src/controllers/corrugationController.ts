@@ -3,7 +3,7 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { validateWorkflowStep } from '../utils/workflowValidator';
-import { checkMachineAccess } from '../middleware/machineAccess';
+import { checkMachineAccess, getFilteredJobNumbers } from '../middleware/machineAccess';
 import { RoleManager } from '../utils/roleUtils';
 
 export const createCorrugation = async (req: Request, res: Response) => {
