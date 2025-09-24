@@ -156,7 +156,7 @@ export const getAllJobs = async (req: Request, res: Response) => {
 
     // Get unified role-based job data
     const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-    const safeJobs = await UnifiedJobDataHelper.getRoleBasedJobData(userMachineIds, userRole);
+    const safeJobs = await UnifiedJobDataHelper.getRoleBasedJobData(userMachineIds || null, userRole);
 
     res.status(200).json({
       success: true,

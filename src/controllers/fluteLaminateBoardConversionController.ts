@@ -101,7 +101,7 @@ export const getAllFluteLaminateBoardConversions = async (req: Request, res: Res
   
   // Get unified role-specific step data
   const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-  const flutelamSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'FluteLaminateBoardConversion');
+  const flutelamSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds || null, userRole, 'FluteLaminateBoardConversion');
   
   res.status(200).json({ 
     success: true, 

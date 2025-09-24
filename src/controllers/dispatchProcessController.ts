@@ -68,7 +68,7 @@ export const getAllDispatchProcesses = async (req: Request, res: Response) => {
   
   // Get unified role-specific step data
   const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-  const dispatchProcessSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'DispatchProcess');
+  const dispatchProcessSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds || null, userRole, 'DispatchProcess');
   
   res.status(200).json({ 
     success: true, 

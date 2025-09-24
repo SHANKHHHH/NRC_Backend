@@ -102,7 +102,7 @@ export const getAllPaperStores = async (req: Request, res: Response) => {
   
   // Get unified role-specific step data
   const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-  const paperStoreSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'PaperStore');
+  const paperStoreSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds || null, userRole, 'PaperStore');
   
   res.status(200).json({ 
     success: true, 

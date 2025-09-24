@@ -68,7 +68,7 @@ export const getAllQualityDepts = async (req: Request, res: Response) => {
   
   // Get unified role-specific step data
   const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-  const qualityDeptSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'QualityDept');
+  const qualityDeptSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds || null, userRole, 'QualityDept');
   
   res.status(200).json({ 
     success: true, 

@@ -82,7 +82,7 @@ export const getAllCorrugations = async (req: Request, res: Response) => {
   
   // Get unified role-specific step data
   const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-  const corrugationSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'Corrugation');
+  const corrugationSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds || null, userRole, 'Corrugation');
   
   res.status(200).json({ 
     success: true, 

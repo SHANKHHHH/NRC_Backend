@@ -82,7 +82,7 @@ export const getAllPrintingDetails = async (req: Request, res: Response) => {
   
   // Get unified role-specific step data
   const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-  const printingSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds, userRole, 'PrintingDetails');
+  const printingSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds || null, userRole, 'PrintingDetails');
   
   res.status(200).json({ 
     success: true, 
