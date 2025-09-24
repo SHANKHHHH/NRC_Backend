@@ -3,7 +3,7 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { validateWorkflowStep } from '../utils/workflowValidator';
-import { checkMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
+import { checkMachineAccess } from '../middleware/machineAccess';
 import { RoleManager } from '../utils/roleUtils';
 
 export const createCorrugation = async (req: Request, res: Response) => {
@@ -133,10 +133,11 @@ export const getCorrugationByJobStepId = async (req: Request, res: Response) => 
 
 export const getAllCorrugations = async (req: Request, res: Response) => {
   const userRole = req.user?.role || '';
+  const userMachineIds = req.userMachineIds || []; // From middleware
   
   try {
     // Get job steps for corrugation role using jobStepId as unique identifier
-    // High demand jobs are visible to all users, regular jobs only to corrugators
+    // High demand jobs are visible to all users, regular jobs only to corrugators with machine access
     const jobSteps = await prisma.jobStep.findMany({
       where: { 
         stepName: 'Corrugation',
@@ -147,12 +148,13 @@ export const getAllCorrugations = async (req: Request, res: Response) => {
               jobDemand: 'high'
             }
           },
-          // Regular jobs only visible to corrugators (or admin/planner)
+          // Regular jobs only visible to corrugators (or admin/planner) with machine access
           ...(userRole === 'corrugator' || userRole === 'admin' || userRole === 'planner' || 
               (typeof userRole === 'string' && userRole.includes('corrugator')) ? [{
             jobPlanning: {
               jobDemand: { not: 'high' as any }
-            }
+            },
+            // Machine filtering will be done in application logic
           }] : [])
         ]
       },
@@ -168,8 +170,28 @@ export const getAllCorrugations = async (req: Request, res: Response) => {
       orderBy: { updatedAt: 'desc' }
     });
 
+    // Filter by machine access for non-admin/planner users
+    let filteredSteps = jobSteps;
+    if (userRole !== 'admin' && userRole !== 'planner' && userMachineIds.length > 0) {
+      filteredSteps = jobSteps.filter(step => {
+        // High demand jobs are always visible
+        if (step.jobPlanning?.jobDemand === 'high') return true;
+        
+        // Check if user has access to any machine in this step
+        if (step.machineDetails && Array.isArray(step.machineDetails)) {
+          return step.machineDetails.some((machine: any) => {
+            const machineId = machine?.machineId || machine?.id;
+            return userMachineIds.includes(machineId);
+          });
+        }
+        
+        // If no machine details, allow access (backward compatibility)
+        return true;
+      });
+    }
+
     // Format response with jobStepId as unique identifier
-    const formattedSteps = jobSteps.map(step => ({
+    const formattedSteps = filteredSteps.map(step => ({
       jobStepId: step.id, // Use jobStepId as unique identifier
       stepName: step.stepName,
       status: step.status,

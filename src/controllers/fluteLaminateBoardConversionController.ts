@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
-import { checkJobStepMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
+import { checkJobStepMachineAccess } from '../middleware/machineAccess';
 import { RoleManager } from '../utils/roleUtils';
 
 export const createFluteLaminateBoardConversion = async (req: Request, res: Response) => {
@@ -97,10 +97,11 @@ export const getFluteLaminateBoardConversionById = async (req: Request, res: Res
 
 export const getAllFluteLaminateBoardConversions = async (req: Request, res: Response) => {
   const userRole = req.user?.role || '';
+  const userMachineIds = req.userMachineIds || []; // From middleware
   
   try {
     // Get job steps for flutelaminator role using jobStepId as unique identifier
-    // High demand jobs are visible to all users, regular jobs only to flutelaminators
+    // High demand jobs are visible to all users, regular jobs only to flutelaminators with machine access
     const jobSteps = await prisma.jobStep.findMany({
       where: { 
         stepName: 'FluteLaminateBoardConversion',
@@ -111,12 +112,13 @@ export const getAllFluteLaminateBoardConversions = async (req: Request, res: Res
               jobDemand: 'high'
             }
           },
-          // Regular jobs only visible to flutelaminators (or admin/planner)
+          // Regular jobs only visible to flutelaminators (or admin/planner) with machine access
           ...(userRole === 'flutelaminator' || userRole === 'admin' || userRole === 'planner' || 
               (typeof userRole === 'string' && userRole.includes('flutelaminator')) ? [{
             jobPlanning: {
               jobDemand: { not: 'high' as any }
-            }
+            },
+            // Machine filtering will be done in application logic
           }] : [])
         ]
       },
@@ -132,8 +134,28 @@ export const getAllFluteLaminateBoardConversions = async (req: Request, res: Res
       orderBy: { updatedAt: 'desc' }
     });
 
+    // Filter by machine access for non-admin/planner users
+    let filteredSteps = jobSteps;
+    if (userRole !== 'admin' && userRole !== 'planner' && userMachineIds.length > 0) {
+      filteredSteps = jobSteps.filter(step => {
+        // High demand jobs are always visible
+        if (step.jobPlanning?.jobDemand === 'high') return true;
+        
+        // Check if user has access to any machine in this step
+        if (step.machineDetails && Array.isArray(step.machineDetails)) {
+          return step.machineDetails.some((machine: any) => {
+            const machineId = machine?.machineId || machine?.id;
+            return userMachineIds.includes(machineId);
+          });
+        }
+        
+        // If no machine details, allow access (backward compatibility)
+        return true;
+      });
+    }
+
     // Format response with jobStepId as unique identifier
-    const formattedSteps = jobSteps.map(step => ({
+    const formattedSteps = filteredSteps.map(step => ({
       jobStepId: step.id, // Use jobStepId as unique identifier
       stepName: step.stepName,
       status: step.status,
@@ -147,13 +169,13 @@ export const getAllFluteLaminateBoardConversions = async (req: Request, res: Res
       flutelam: step.flutelam,
       isHighDemand: step.jobPlanning?.jobDemand === 'high'
     }));
-    
-    res.status(200).json({ 
-      success: true, 
+  
+  res.status(200).json({ 
+    success: true, 
       count: formattedSteps.length, 
       data: formattedSteps,
       message: `Found ${formattedSteps.length} flutelamination job steps (high demand visible to all, regular jobs only to flutelaminators)`
-    });
+  });
   } catch (error) {
     console.error('Error fetching flutelamination details:', error);
     throw new AppError('Failed to fetch flutelamination details', 500);
