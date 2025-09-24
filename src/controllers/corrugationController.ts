@@ -76,19 +76,123 @@ export const getCorrugationById = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: corrugation });
 };
 
+export const getCorrugationByJobStepId = async (req: Request, res: Response) => {
+  const { jobStepId } = req.params;
+  
+  try {
+    // Get job step with corrugation details using jobStepId as unique identifier
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: Number(jobStepId) },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true,
+            jobDemand: true
+          }
+        },
+        corrugation: true
+      }
+    });
+
+    if (!jobStep) {
+      throw new AppError(`Job step with ID ${jobStepId} not found`, 404);
+    }
+
+    if (jobStep.stepName !== 'Corrugation') {
+      throw new AppError(`Job step ${jobStepId} is not a corrugation step`, 400);
+    }
+
+    // Format response with jobStepId as unique identifier
+    const response = {
+      jobStepId: jobStep.id,
+      stepName: jobStep.stepName,
+      status: jobStep.status,
+      user: jobStep.user,
+      startDate: jobStep.startDate,
+      endDate: jobStep.endDate,
+      createdAt: jobStep.createdAt,
+      updatedAt: jobStep.updatedAt,
+      machineDetails: jobStep.machineDetails,
+      jobPlanning: jobStep.jobPlanning,
+      corrugation: jobStep.corrugation
+    };
+
+    res.status(200).json({ 
+      success: true, 
+      data: response,
+      message: `Found corrugation job step using jobStepId: ${jobStepId}`
+    });
+  } catch (error) {
+    console.error(`Error fetching corrugation details for jobStepId ${jobStepId}:`, error);
+    if (error instanceof AppError) {
+      throw error;
+    }
+    throw new AppError('Failed to fetch corrugation details', 500);
+  }
+};
+
 export const getAllCorrugations = async (req: Request, res: Response) => {
-  const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
   
-  // Get unified role-specific step data
-  const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-  const corrugationSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds || null, userRole, 'Corrugation');
-  
-  res.status(200).json({ 
-    success: true, 
-    count: corrugationSteps.length, 
-    data: corrugationSteps 
-  });
+  try {
+    // Get job steps for corrugation role using jobStepId as unique identifier
+    // High demand jobs are visible to all users, regular jobs only to corrugators
+    const jobSteps = await prisma.jobStep.findMany({
+      where: { 
+        stepName: 'Corrugation',
+        OR: [
+          // High demand jobs visible to all users
+          {
+            jobPlanning: {
+              jobDemand: 'high'
+            }
+          },
+          // Regular jobs only visible to corrugators (or admin/planner)
+          ...(userRole === 'corrugator' || userRole === 'admin' || userRole === 'planner' ? [{
+            jobPlanning: {
+              jobDemand: { not: 'high' as any }
+            }
+          }] : [])
+        ]
+      },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true,
+            jobDemand: true
+          }
+        },
+        corrugation: true
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    // Format response with jobStepId as unique identifier
+    const formattedSteps = jobSteps.map(step => ({
+      jobStepId: step.id, // Use jobStepId as unique identifier
+      stepName: step.stepName,
+      status: step.status,
+      user: step.user,
+      startDate: step.startDate,
+      endDate: step.endDate,
+      createdAt: step.createdAt,
+      updatedAt: step.updatedAt,
+      machineDetails: step.machineDetails,
+      jobPlanning: step.jobPlanning,
+      corrugation: step.corrugation,
+      isHighDemand: step.jobPlanning?.jobDemand === 'high'
+    }));
+    
+    res.status(200).json({ 
+      success: true, 
+      count: formattedSteps.length, 
+      data: formattedSteps,
+      message: `Found ${formattedSteps.length} corrugation job steps (high demand visible to all, regular jobs only to corrugators)`
+    });
+  } catch (error) {
+    console.error('Error fetching corrugation details:', error);
+    throw new AppError('Failed to fetch corrugation details', 500);
+  }
 };
 
 export const getCorrugationByNrcJobNo = async (req: Request, res: Response) => {
