@@ -135,9 +135,18 @@ export const getAllCorrugations = async (req: Request, res: Response) => {
   const userRole = req.user?.role || '';
   const userMachineIds = req.userMachineIds || []; // From middleware
   
+  console.log('🔍 [CORRUGATION DEBUG] User Info:', {
+    userId: req.user?.userId,
+    userRole: userRole,
+    userMachineIds: userMachineIds,
+    userMachineIdsLength: userMachineIds.length
+  });
+  
   try {
     // Get job steps for corrugation role using jobStepId as unique identifier
     // High demand jobs are visible to all users, regular jobs only to corrugators with machine access
+    console.log('🔍 [CORRUGATION DEBUG] Building query for role:', userRole);
+    
     const jobSteps = await prisma.jobStep.findMany({
       where: { 
         stepName: 'Corrugation',
@@ -170,24 +179,63 @@ export const getAllCorrugations = async (req: Request, res: Response) => {
       orderBy: { updatedAt: 'desc' }
     });
 
+    console.log('🔍 [CORRUGATION DEBUG] Raw job steps from DB:', {
+      totalSteps: jobSteps.length,
+      highDemandSteps: jobSteps.filter(step => step.jobPlanning?.jobDemand === 'high').length,
+      regularSteps: jobSteps.filter(step => step.jobPlanning?.jobDemand !== 'high').length,
+      sampleSteps: jobSteps.slice(0, 3).map(step => ({
+        id: step.id,
+        stepName: step.stepName,
+        jobDemand: step.jobPlanning?.jobDemand,
+        machineDetails: step.machineDetails
+      }))
+    });
+
     // Filter by machine access for non-admin/planner users
     let filteredSteps = jobSteps;
     if (userRole !== 'admin' && userRole !== 'planner' && userMachineIds.length > 0) {
+      console.log('🔍 [CORRUGATION DEBUG] Applying machine filtering for user with machines:', userMachineIds);
+      
       filteredSteps = jobSteps.filter(step => {
         // High demand jobs are always visible
-        if (step.jobPlanning?.jobDemand === 'high') return true;
+        if (step.jobPlanning?.jobDemand === 'high') {
+          console.log('✅ [CORRUGATION DEBUG] High demand job allowed:', step.id);
+          return true;
+        }
         
         // Check if user has access to any machine in this step
         if (step.machineDetails && Array.isArray(step.machineDetails)) {
-          return step.machineDetails.some((machine: any) => {
+          const hasAccess = step.machineDetails.some((machine: any) => {
             const machineId = machine?.machineId || machine?.id;
-            return userMachineIds.includes(machineId);
+            const hasMachineAccess = userMachineIds.includes(machineId);
+            console.log('🔍 [CORRUGATION DEBUG] Machine check:', {
+              stepId: step.id,
+              machineId: machineId,
+              userHasAccess: hasMachineAccess,
+              userMachineIds: userMachineIds
+            });
+            return hasMachineAccess;
           });
+          
+          if (!hasAccess) {
+            console.log('❌ [CORRUGATION DEBUG] No machine access for step:', step.id);
+          }
+          
+          return hasAccess;
         }
         
         // If no machine details, allow access (backward compatibility)
+        console.log('✅ [CORRUGATION DEBUG] No machine details, allowing access:', step.id);
         return true;
       });
+      
+      console.log('🔍 [CORRUGATION DEBUG] After machine filtering:', {
+        originalCount: jobSteps.length,
+        filteredCount: filteredSteps.length,
+        removedCount: jobSteps.length - filteredSteps.length
+      });
+    } else {
+      console.log('🔍 [CORRUGATION DEBUG] No machine filtering applied - user role:', userRole, 'machines:', userMachineIds.length);
     }
 
     // Format response with jobStepId as unique identifier
@@ -206,6 +254,14 @@ export const getAllCorrugations = async (req: Request, res: Response) => {
       isHighDemand: step.jobPlanning?.jobDemand === 'high'
     }));
     
+    console.log('🔍 [CORRUGATION DEBUG] Final response:', {
+      totalSteps: formattedSteps.length,
+      highDemandSteps: formattedSteps.filter(step => step.isHighDemand).length,
+      regularSteps: formattedSteps.filter(step => !step.isHighDemand).length,
+      userRole: userRole,
+      userMachineIds: userMachineIds
+    });
+
     res.status(200).json({ 
       success: true, 
       count: formattedSteps.length, 

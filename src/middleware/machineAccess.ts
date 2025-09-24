@@ -26,6 +26,11 @@ declare global {
  * Returns null for admin/flying squad/planner (no filtering needed)
  */
 export const getUserMachineIds = async (userId: string, userRole: string): Promise<string[] | null> => {
+  console.log('🔍 [GET USER MACHINE IDS DEBUG] Input:', {
+    userId: userId,
+    userRole: userRole
+  });
+
   // Parse role if it's a JSON string
   let parsedRole: string | string[] = userRole;
   if (typeof userRole === 'string') {
@@ -39,9 +44,12 @@ export const getUserMachineIds = async (userId: string, userRole: string): Promi
     }
   }
 
+  console.log('🔍 [GET USER MACHINE IDS DEBUG] Parsed role:', parsedRole);
+
   // Admins, Flying Squad members, and Planners bypass machine restrictions
   const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
   if (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.isPlanner(roleString)) {
+    console.log('🔍 [GET USER MACHINE IDS DEBUG] Admin/Planner/Flying Squad - returning null');
     return null;
   }
 
@@ -51,6 +59,12 @@ export const getUserMachineIds = async (userId: string, userRole: string): Promi
       isActive: true 
     },
     select: { machineId: true }
+  });
+
+  console.log('🔍 [GET USER MACHINE IDS DEBUG] User machines from DB:', {
+    userId: userId,
+    userMachines: userMachines,
+    machineIds: userMachines.map(um => um.machineId)
   });
 
   return userMachines.map(um => um.machineId);
@@ -198,6 +212,12 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
     const userId = req.user?.userId;
     const userRole = req.user?.role;
 
+    console.log('🔍 [MACHINE FILTERING DEBUG] Starting middleware:', {
+      userId: userId,
+      userRole: userRole,
+      endpoint: req.path
+    });
+
     // Parse role if it's a JSON string
     let parsedRole: string | string[] = userRole || '';
     if (userRole && typeof userRole === 'string') {
@@ -211,9 +231,12 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
       }
     }
 
+    console.log('🔍 [MACHINE FILTERING DEBUG] Parsed role:', parsedRole);
+
     // Admins, Flying Squad members, and Planners bypass machine restrictions
     const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
     if (userRole && (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.isPlanner(roleString))) {
+      console.log('🔍 [MACHINE FILTERING DEBUG] Admin/Planner/Flying Squad - bypassing machine restrictions');
       req.userMachineIds = null; // Indicate no filtering needed
       req.userRole = userRole; // Pass user role for high demand filtering
       return next();
@@ -224,11 +247,19 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
     }
 
     const userMachineIds = await getUserMachineIds(userId, userRole);
+    console.log('🔍 [MACHINE FILTERING DEBUG] User machine IDs:', {
+      userId: userId,
+      userRole: userRole,
+      userMachineIds: userMachineIds,
+      userMachineIdsLength: userMachineIds?.length || 0
+    });
+    
     req.userMachineIds = userMachineIds;
     req.userRole = userRole; // Pass user role for high demand filtering
     
     next();
   } catch (error) {
+    console.error('❌ [MACHINE FILTERING DEBUG] Error:', error);
     next(error);
   }
 };
