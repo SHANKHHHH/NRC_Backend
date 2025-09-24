@@ -91,7 +91,7 @@ export class UnifiedJobDataHelper {
         // Include job plannings for reference (filtered by role)
         jobPlannings: jobPlannings.map(p => ({
           jobPlanId: p.jobPlanId,
-          steps: p.steps.filter(step => this.isStepForUserRole(step.stepName, userRole))
+          steps: p.steps.filter((step: any) => this.isStepForUserRole(step.stepName, userRole))
         }))
       };
     });
@@ -184,19 +184,19 @@ export class UnifiedJobDataHelper {
     };
 
     if (Array.isArray(userRole)) {
-      return userRole.some(r => roleStepMapping[r] === stepName);
+      return userRole.some((r: string) => (roleStepMapping as any)[r] === stepName);
     }
 
     if (typeof userRole === 'string') {
       try {
         const roles = JSON.parse(userRole);
         if (Array.isArray(roles)) {
-          return roles.some(r => roleStepMapping[r] === stepName);
+          return roles.some((r: any) => (roleStepMapping as any)[r] === stepName);
         }
       } catch {
         // Not JSON, treat as single role string
       }
-      return roleStepMapping[userRole] === stepName;
+      return (roleStepMapping as any)[userRole] === stepName;
     }
 
     return false;

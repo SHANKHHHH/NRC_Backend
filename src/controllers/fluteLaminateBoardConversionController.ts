@@ -96,18 +96,68 @@ export const getFluteLaminateBoardConversionById = async (req: Request, res: Res
 };
 
 export const getAllFluteLaminateBoardConversions = async (req: Request, res: Response) => {
-  const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
   
-  // Get unified role-specific step data
-  const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-  const flutelamSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds || null, userRole, 'FluteLaminateBoardConversion');
-  
-  res.status(200).json({ 
-    success: true, 
-    count: flutelamSteps.length, 
-    data: flutelamSteps 
-  });
+  try {
+    // Get job steps for flutelaminator role using jobStepId as unique identifier
+    // High demand jobs are visible to all users, regular jobs only to flutelaminators
+    const jobSteps = await prisma.jobStep.findMany({
+      where: { 
+        stepName: 'FluteLaminateBoardConversion',
+        OR: [
+          // High demand jobs visible to all users
+          {
+            jobPlanning: {
+              jobDemand: 'high'
+            }
+          },
+          // Regular jobs only visible to flutelaminators (or admin/planner)
+          ...(userRole === 'flutelaminator' || userRole === 'admin' || userRole === 'planner' || 
+              (typeof userRole === 'string' && userRole.includes('flutelaminator')) ? [{
+            jobPlanning: {
+              jobDemand: { not: 'high' as any }
+            }
+          }] : [])
+        ]
+      },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true,
+            jobDemand: true
+          }
+        },
+        flutelam: true
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    // Format response with jobStepId as unique identifier
+    const formattedSteps = jobSteps.map(step => ({
+      jobStepId: step.id, // Use jobStepId as unique identifier
+      stepName: step.stepName,
+      status: step.status,
+      user: step.user,
+      startDate: step.startDate,
+      endDate: step.endDate,
+      createdAt: step.createdAt,
+      updatedAt: step.updatedAt,
+      machineDetails: step.machineDetails,
+      jobPlanning: step.jobPlanning,
+      flutelam: step.flutelam,
+      isHighDemand: step.jobPlanning?.jobDemand === 'high'
+    }));
+    
+    res.status(200).json({ 
+      success: true, 
+      count: formattedSteps.length, 
+      data: formattedSteps,
+      message: `Found ${formattedSteps.length} flutelamination job steps (high demand visible to all, regular jobs only to flutelaminators)`
+    });
+  } catch (error) {
+    console.error('Error fetching flutelamination details:', error);
+    throw new AppError('Failed to fetch flutelamination details', 500);
+  }
 };
 
 export const getFluteLaminateBoardConversionByNrcJobNo = async (req: Request, res: Response) => {

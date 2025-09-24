@@ -148,7 +148,8 @@ export const getAllCorrugations = async (req: Request, res: Response) => {
             }
           },
           // Regular jobs only visible to corrugators (or admin/planner)
-          ...(userRole === 'corrugator' || userRole === 'admin' || userRole === 'planner' ? [{
+          ...(userRole === 'corrugator' || userRole === 'admin' || userRole === 'planner' || 
+              (typeof userRole === 'string' && userRole.includes('corrugator')) ? [{
             jobPlanning: {
               jobDemand: { not: 'high' as any }
             }

@@ -148,7 +148,8 @@ export const getAllPrintingDetails = async (req: Request, res: Response) => {
             }
           },
           // Regular jobs only visible to printers (or admin/planner)
-          ...(userRole === 'printer' || userRole === 'admin' || userRole === 'planner' ? [{
+          ...(userRole === 'printer' || userRole === 'admin' || userRole === 'planner' || 
+              (typeof userRole === 'string' && userRole.includes('printer')) ? [{
             jobPlanning: {
               jobDemand: { not: 'high' as any }
             }
