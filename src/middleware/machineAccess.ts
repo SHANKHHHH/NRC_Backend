@@ -26,11 +26,6 @@ declare global {
  * Returns null for admin/flying squad/planner (no filtering needed)
  */
 export const getUserMachineIds = async (userId: string, userRole: string): Promise<string[] | null> => {
-  console.log('🔍 [GET USER MACHINE IDS DEBUG] Input:', {
-    userId: userId,
-    userRole: userRole
-  });
-
   // Parse role if it's a JSON string
   let parsedRole: string | string[] = userRole;
   if (typeof userRole === 'string') {
@@ -44,12 +39,9 @@ export const getUserMachineIds = async (userId: string, userRole: string): Promi
     }
   }
 
-  console.log('🔍 [GET USER MACHINE IDS DEBUG] Parsed role:', parsedRole);
-
   // Admins, Flying Squad members, and Planners bypass machine restrictions
   const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
   if (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.isPlanner(roleString)) {
-    console.log('🔍 [GET USER MACHINE IDS DEBUG] Admin/Planner/Flying Squad - returning null');
     return null;
   }
 
@@ -59,12 +51,6 @@ export const getUserMachineIds = async (userId: string, userRole: string): Promi
       isActive: true 
     },
     select: { machineId: true }
-  });
-
-  console.log('🔍 [GET USER MACHINE IDS DEBUG] User machines from DB:', {
-    userId: userId,
-    userMachines: userMachines,
-    machineIds: userMachines.map(um => um.machineId)
   });
 
   return userMachines.map(um => um.machineId);
@@ -331,6 +317,71 @@ export const checkJobStepMachineAccess = async (userId: string, userRole: string
 };
 
 /**
+ * Check machine access for job step operations - ALL actions require machine access
+ * - Start, Stop, Complete: All require machine access
+ * - Shows simple "Access Denied" message instead of big popup
+ */
+export const checkJobStepMachineAccessWithAction = async (
+  userId: string, 
+  userRole: string, 
+  jobStepId: number, 
+  action: 'start' | 'stop' | 'complete'
+): Promise<boolean> => {
+  // Admins and Flying Squad members have access to all job step operations
+  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole)) {
+    return true;
+  }
+
+  // Get the job step and check machine access
+  const jobStep = await prisma.jobStep.findUnique({
+    where: { id: jobStepId },
+    select: { 
+      machineDetails: true,
+      stepName: true,
+      jobPlanning: { 
+        select: { nrcJobNo: true } 
+      }
+    }
+  });
+
+  if (!jobStep) {
+    return false;
+  }
+
+  // Check for role-based access first
+  if (isStepForUserRole(jobStep.stepName, userRole)) {
+    const stepMachineIds = parseMachineDetails(jobStep.machineDetails);
+    
+    // If no machine details, allow access for role-based users
+    if (stepMachineIds.length === 0) {
+      return true;
+    }
+
+    // Check machine-based access for ALL actions (start, stop, complete)
+    const hasAccess = await Promise.all(
+      stepMachineIds.map(machineId => checkMachineAccess(userId, userRole, machineId))
+    );
+    
+    return hasAccess.some(access => access);
+  }
+
+  // For users without role access, check machine access for all actions
+  const stepMachineIds = parseMachineDetails(jobStep.machineDetails);
+  
+  // If no machine details, no access
+  if (stepMachineIds.length === 0) {
+    return false;
+  }
+
+  // Check machine-based access for ALL actions
+  const hasAccess = await Promise.all(
+    stepMachineIds.map(machineId => checkMachineAccess(userId, userRole, machineId))
+  );
+  
+  return hasAccess.some(access => access);
+};
+
+/**
  * Enhanced machine details parser that handles all database edge cases
  * Handles: 0 values, empty arrays, typos (machineld), valid JSON objects
  */
@@ -367,17 +418,23 @@ export function isStepForUserRole(stepName: string, userRole: string | string[])
   const roleStepMapping = {
     'printer': 'PrintingDetails',
     'corrugator': 'Corrugation', 
-    'punching_operator': 'Punching',
+    'punching_operator': ['Punching', 'Die Cutting'],
     'pasting_operator': 'SideFlapPasting',
     'flutelaminator': 'FluteLaminateBoardConversion',
-    'paperstore': 'PaperStore',
+    'paperstore': ['PaperStore', 'PrintingDetails', 'Corrugation', 'FluteLaminateBoardConversion', 'Punching', 'Die Cutting', 'SideFlapPasting', 'QualityDept', 'DispatchProcess'],
     'qc_manager': 'QualityDept',
-    'dispatch_executive': 'DispatchProcess'
+    'dispatch_executive': ['DispatchProcess', 'PaperStore']
   } as const;
 
   // Handle array roles directly
   if (Array.isArray(userRole)) {
-    return userRole.some(r => (roleStepMapping as any)[r] === stepName);
+    return userRole.some(r => {
+      const roleSteps = (roleStepMapping as any)[r];
+      if (Array.isArray(roleSteps)) {
+        return roleSteps.includes(stepName);
+      }
+      return roleSteps === stepName;
+    });
   }
 
   // Handle string roles - try to parse as JSON first
@@ -385,12 +442,22 @@ export function isStepForUserRole(stepName: string, userRole: string | string[])
     try {
       const roles = JSON.parse(userRole);
       if (Array.isArray(roles)) {
-        return roles.some(r => (roleStepMapping as any)[r] === stepName);
+        return roles.some(r => {
+          const roleSteps = (roleStepMapping as any)[r];
+          if (Array.isArray(roleSteps)) {
+            return roleSteps.includes(stepName);
+          }
+          return roleSteps === stepName;
+        });
       }
     } catch {
       // Not JSON, treat as single role string
     }
-    return (roleStepMapping as any)[userRole] === stepName;
+    const roleSteps = (roleStepMapping as any)[userRole];
+    if (Array.isArray(roleSteps)) {
+      return roleSteps.includes(stepName);
+    }
+    return roleSteps === stepName;
   }
 
   return false;
@@ -419,7 +486,7 @@ export const allowHighDemandBypass = async (
  * Get filtered job step IDs based on user machine access and high demand jobs
  */
 export const getFilteredJobStepIds = async (userMachineIds: string[] | null, userRole: string): Promise<number[]> => {
-  if (userMachineIds === null || userMachineIds.length === 0) {
+  if (userMachineIds === null) {
     // Admin/flying squad - return all job step IDs
     const allJobSteps = await prisma.jobStep.findMany({ select: { id: true } });
     return allJobSteps.map(js => js.id);
@@ -482,8 +549,16 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
  * Get filtered job numbers based on user machine access (for job-level filtering)
  */
 export const getFilteredJobNumbers = async (userMachineIds: string[] | null, userRole: string): Promise<string[]> => {
-  if (userMachineIds === null || userMachineIds.length === 0) {
+  if (userMachineIds === null) {
     // Admin/flying squad - return all job numbers
+    const allJobs = await prisma.job.findMany({
+      select: { nrcJobNo: true }
+    });
+    return allJobs.map(job => job.nrcJobNo);
+  }
+
+  // Special handling for paperstore users - they can see all jobs (no machine restrictions)
+  if (userRole.includes('paperstore')) {
     const allJobs = await prisma.job.findMany({
       select: { nrcJobNo: true }
     });

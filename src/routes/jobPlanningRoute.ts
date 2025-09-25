@@ -8,6 +8,7 @@ import {
   restrictStepTimingUpdate 
 } from '../middleware/flyingSquadPermissions';
 import { addMachineFiltering } from '../middleware';
+import { validateStepTransition, autoCorrectStateInconsistencies } from '../middleware/stepValidation';
 import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps, updateJobStepById } from '../controllers/jobPlanningController';
 
 const router = Router();
@@ -43,6 +44,8 @@ router.get('/:nrcJobNo/steps/:stepNo', authenticateToken, asyncHandler(getStepBy
 // Unified update: status and/or machineDetails in one call
 router.put('/:nrcJobNo/steps/:stepNo', 
   authenticateToken, 
+  autoCorrectStateInconsistencies,
+  validateStepTransition,
   restrictStepStatusUpdate, 
   restrictMachineDetailsUpdate, 
   restrictStepTimingUpdate, 

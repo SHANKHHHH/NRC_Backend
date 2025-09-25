@@ -27,6 +27,8 @@ export const corsMiddleware = (req: Request, res: Response, next: NextFunction) 
     'http://localhost:3000', 
     'http://localhost:3001', 
     'http://localhost:5173',
+    'http://localhost:52012', // Flutter web app
+    'http://localhost:8080', // Flutter web app alternative port
     'https://nrc-backend-his4.onrender.com',
     'https://nrc-frontend.vercel.app',
     'https://nrc-frontend-y5wf.vercel.app',

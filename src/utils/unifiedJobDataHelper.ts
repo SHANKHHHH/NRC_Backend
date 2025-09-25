@@ -175,7 +175,7 @@ export class UnifiedJobDataHelper {
     const roleStepMapping = {
       'printer': 'PrintingDetails',
       'corrugator': 'Corrugation', 
-      'punching_operator': 'Punching',
+      'punching_operator': ['Punching', 'Die Cutting'],
       'pasting_operator': 'SideFlapPasting',
       'flutelaminator': 'FluteLaminateBoardConversion',
       'paperstore': 'PaperStore',

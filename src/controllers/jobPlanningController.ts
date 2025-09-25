@@ -80,7 +80,8 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
   const userRole = req.user?.role || '';
   const accessibleJobNumbers = await getFilteredJobNumbers(userMachineIds || null, userRole);
   
-  const jobPlannings = await prisma.jobPlanning.findMany({
+  // Get all job plannings for accessible jobs
+  const allJobPlannings = await prisma.jobPlanning.findMany({
     where: { nrcJobNo: { in: accessibleJobNumbers } },
     include: {
       steps: {
@@ -102,10 +103,29 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     orderBy: { jobPlanId: 'desc' },
   });
 
+  // Group by job number and select the best planning for each job
+  const jobPlanningMap = new Map();
+  allJobPlannings.forEach(planning => {
+    const nrcJobNo = planning.nrcJobNo;
+    if (!jobPlanningMap.has(nrcJobNo)) {
+      jobPlanningMap.set(nrcJobNo, planning);
+    } else {
+      const existing = jobPlanningMap.get(nrcJobNo);
+      // Prioritize high-demand plannings, then most recent
+      if (planning.jobDemand === 'high' && existing.jobDemand !== 'high') {
+        jobPlanningMap.set(nrcJobNo, planning);
+      } else if (planning.jobDemand === existing.jobDemand && planning.createdAt > existing.createdAt) {
+        jobPlanningMap.set(nrcJobNo, planning);
+      }
+    }
+  });
+
+  const jobPlannings = Array.from(jobPlanningMap.values());
+
   // Extract machine IDs more efficiently
   const machineIds = new Set<string>();
   jobPlannings.forEach(planning => {
-    planning.steps.forEach(step => {
+    planning.steps.forEach((step: any) => {
       if (Array.isArray(step.machineDetails)) {
         step.machineDetails.forEach((md: any) => {
           const id = (md && typeof md === 'object') ? (md.machineId || (md as any).id) : undefined;
@@ -136,8 +156,8 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
   for (const planning of jobPlannings) {
     for (const step of planning.steps) {
       if (Array.isArray(step.machineDetails)) {
-        step.machineDetails = step.machineDetails.map(md => {
-          const mid = (md && typeof md === 'object') ? ((md as any).machineId || (md as any).id) : undefined;
+        step.machineDetails = step.machineDetails.map((md: any) => {
+          const mid = (md && typeof md === 'object') ? (md.machineId || md.id) : undefined;
           if (mid && typeof mid === 'string' && machineMap[mid]) {
             const base: Record<string, any> = (md && typeof md === 'object') ? (md as Record<string, any>) : {};
             return { ...base, machine: machineMap[mid] };
@@ -176,50 +196,46 @@ export const getAllJobPlanningsSimple = async (req: Request, res: Response) => {
 // Get a JobPlanning by nrcJobNo with steps
 export const getJobPlanningByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
-  const jobPlanning = await prisma.jobPlanning.findFirst({
-    where: { nrcJobNo },
-    include: { steps: true },
-  });
-  if (!jobPlanning) {
-    throw new AppError('JobPlanning not found for that NRC Job No', 404);
+  
+  try {
+    const { getJobPlanningData } = await import('../utils/jobPlanningSelector');
+    const jobPlanning = await getJobPlanningData(nrcJobNo);
+    
+    if (!jobPlanning) {
+      throw new AppError('JobPlanning not found for that NRC Job No', 404);
+    }
+    
+    res.status(200).json({
+      success: true,
+      data: jobPlanning,
+    });
+  } catch (error) {
+    console.error('Error in getJobPlanningByNrcJobNo:', error);
+    throw new AppError('Failed to get job planning data', 500);
   }
-  res.status(200).json({
-    success: true,
-    data: jobPlanning,
-  });
 };
 
 // Get all steps for a given nrcJobNo
 export const getStepsByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
   
-  // Find all steps from all plannings for this job
-  const steps = await prisma.jobStep.findMany({
-    where: {
-      jobPlanning: {
-        nrcJobNo: nrcJobNo
-      }
-    },
-    include: {
-      jobPlanning: {
-        select: { jobPlanId: true, nrcJobNo: true }
-      }
-    },
-    orderBy: [
-      { jobPlanningId: 'asc' },
-      { stepNo: 'asc' }
-    ],
-  });
-  
-  if (steps.length === 0) {
-    throw new AppError('No steps found for that NRC Job No', 404);
+  try {
+    const { getStepsForJob } = await import('../utils/jobPlanningSelector');
+    const { steps } = await getStepsForJob(nrcJobNo);
+    
+    if (steps.length === 0) {
+      throw new AppError('No steps found for that NRC Job No', 404);
+    }
+    
+    res.status(200).json({
+      success: true,
+      count: steps.length,
+      data: steps,
+    });
+  } catch (error) {
+    console.error('Error in getStepsByNrcJobNo:', error);
+    throw new AppError('Failed to get steps for job', 500);
   }
-  
-  res.status(200).json({
-    success: true,
-    count: steps.length,
-    data: steps,
-  });
 };
 
 // Get a specific step for a given nrcJobNo and stepNo
@@ -323,16 +339,18 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
     throw new AppError('JobStep not found for the given jobPlanId and nrcJobNo', 404);
   }
 
-  // Enforce machine access for most steps, but bypass for PaperStore as requested
+  // Enforce machine access for all steps including PaperStore
   if (req.user?.userId && req.user?.role) {
-    if (jobStep.stepName !== 'PaperStore') {
-      const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
-      const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
-      if (!bypass) {
-        const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
-        if (!hasAccess) {
-          throw new AppError('Access denied: You do not have access to machines for this step', 403);
-        }
+    const { checkJobStepMachineAccessWithAction, allowHighDemandBypass } = await import('../middleware/machineAccess');
+    const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+    if (!bypass) {
+      // Determine action based on status change
+      const action = req.body.status === 'start' ? 'start' : 
+                    req.body.status === 'stop' ? 'stop' : 'complete';
+      
+      const hasAccess = await checkJobStepMachineAccessWithAction(req.user.userId, req.user.role, jobStep.id, action);
+      if (!hasAccess) {
+        throw new AppError('Access Denied', 403);
       }
     }
   }
@@ -485,16 +503,15 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     }
   }
 
-  // Enforce machine access, but bypass for PaperStore step per requirement
+  // Enforce machine access for all steps including PaperStore
   if (req.user?.userId && req.user?.role) {
-    if (step.stepName !== 'PaperStore') {
-      const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
-      const bypass = await allowHighDemandBypass(req.user.role, step.stepName, nrcJobNo);
-      if (!bypass) {
-        const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, step.id);
-        if (!hasAccess) {
-          throw new AppError('Access denied: You do not have access to machines for this step', 403);
-        }
+    const { checkJobStepMachineAccessWithAction, allowHighDemandBypass } = await import('../middleware/machineAccess');
+    const bypass = await allowHighDemandBypass(req.user.role, step.stepName, nrcJobNo);
+    if (!bypass) {
+      // This is a completion action
+      const hasAccess = await checkJobStepMachineAccessWithAction(req.user.userId, req.user.role, step.id, 'complete');
+      if (!hasAccess) {
+        throw new AppError('Access Denied', 403);
       }
     }
   }
