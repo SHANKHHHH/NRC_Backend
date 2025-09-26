@@ -33,7 +33,8 @@ export const corsMiddleware = (req: Request, res: Response, next: NextFunction) 
     'https://nrc-frontend.vercel.app',
     'https://nrc-frontend-y5wf.vercel.app',
     'https://nrc-frontend-y5wf.vercel.app/dashboard',
-    'https://nrc-shankh-62gr.vercel.app'
+    'https://nrc-shankh-62gr.vercel.app',
+    'https://nrc-shankh-62gr.vercel.app/planner-dashboard'
   ];
   const origin = req.headers.origin;
   
