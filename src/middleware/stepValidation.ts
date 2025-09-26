@@ -17,18 +17,20 @@ export const validateStepTransition = async (req: Request, res: Response, next: 
 
     console.log(`🔍 [StepValidation] Validating step transition for job ${nrcJobNo} to status ${status}`);
 
-    // Get current job planning steps
-    const jobPlanning = await prisma.jobPlanning.findFirst({
-      where: { nrcJobNo },
-      include: {
-        steps: {
-          orderBy: { stepNo: 'asc' }
-        }
-      }
-    });
+    // Get current job planning steps using the same selection logic as job planning controller
+    const { getJobPlanningData } = await import('../utils/jobPlanningSelector');
+    const jobPlanning = await getJobPlanningData(nrcJobNo);
 
     if (!jobPlanning) {
       throw new AppError('Job planning not found', 404);
+    }
+
+    // Check if user is paperstore - they can start any step without validation
+    const userRole = req.user?.role;
+    console.log(`🔍 [StepValidation] User role: ${userRole}, type: ${typeof userRole}`);
+    if (userRole && userRole.includes('paperstore')) {
+      console.log(`🔍 [StepValidation] Paperstore user - bypassing step validation`);
+      return next();
     }
 
     // Validate the step transition

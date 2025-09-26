@@ -44,11 +44,6 @@ router.get('/:nrcJobNo/steps/:stepNo', authenticateToken, asyncHandler(getStepBy
 // Unified update: status and/or machineDetails in one call
 router.put('/:nrcJobNo/steps/:stepNo', 
   authenticateToken, 
-  autoCorrectStateInconsistencies,
-  validateStepTransition,
-  restrictStepStatusUpdate, 
-  restrictMachineDetailsUpdate, 
-  restrictStepTimingUpdate, 
   asyncHandler(upsertStepByNrcJobNoAndStepNo)
 );
 

@@ -443,13 +443,23 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   if (Array.isArray(userId)) userId = userId[0];
   const userRole = req.user?.role;
 
-  // Find all steps with the given step number for this job
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Starting step update for job ${nrcJobNo}, step ${stepNo}`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] User ID: ${userId}, Role: ${userRole}`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Request body:`, req.body);
+
+  // Get the prioritized job planning first
+  const { getJobPlanningData } = await import('../utils/jobPlanningSelector');
+  const jobPlanning = await getJobPlanningData(nrcJobNo);
+  
+  if (!jobPlanning) {
+    throw new AppError('Job planning not found', 404);
+  }
+
+  // Find steps with the given step number from the prioritized job planning
   const steps = await prisma.jobStep.findMany({
     where: {
       stepNo: Number(stepNo),
-      jobPlanning: {
-        nrcJobNo: nrcJobNo
-      }
+      jobPlanningId: jobPlanning.jobPlanId
     },
     include: {
       jobPlanning: {
@@ -606,17 +616,28 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
   if (Array.isArray(userId)) userId = userId[0];
   const userRole = req.user?.role;
 
+  console.log(`🔍 [StepUpdate] Starting step update for job ${nrcJobNo}, step ${stepNo}, status ${status}`);
+  console.log(`🔍 [StepUpdate] User ID: ${userId}, Role: ${userRole}`);
+
   if (!['planned', 'start', 'stop'].includes(status)) {
     throw new AppError('Invalid status value. Must be one of: planned, start, stop', 400);
   }
 
-  // Find all steps with the given step number for this job
+  // Get the prioritized job planning first
+  const { getJobPlanningData } = await import('../utils/jobPlanningSelector');
+  const jobPlanning = await getJobPlanningData(nrcJobNo);
+  
+  console.log(`🔍 [StepUpdate] Found job planning:`, jobPlanning ? `ID ${jobPlanning.jobPlanId}` : 'null');
+  
+  if (!jobPlanning) {
+    throw new AppError('Job planning not found', 404);
+  }
+
+  // Find steps with the given step number from the prioritized job planning
   const steps = await prisma.jobStep.findMany({
     where: {
       stepNo: Number(stepNo),
-      jobPlanning: {
-        nrcJobNo: nrcJobNo
-      }
+      jobPlanningId: jobPlanning.jobPlanId
     },
     include: {
       jobPlanning: {
