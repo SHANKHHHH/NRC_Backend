@@ -156,10 +156,10 @@ export class RoleManager {
   }
 
   /**
-   * Check if user can perform QC check actions (flying squad or admin)
+   * Check if user can perform QC check actions (flying squad, admin, or qc_manager)
    */
   static canPerformQCCheck(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ['admin', 'flyingsquad']);
+    return this.hasAnyRole(userRole, ['admin', 'flyingsquad', 'qc_manager']);
   }
 
   /**
@@ -173,7 +173,7 @@ export class RoleManager {
    * Check if user can update step status (not flying squad)
    */
   static canUpdateStepStatus(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ['admin', 'planner', 'production_head', 'printer', 'corrugator', 'flutelaminator', 'pasting_operator', 'punching_operator', 'paperstore', 'qc_manager', 'dispatch_executive']);
+    return this.hasAnyRole(userRole, ['admin', 'planner', 'production_head', 'printer', 'corrugator', 'flutelaminator', 'pasting_operator', 'punching_operator', 'paperstore', 'dispatch_executive']);
   }
 
   /**

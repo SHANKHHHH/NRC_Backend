@@ -79,7 +79,8 @@ export const getAllQualityDepts = async (req: Request, res: Response) => {
 
 export const getQualityDeptByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
-  const qualityDepts = await prisma.qualityDept.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  const qualityDepts = await prisma.qualityDept.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
   res.status(200).json({ success: true, data: qualityDepts });
 };
 
@@ -87,6 +88,7 @@ export const getQualityDeptByNrcJobNo = async (req: Request, res: Response) => {
 
 export const updateQualityDept = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const userRole = req.user?.role;
   // Check if Flying Squad is trying to update non-QC fields
   if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
@@ -115,7 +117,7 @@ export const updateQualityDept = async (req: Request, res: Response) => {
   try {
     // Step 1: Find the existing QualityDept record using jobNrcJobNo
     const existingQualityDept = await prisma.qualityDept.findFirst({
-      where: { jobNrcJobNo: nrcJobNo },
+      where: { jobNrcJobNo: decodedNrcJobNo },
     });
 
     if (!existingQualityDept) {
@@ -130,7 +132,7 @@ export const updateQualityDept = async (req: Request, res: Response) => {
       });
       if (jobStep) {
         const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
-        const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+        const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, decodedNrcJobNo);
         if (!bypass) {
           const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
           if (!hasAccess) {
@@ -151,7 +153,7 @@ export const updateQualityDept = async (req: Request, res: Response) => {
       await logUserActionWithResource(
         req.user.userId,
         ActionTypes.JOBSTEP_UPDATED,
-        `Updated QualityDept step with jobNrcJobNo: ${nrcJobNo}`,
+        `Updated QualityDept step with jobNrcJobNo: ${decodedNrcJobNo}`,
         'QualityDept',
         nrcJobNo
       );

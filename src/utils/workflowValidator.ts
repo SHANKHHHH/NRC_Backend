@@ -114,8 +114,8 @@ export const validateStepDependencies = async (
         return await validateAnyCorrugationOrPrintingAccepted(nrcJobNo);
 
       case 'DispatchProcess':
-        // Can proceed if any of Corrugation or Printing exist and are accepted
-        return await validateAnyCorrugationOrPrintingAccepted(nrcJobNo);
+        // Can proceed only if Quality Control (QC) has been completed
+        return await validateQualityControlCompleted(nrcJobNo);
 
       default:
         // For any other step, check if previous step exists and is accepted
@@ -181,6 +181,51 @@ export const validateAnyCorrugationOrPrintingAccepted = async (
     message: message.trim(),
     requiredSteps: requiredSteps.length > 0 ? requiredSteps : undefined
   };
+};
+
+/**
+ * Validate that Quality Control (QC) has been completed before Dispatch
+ */
+export const validateQualityControlCompleted = async (
+  nrcJobNo: string
+): Promise<WorkflowValidationResult> => {
+  try {
+    // Get the job planning to find the Quality Control step
+    const jobPlanning = await prisma.jobPlanning.findFirst({
+      where: { nrcJobNo },
+      include: {
+        steps: {
+          where: { stepName: 'QualityDept' },
+          include: { qualityDept: true }
+        }
+      }
+    });
+
+    if (!jobPlanning) {
+      return { canProceed: false, message: 'Job planning not found' };
+    }
+
+    const qualityStep = jobPlanning.steps.find(s => s.stepName === 'QualityDept');
+    
+    if (!qualityStep) {
+      return { canProceed: false, message: 'Quality Control step not found' };
+    }
+
+    if (!qualityStep.qualityDept) {
+      return { canProceed: false, message: 'Quality Control step not started' };
+    }
+
+    // Check if QC has been completed (qcCheckSignBy and qcCheckAt are set)
+    if (!qualityStep.qualityDept.qcCheckSignBy || !qualityStep.qualityDept.qcCheckAt) {
+      return { canProceed: false, message: 'Quality Control must be completed by Flying Squad before Dispatch can proceed' };
+    }
+
+    return { canProceed: true, message: 'Quality Control completed, Dispatch can proceed' };
+
+  } catch (error) {
+    console.error('Error validating Quality Control completion:', error);
+    return { canProceed: false, message: 'Error checking Quality Control status' };
+  }
 };
 
 /**

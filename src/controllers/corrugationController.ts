@@ -276,13 +276,15 @@ export const getAllCorrugations = async (req: Request, res: Response) => {
 
 export const getCorrugationByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
-  const corrugations = await prisma.corrugation.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  const corrugations = await prisma.corrugation.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
   res.status(200).json({ success: true, data: corrugations });
 };
 
 
 export const updateCorrugation = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const userRole = req.user?.role;
   // Check if Flying Squad is trying to update non-QC fields
   if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
@@ -311,7 +313,7 @@ export const updateCorrugation = async (req: Request, res: Response) => {
   try {
     // Step 1: Find the Corrugation record by jobNrcJobNo
     const existingCorrugation = await prisma.corrugation.findFirst({
-      where: { jobNrcJobNo: nrcJobNo },
+      where: { jobNrcJobNo: decodedNrcJobNo },
     });
 
     if (!existingCorrugation) {
@@ -365,7 +367,7 @@ export const updateCorrugation = async (req: Request, res: Response) => {
       await logUserActionWithResource(
         req.user.userId,
         ActionTypes.JOBSTEP_UPDATED,
-        `Updated Corrugation step with jobNrcJobNo: ${nrcJobNo}`,
+        `Updated Corrugation step with jobNrcJobNo: ${decodedNrcJobNo}`,
         'Corrugation',
         nrcJobNo
       );

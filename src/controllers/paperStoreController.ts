@@ -113,12 +113,16 @@ export const getAllPaperStores = async (req: Request, res: Response) => {
 
 export const getPaperStoreByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
-  const paperStores = await prisma.paperStore.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  // URL decode the nrcJobNo parameter to handle spaces and special characters
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  const paperStores = await prisma.paperStore.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
   res.status(200).json({ success: true, data: paperStores });
 };
 
 export const updatePaperStore = async (req: Request, res: Response) => {
-  // const { nrcJobNo } = req.params;
+  const { nrcJobNo } = req.params;
+  // URL decode the nrcJobNo parameter to handle spaces and special characters
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const userRole = req.user?.role;
   // Check if Flying Squad is trying to update non-QC fields
   if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
@@ -156,11 +160,10 @@ export const updatePaperStore = async (req: Request, res: Response) => {
   //   );
   // }
   // res.status(200).json({ success: true, data: paperStore, message: 'PaperStore updated' });
-  const { nrcJobNo } = req.params;
 
 // Step 1: Find the PaperStore by jobNrcJobNo
 const existing = await prisma.paperStore.findFirst({
-  where: { jobNrcJobNo: nrcJobNo },
+  where: { jobNrcJobNo: decodedNrcJobNo },
 });
 
 if (!existing) {
@@ -180,9 +183,9 @@ if (req.user?.userId) {
   await logUserActionWithResource(
     req.user.userId,
     ActionTypes.JOBSTEP_UPDATED,
-    `Updated PaperStore step with jobNrcJobNo: ${nrcJobNo}`,
+    `Updated PaperStore step with jobNrcJobNo: ${decodedNrcJobNo}`,
     'PaperStore',
-    nrcJobNo
+    decodedNrcJobNo
   );
 }
 

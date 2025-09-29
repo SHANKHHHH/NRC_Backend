@@ -52,6 +52,8 @@ export const restrictFlyingSquadToQC = (req: Request, res: Response, next: NextF
 export const restrictStepStatusUpdate = (req: Request, res: Response, next: NextFunction) => {
   const userRole = req.user?.role;
   
+  console.log(`🔍 [restrictStepStatusUpdate] User role: ${userRole}, type: ${typeof userRole}`);
+  
   if (!userRole) {
     throw new AppError('User role not found', 401);
   }
@@ -64,6 +66,12 @@ export const restrictStepStatusUpdate = (req: Request, res: Response, next: Next
         403
       );
     }
+  }
+
+  // Allow paperstore users to update step status
+  if (userRole.includes('paperstore')) {
+    console.log(`🔍 [restrictStepStatusUpdate] Paperstore user - allowing step status update`);
+    return next();
   }
 
   next();

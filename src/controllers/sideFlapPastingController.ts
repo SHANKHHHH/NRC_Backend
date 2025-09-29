@@ -79,7 +79,8 @@ export const getAllSideFlapPastings = async (req: Request, res: Response) => {
 
 export const getSideFlapPastingByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
-  const sideFlaps = await prisma.sideFlapPasting.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  const sideFlaps = await prisma.sideFlapPasting.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
   res.status(200).json({ success: true, data: sideFlaps });
 };
 
@@ -87,6 +88,7 @@ export const getSideFlapPastingByNrcJobNo = async (req: Request, res: Response) 
 
 export const updateSideFlapPasting = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const userRole = req.user?.role;
   // Check if Flying Squad is trying to update non-QC fields
   if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
@@ -115,7 +117,7 @@ export const updateSideFlapPasting = async (req: Request, res: Response) => {
   try {
     // Step 1: Find the existing SideFlapPasting record
     const existingSideFlap = await prisma.sideFlapPasting.findFirst({
-      where: { jobNrcJobNo: nrcJobNo },
+      where: { jobNrcJobNo: decodedNrcJobNo },
     });
 
     if (!existingSideFlap) {
@@ -169,7 +171,7 @@ export const updateSideFlapPasting = async (req: Request, res: Response) => {
       await logUserActionWithResource(
         req.user.userId,
         ActionTypes.JOBSTEP_UPDATED,
-        `Updated SideFlapPasting step with jobNrcJobNo: ${nrcJobNo}`,
+        `Updated SideFlapPasting step with jobNrcJobNo: ${decodedNrcJobNo}`,
         'SideFlapPasting',
         nrcJobNo
       );

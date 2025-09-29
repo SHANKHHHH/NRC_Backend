@@ -39,9 +39,9 @@ export const getUserMachineIds = async (userId: string, userRole: string): Promi
     }
   }
 
-  // Admins, Flying Squad members, and Planners bypass machine restrictions
+  // Admins, Flying Squad members, QC Managers, and Planners bypass machine restrictions
   const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
-  if (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.isPlanner(roleString)) {
+  if (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.isPlanner(roleString) || RoleManager.hasRole(roleString, 'qc_manager')) {
     return null;
   }
 
@@ -60,8 +60,8 @@ export const getUserMachineIds = async (userId: string, userRole: string): Promi
  * Check if user has access to a specific job's machine
  */
 export const checkJobMachineAccess = async (userId: string, userRole: string, jobId: number): Promise<boolean> => {
-  // Admins and Flying Squad members have access to all jobs
-  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole)) {
+  // Admins, Flying Squad members, and QC Managers have access to all jobs
+  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
     return true;
   }
 
@@ -90,8 +90,8 @@ export const checkJobMachineAccess = async (userId: string, userRole: string, jo
  * Check if user has access to a specific PO's machines
  */
 export const checkPOMachineAccess = async (userId: string, userRole: string, poId: number): Promise<boolean> => {
-  // Admins and Flying Squad members have access to all POs
-  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole)) {
+  // Admins, Flying Squad members, and QC Managers have access to all POs
+  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
     return true;
   }
 
@@ -219,10 +219,10 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
 
     console.log('🔍 [MACHINE FILTERING DEBUG] Parsed role:', parsedRole);
 
-    // Admins, Flying Squad members, and Planners bypass machine restrictions
+    // Admins, Flying Squad members, QC Managers, and Planners bypass machine restrictions
     const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
-    if (userRole && (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.isPlanner(roleString))) {
-      console.log('🔍 [MACHINE FILTERING DEBUG] Admin/Planner/Flying Squad - bypassing machine restrictions');
+    if (userRole && (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.isPlanner(roleString) || RoleManager.hasRole(roleString, 'qc_manager'))) {
+      console.log('🔍 [MACHINE FILTERING DEBUG] Admin/Planner/Flying Squad/QC Manager - bypassing machine restrictions');
       req.userMachineIds = null; // Indicate no filtering needed
       req.userRole = userRole; // Pass user role for high demand filtering
       return next();
@@ -254,8 +254,8 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
  * Generic machine access check
  */
 export const checkMachineAccess = async (userId: string, userRole: string, machineId: string): Promise<boolean> => {
-  // Admins and Flying Squad members have access to all machines
-  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole)) {
+  // Admins, Flying Squad members, and QC Managers have access to all machines
+  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
     return true;
   }
 
@@ -274,8 +274,8 @@ export const checkMachineAccess = async (userId: string, userRole: string, machi
  * Check machine access for job step operations
  */
 export const checkJobStepMachineAccess = async (userId: string, userRole: string, jobStepId: number): Promise<boolean> => {
-  // Admins and Flying Squad members have access to all job steps
-  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole)) {
+  // Admins, Flying Squad members, and QC Managers have access to all job steps
+  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
     return true;
   }
 
@@ -327,8 +327,8 @@ export const checkJobStepMachineAccessWithAction = async (
   jobStepId: number, 
   action: 'start' | 'stop' | 'complete'
 ): Promise<boolean> => {
-  // Admins and Flying Squad members have access to all job step operations
-  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole)) {
+  // Admins, Flying Squad members, and QC Managers have access to all job step operations
+  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
     return true;
   }
 
@@ -418,10 +418,10 @@ export function isStepForUserRole(stepName: string, userRole: string | string[])
   const roleStepMapping = {
     'printer': 'PrintingDetails',
     'corrugator': 'Corrugation', 
-    'punching_operator': ['Punching', 'Die Cutting'],
+    'punching_operator': ['Punching', 'Die Cutting', 'DispatchProcess'],
     'pasting_operator': 'SideFlapPasting',
     'flutelaminator': 'FluteLaminateBoardConversion',
-    'paperstore': ['PaperStore', 'PrintingDetails', 'Corrugation', 'FluteLaminateBoardConversion', 'Punching', 'Die Cutting', 'SideFlapPasting', 'QualityDept', 'DispatchProcess'],
+    'paperstore': ['PaperStore', 'DispatchProcess'],
     'qc_manager': 'QualityDept',
     'dispatch_executive': ['DispatchProcess', 'PaperStore']
   } as const;

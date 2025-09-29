@@ -80,6 +80,7 @@ export const getAllPunchings = async (req: Request, res: Response) => {
 
 export const updatePunching = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const userRole = req.user?.role;
   // Check if Flying Squad is trying to update non-QC fields
   if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
@@ -108,7 +109,7 @@ export const updatePunching = async (req: Request, res: Response) => {
   try {
     // Step 1: Find punching record using jobNrcJobNo
     const existingPunching = await prisma.punching.findFirst({
-      where: { jobNrcJobNo: nrcJobNo },
+      where: { jobNrcJobNo: decodedNrcJobNo },
     });
 
     if (!existingPunching) {
@@ -162,7 +163,7 @@ export const updatePunching = async (req: Request, res: Response) => {
       await logUserActionWithResource(
         req.user.userId,
         ActionTypes.JOBSTEP_UPDATED,
-        `Updated Punching step with jobNrcJobNo: ${nrcJobNo}`,
+        `Updated Punching step with jobNrcJobNo: ${decodedNrcJobNo}`,
         'Punching',
         nrcJobNo
       );
@@ -207,6 +208,7 @@ export const deletePunching = async (req: Request, res: Response) => {
 
 export const getPunchingByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
-  const punchings = await prisma.punching.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  const punchings = await prisma.punching.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
   res.status(200).json({ success: true, data: punchings });
 };

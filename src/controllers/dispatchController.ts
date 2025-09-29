@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { prisma } from "../prismaClient";
-import { AppError } from "../utils/AppError";
+import { prisma } from "../lib/prisma";
+import AppError from "../utils/AppErrors";
 
 export const updateDispatchProcessStatus = async (
   req: Request,
@@ -25,9 +25,9 @@ export const updateDispatchProcessStatus = async (
   // Determine new status for dispatchProcess table
   let newStatus = dispatchProcess.status;
   if (status === "start") {
-    newStatus = "IN_PROGRESS";
+    newStatus = "in_progress";
   } else if (status === "stop") {
-    newStatus = "ACCEPT";
+    newStatus = "accept";
   }
 
   // Update the dispatch process status

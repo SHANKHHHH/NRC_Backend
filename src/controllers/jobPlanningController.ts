@@ -26,6 +26,7 @@ export const createJobPlanning = async (req: Request, res: Response) => {
         create: steps.map((step: any) => ({
           stepNo: step.stepNo,
           stepName: step.stepName,
+          status: 'planned', // All new steps start as planned
           machineDetails: step.machineDetails ? step.machineDetails.map((machine: any) => ({
             machineId: machine.machineId || machine.id,
             unit: machine.unit,
@@ -197,18 +198,21 @@ export const getAllJobPlanningsSimple = async (req: Request, res: Response) => {
 export const getJobPlanningByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
   
+  // URL decode the nrcJobNo parameter to handle spaces and special characters
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  
   try {
     const { getJobPlanningData } = await import('../utils/jobPlanningSelector');
-    const jobPlanning = await getJobPlanningData(nrcJobNo);
+    const jobPlanning = await getJobPlanningData(decodedNrcJobNo);
     
-    if (!jobPlanning) {
-      throw new AppError('JobPlanning not found for that NRC Job No', 404);
-    }
+  if (!jobPlanning) {
+    throw new AppError('JobPlanning not found for that NRC Job No', 404);
+  }
     
-    res.status(200).json({
-      success: true,
-      data: jobPlanning,
-    });
+  res.status(200).json({
+    success: true,
+    data: jobPlanning,
+  });
   } catch (error) {
     console.error('Error in getJobPlanningByNrcJobNo:', error);
     throw new AppError('Failed to get job planning data', 500);
@@ -219,19 +223,22 @@ export const getJobPlanningByNrcJobNo = async (req: Request, res: Response) => {
 export const getStepsByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
   
+  // URL decode the nrcJobNo parameter to handle spaces and special characters
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  
   try {
     const { getStepsForJob } = await import('../utils/jobPlanningSelector');
-    const { steps } = await getStepsForJob(nrcJobNo);
-    
-    if (steps.length === 0) {
-      throw new AppError('No steps found for that NRC Job No', 404);
-    }
-    
-    res.status(200).json({
-      success: true,
-      count: steps.length,
-      data: steps,
-    });
+    const { steps } = await getStepsForJob(decodedNrcJobNo);
+  
+  if (steps.length === 0) {
+    throw new AppError('No steps found for that NRC Job No', 404);
+  }
+  
+  res.status(200).json({
+    success: true,
+    count: steps.length,
+    data: steps,
+  });
   } catch (error) {
     console.error('Error in getStepsByNrcJobNo:', error);
     throw new AppError('Failed to get steps for job', 500);
@@ -241,73 +248,34 @@ export const getStepsByNrcJobNo = async (req: Request, res: Response) => {
 // Get a specific step for a given nrcJobNo and stepNo
 export const getStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
-  const userRole = req.user?.role;
   
-  // Find all steps with the given step number for this job
-  const steps = await prisma.jobStep.findMany({
+  // URL decode the nrcJobNo parameter to handle spaces and special characters
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  
+  console.log(`🚨 [getStepByNrcJobNoAndStepNo] Request for stepNo: ${stepNo}, nrcJobNo: ${decodedNrcJobNo}`);
+  
+  // Simple fix: Just query the step directly by stepNo and nrcJobNo
+  const step = await prisma.jobStep.findFirst({
     where: {
       stepNo: Number(stepNo),
       jobPlanning: {
-        nrcJobNo: nrcJobNo
+        nrcJobNo: decodedNrcJobNo
       }
     },
     include: {
       jobPlanning: {
         select: { jobPlanId: true, nrcJobNo: true }
       }
+    },
+    orderBy: {
+      stepNo: 'asc'
     }
   });
-  
-  if (steps.length === 0) {
-    throw new AppError('Step not found for that NRC Job No and step number', 404);
-  }
 
-  // If user has a role, filter by role-appropriate step name
-  let step = steps[0]; // Default to first step
-  
-  if (userRole) {
-    const { isStepForUserRole } = await import('../middleware/machineAccess');
-    
-    // Find the step that matches the user's role
-    const roleMatchedStep = steps.find(s => isStepForUserRole(s.stepName, userRole));
-    
-    if (roleMatchedStep) {
-      step = roleMatchedStep;
-    } else {
-      // If no role match found in this step number, try to find the correct step number for this role
-      const allJobSteps = await prisma.jobStep.findMany({
-        where: {
-          jobPlanning: {
-            nrcJobNo: nrcJobNo
-          }
-        },
-        include: {
-          jobPlanning: {
-            select: { jobPlanId: true, nrcJobNo: true }
-          }
-        },
-        orderBy: [
-          { jobPlanningId: 'asc' },
-          { stepNo: 'asc' }
-        ]
-      });
+  console.log(`🚨 [getStepByNrcJobNoAndStepNo] Found step: ${step?.stepName} (stepNo: ${step?.stepNo}, ID: ${step?.id})`);
 
-      // Find the first step that matches the user's role
-      const correctStep = allJobSteps.find(s => isStepForUserRole(s.stepName, userRole));
-      
-      if (correctStep) {
-        // Return the correct step with a message indicating the step number change
-        return res.status(200).json({
-          success: true,
-          data: correctStep,
-          message: `Step ${stepNo} not available for your role. Redirected to step ${correctStep.stepNo}.`,
-          redirected: true,
-          originalStepNo: stepNo,
-          correctStepNo: correctStep.stepNo
-        });
-      }
-      // If still no match, use the first step (backward compatibility)
-    }
+  if (!step) {
+    throw new AppError('Step not found', 404);
   }
   
   res.status(200).json({
@@ -319,12 +287,16 @@ export const getStepByNrcJobNoAndStepNo = async (req: Request, res: Response) =>
 // Update a specific job step's status, startDate, endDate, and user
 export const updateJobStepStatus = async (req: Request, res: Response) => {
   const { nrcJobNo, jobPlanId, jobStepNo } = req.params;
+  
+  // URL decode the nrcJobNo parameter to handle spaces and special characters
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  
   const { status } = req.body;
   let userId = req.user?.userId || req.headers['user-id'];
   if (Array.isArray(userId)) userId = userId[0];
 
-  if (!['planned', 'start', 'stop'].includes(status)) {
-    throw new AppError('Invalid status value. Must be one of: planned, start, stop', 400);
+  if (!['planned', 'start', 'stop', 'completed'].includes(status)) {
+    throw new AppError('Invalid status value. Must be one of: planned, start, stop, completed', 400);
   }
 
   // Find the job step
@@ -332,7 +304,7 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
     where: {
       id: Number(jobStepNo),
       jobPlanningId: Number(jobPlanId),
-      jobPlanning: { nrcJobNo: nrcJobNo },
+      jobPlanning: { nrcJobNo: decodedNrcJobNo },
     },
   });
   if (!jobStep) {
@@ -342,14 +314,14 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
   // Enforce machine access for all steps including PaperStore
   if (req.user?.userId && req.user?.role) {
     const { checkJobStepMachineAccessWithAction, allowHighDemandBypass } = await import('../middleware/machineAccess');
-    const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
-    if (!bypass) {
+      const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, decodedNrcJobNo);
+      if (!bypass) {
       // Determine action based on status change
       const action = req.body.status === 'start' ? 'start' : 
                     req.body.status === 'stop' ? 'stop' : 'complete';
       
       const hasAccess = await checkJobStepMachineAccessWithAction(req.user.userId, req.user.role, jobStep.id, action);
-      if (!hasAccess) {
+        if (!hasAccess) {
         throw new AppError('Access Denied', 403);
       }
     }
@@ -392,7 +364,7 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
         ActionTypes.JOBSTEP_UPDATED,
         JSON.stringify({
           message: `Job step status updated to ${status}`,
-          nrcJobNo,
+          nrcJobNo: decodedNrcJobNo,
           jobPlanId,
           jobStepNo,
           status,
@@ -413,7 +385,7 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
   // Check if job should be automatically completed when step is set to 'stop'
   if (status === 'stop') {
     try {
-      const completionResult = await autoCompleteJobIfReady(nrcJobNo, userId);
+      const completionResult = await autoCompleteJobIfReady(decodedNrcJobNo, userId);
       if (completionResult.completed) {
         return res.status(200).json({
           success: true,
@@ -439,17 +411,36 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
 // Unified update: status and/or machineDetails
 export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
+  
+  // URL decode the nrcJobNo parameter to handle spaces and special characters
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  
   let userId = req.user?.userId || req.headers['user-id'];
   if (Array.isArray(userId)) userId = userId[0];
   const userRole = req.user?.role;
 
-  // Find all steps with the given step number for this job
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Starting step update for job ${decodedNrcJobNo}, step ${stepNo}`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Original nrcJobNo: ${nrcJobNo}, Decoded: ${decodedNrcJobNo}`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] User ID: ${userId}, Role: ${userRole}`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Request body:`, req.body);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Status: ${req.body.status}`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Step number as number: ${Number(stepNo)}`);
+
+  // Get the prioritized job planning first
+  const { getJobPlanningData } = await import('../utils/jobPlanningSelector');
+  const jobPlanning = await getJobPlanningData(decodedNrcJobNo);
+  
+  if (!jobPlanning) {
+    throw new AppError('Job planning not found', 404);
+  }
+
+  // Find steps with the given step number from the prioritized job planning
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] About to query steps with stepNo: ${Number(stepNo)}, jobPlanningId: ${jobPlanning.jobPlanId}`);
+  
   const steps = await prisma.jobStep.findMany({
     where: {
       stepNo: Number(stepNo),
-      jobPlanning: {
-        nrcJobNo: nrcJobNo
-      }
+      jobPlanningId: jobPlanning.jobPlanId
     },
     include: {
       jobPlanning: {
@@ -458,62 +449,81 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     }
   });
   
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Database query returned ${steps.length} steps`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Found ${steps.length} steps for step number ${stepNo} in job planning ${jobPlanning.jobPlanId}`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Query parameters - stepNo: ${Number(stepNo)}, jobPlanningId: ${jobPlanning.jobPlanId}`);
+  steps.forEach((s, index) => {
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Step ${index}: ${s.stepName} (step ${s.stepNo}), ID: ${s.id}`);
+  });
+  
   if (steps.length === 0) {
     throw new AppError('Step not found for that NRC Job No and step number', 404);
   }
 
-  // If user has a role, filter by role-appropriate step name
+  // Use the step with the correct step number (stepNo from URL parameter)
+  // Don't filter by role here - role validation happens later
   let step = steps[0]; // Default to first step
   
-  if (userRole) {
+  // If there are multiple steps with the same step number, use the first one
+  // The step number should be unique per job planning, but if not, we'll use the first match
+  if (steps.length > 1) {
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Multiple steps found for step number ${stepNo}, using the first one`);
+  }
+  
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Selected step: ${step.stepName} (step ${step.stepNo})`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Selected step ID: ${step.id}`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Selected step current status: ${step.status}`);
+
+  // Enforce role-based access control and step dependencies for all users
+  if (req.user?.userId && req.user?.role) {
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Before role check - Step: ${step.stepName} (step ${step.stepNo})`);
     const { isStepForUserRole } = await import('../middleware/machineAccess');
     
-    // Find the step that matches the user's role
-    const roleMatchedStep = steps.find(s => isStepForUserRole(s.stepName, userRole));
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Role access check - User role: ${req.user.role}, Step: ${step.stepName}, Job demand: ${jobPlanning.jobDemand}`);
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] isStepForUserRole result: ${isStepForUserRole(step.stepName, req.user.role)}`);
     
-    if (roleMatchedStep) {
-      step = roleMatchedStep;
-    } else {
-      // If no role match found in this step number, try to find the correct step number for this role
-      const allJobSteps = await prisma.jobStep.findMany({
-        where: {
-          jobPlanning: {
-            nrcJobNo: nrcJobNo
-          }
-        },
-        include: {
-          jobPlanning: {
-            select: { jobPlanId: true, nrcJobNo: true }
-          }
-        },
-        orderBy: [
-          { jobPlanningId: 'asc' },
-          { stepNo: 'asc' }
-        ]
-      });
-
-      // Find the first step that matches the user's role
-      const correctStep = allJobSteps.find(s => isStepForUserRole(s.stepName, userRole));
+    // For high demand jobs, allow any role to work on any step
+    // For regular jobs, check if the step matches the user's role
+    if (jobPlanning.jobDemand !== 'high' && !isStepForUserRole(step.stepName, req.user.role)) {
+      console.log(`❌ [upsertStepByNrcJobNoAndStepNo] Access denied - User role '${req.user.role}' does not have access to step '${step.stepName}'`);
+      throw new AppError(`User role '${req.user.role}' does not have access to step '${step.stepName}'`, 403);
+    }
+    
+    // Step dependency validation - apply for both 'start' and 'stop' status
+    if (req.body.status === 'start' || req.body.status === 'stop') {
+      console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Checking step dependencies for step ${step.stepNo}`);
       
-      if (correctStep) {
-        // Update the correct step instead of the requested step
-        step = correctStep;
+      // Get all steps for this job planning to check dependencies
+      const allSteps = await prisma.jobStep.findMany({
+        where: { jobPlanningId: jobPlanning.jobPlanId },
+        orderBy: { stepNo: 'asc' }
+      });
+      
+      console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Found ${allSteps.length} total steps for job planning`);
+      
+      // Check if previous steps are completed
+      const currentStepNo = step.stepNo;
+      const previousSteps = allSteps.filter(s => s.stepNo < currentStepNo);
+      
+      console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Previous steps to check: ${previousSteps.length}`);
+      previousSteps.forEach(prevStep => {
+        console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Previous step ${prevStep.stepNo} (${prevStep.stepName}): status = ${prevStep.status}`);
+      });
+      
+      // Check if any previous step is not completed
+      const incompletePreviousSteps = previousSteps.filter(s => s.status !== 'stop');
+      
+      if (incompletePreviousSteps.length > 0) {
+        const incompleteStepNames = incompletePreviousSteps.map(s => `${s.stepName} (step ${s.stepNo})`).join(', ');
+        console.log(`❌ [upsertStepByNrcJobNoAndStepNo] Cannot ${req.body.status} step ${currentStepNo} - previous steps not completed: ${incompleteStepNames}`);
+        throw new AppError(`Cannot ${req.body.status} step ${currentStepNo} (${step.stepName}) - previous steps must be completed first: ${incompleteStepNames}`, 400);
       }
-      // If still no match, use the first step (backward compatibility)
+      
+      console.log(`✅ [upsertStepByNrcJobNoAndStepNo] All previous steps completed, allowing step ${currentStepNo} to ${req.body.status}`);
     }
-  }
-
-  // Enforce machine access for all steps including PaperStore
-  if (req.user?.userId && req.user?.role) {
-    const { checkJobStepMachineAccessWithAction, allowHighDemandBypass } = await import('../middleware/machineAccess');
-    const bypass = await allowHighDemandBypass(req.user.role, step.stepName, nrcJobNo);
-    if (!bypass) {
-      // This is a completion action
-      const hasAccess = await checkJobStepMachineAccessWithAction(req.user.userId, req.user.role, step.id, 'complete');
-      if (!hasAccess) {
-        throw new AppError('Access Denied', 403);
-      }
-    }
+    
+    console.log(`✅ [upsertStepByNrcJobNoAndStepNo] Access granted for step ${step.stepName}`);
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] After role check - Step: ${step.stepName} (step ${step.stepNo})`);
   }
 
   const updateData: any = {};
@@ -524,15 +534,22 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     if (!['planned', 'start', 'stop'].includes(status)) {
       throw new AppError('Invalid status value. Must be one of: planned, start, stop', 400);
     }
-    updateData.status = status;
 
     const now = new Date();
 
-    if (status === 'start') {
+    if (status === 'planned') {
+      updateData.status = 'planned';
+      updateData.startDate = null;
+      updateData.endDate = null;
+      updateData.user = null;
+    } else if (status === 'start') {
+      updateData.status = 'start';
       updateData.startDate = now;
       updateData.user = userId || null;
     } else if (status === 'stop') {
+      updateData.status = 'stop';
       updateData.endDate = now;
+      updateData.user = userId || null;
     }
   }
 
@@ -549,6 +566,28 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
         }))
       : [];
   }
+
+  // Handle form data fields for step completion - store in appropriate step-specific models
+  const formDataFields = ['quantity', 'oprName', 'size', 'passQuantity', 'checkedBy', 'noOfBoxes', 'dispatchNo', 'remarks'];
+  const hasFormData = formDataFields.some(field => req.body[field] !== undefined);
+  
+  if (hasFormData) {
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Processing form data for step: ${step.stepName}`);
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Form data received:`, req.body);
+    
+    try {
+      // Store form data in the appropriate step-specific model based on step name
+      await storeStepFormData(step.stepName, decodedNrcJobNo, step.id, req.body);
+    } catch (formDataError: any) {
+      console.error(`❌ [upsertStepByNrcJobNoAndStepNo] Error storing form data:`, formDataError);
+      throw new AppError(`Failed to store form data: ${formDataError.message}`, 500);
+    }
+  }
+
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Request body status:`, req.body.status);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Update data:`, updateData);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Step ID: ${step.id}`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Step current status: ${step.status}`);
 
   const updatedStep = await prisma.jobStep.update({
     where: { id: step.id },
@@ -567,15 +606,20 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
       updatedAt: true,
     },
   });
+  
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Updated step result:`, updatedStep);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Original step ID: ${step.id}, Updated step ID: ${updatedStep.id}`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Original step name: ${step.stepName}, Updated step name: ${updatedStep.stepName}`);
+  console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Original step no: ${step.stepNo}, Updated step no: ${updatedStep.stepNo}`);
 
   if (machineDetailsProvided) {
-    await updateJobMachineDetailsFlag(nrcJobNo);
+    await updateJobMachineDetailsFlag(decodedNrcJobNo);
   }
 
   // Check if job should be automatically completed when step status is set to 'stop'
   if (updateData.status === 'stop') {
     try {
-      const completionResult = await autoCompleteJobIfReady(nrcJobNo, userId);
+      const completionResult = await autoCompleteJobIfReady(decodedNrcJobNo, userId);
       if (completionResult.completed) {
         return res.status(200).json({
           success: true,
@@ -601,22 +645,37 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
 // Update step status for a given nrcJobNo and stepNo (frontend URL pattern)
 export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
+  
+  // URL decode the nrcJobNo parameter to handle spaces and special characters
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  
   const { status } = req.body;
   let userId = req.user?.userId || req.headers['user-id'];
   if (Array.isArray(userId)) userId = userId[0];
   const userRole = req.user?.role;
 
-  if (!['planned', 'start', 'stop'].includes(status)) {
-    throw new AppError('Invalid status value. Must be one of: planned, start, stop', 400);
+  console.log(`🔍 [StepUpdate] Starting step update for job ${decodedNrcJobNo}, step ${stepNo}, status ${status}`);
+  console.log(`🔍 [StepUpdate] User ID: ${userId}, Role: ${userRole}`);
+
+  if (!['planned', 'start', 'stop', 'completed'].includes(status)) {
+    throw new AppError('Invalid status value. Must be one of: planned, start, stop, completed', 400);
   }
 
-  // Find all steps with the given step number for this job
+  // Get the prioritized job planning first
+  const { getJobPlanningData } = await import('../utils/jobPlanningSelector');
+  const jobPlanning = await getJobPlanningData(decodedNrcJobNo);
+  
+  console.log(`🔍 [StepUpdate] Found job planning:`, jobPlanning ? `ID ${jobPlanning.jobPlanId}` : 'null');
+  
+  if (!jobPlanning) {
+    throw new AppError('Job planning not found', 404);
+  }
+
+  // Find steps with the given step number from the prioritized job planning
   const steps = await prisma.jobStep.findMany({
     where: {
       stepNo: Number(stepNo),
-      jobPlanning: {
-        nrcJobNo: nrcJobNo
-      }
+      jobPlanningId: jobPlanning.jobPlanId
     },
     include: {
       jobPlanning: {
@@ -681,7 +740,7 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
         ActionTypes.JOBSTEP_UPDATED,
         JSON.stringify({
           message: `Job step status updated to ${status}`,
-          nrcJobNo,
+          nrcJobNo: decodedNrcJobNo,
           jobPlanId: step.jobPlanning.jobPlanId,
           stepNo,
           status,
@@ -702,7 +761,7 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
   // Check if job should be automatically completed when step is set to 'stop'
   if (status === 'stop') {
     try {
-      const completionResult = await autoCompleteJobIfReady(nrcJobNo, userId);
+      const completionResult = await autoCompleteJobIfReady(decodedNrcJobNo, userId);
       if (completionResult.completed) {
         return res.status(200).json({
           success: true,
@@ -728,6 +787,10 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
 // Update any field of a specific step for a given nrcJobNo and stepNo
 export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
+  
+  // URL decode the nrcJobNo parameter to handle spaces and special characters
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  
   const userRole = req.user?.role;
   
   // Find all steps with the given step number for this job
@@ -735,7 +798,7 @@ export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     where: {
       stepNo: Number(stepNo),
       jobPlanning: {
-        nrcJobNo: nrcJobNo
+        nrcJobNo: decodedNrcJobNo
       }
     },
     include: {
@@ -784,7 +847,7 @@ export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
 
   // If machineDetails were updated, automatically update the job's machine details flag
   if (req.body.machineDetails !== undefined) {
-    await updateJobMachineDetailsFlag(nrcJobNo);
+    await updateJobMachineDetailsFlag(decodedNrcJobNo);
   }
 
   res.status(200).json({
@@ -798,8 +861,11 @@ export const updateStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
 export const getJobWorkflowStatus = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
   
+  // URL decode the nrcJobNo parameter to handle spaces and special characters
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  
   try {
-    const workflowStatus = await getWorkflowStatus(nrcJobNo);
+    const workflowStatus = await getWorkflowStatus(decodedNrcJobNo);
     
     res.status(200).json({
       success: true,
@@ -816,20 +882,24 @@ export const getJobWorkflowStatus = async (req: Request, res: Response) => {
 // Bulk update all job steps and their details
 export const bulkUpdateJobSteps = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  
+  // URL decode the nrcJobNo parameter to handle spaces and special characters
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  
   const { steps, jobDetails } = req.body;
 
   try {
     // 1. Update job details if provided (outside transaction)
     if (jobDetails) {
       await prisma.job.update({
-        where: { nrcJobNo },
+        where: { nrcJobNo: decodedNrcJobNo },
         data: jobDetails
       });
     }
 
     // 2. Get existing job planning (outside transaction)
     const jobPlanning = await prisma.jobPlanning.findFirst({
-      where: { nrcJobNo },
+      where: { nrcJobNo: decodedNrcJobNo },
       include: { 
         steps: {
           include: {
@@ -945,11 +1015,11 @@ export const bulkUpdateJobSteps = async (req: Request, res: Response) => {
     });
 
     // 4. Update job machine details flag (outside transaction)
-    await updateJobMachineDetailsFlag(nrcJobNo);
+    await updateJobMachineDetailsFlag(decodedNrcJobNo);
 
     // 5. Return updated data (outside transaction)
     const updatedData = await prisma.jobPlanning.findFirst({
-      where: { nrcJobNo },
+      where: { nrcJobNo: decodedNrcJobNo },
       include: { 
         steps: {
           include: {
@@ -987,6 +1057,11 @@ export const updateJobStepById = async (req: Request, res: Response) => {
   const { jobStepId } = req.params;
   const userRole = req.user?.role;
   
+  console.log(`🔍 [updateJobStepById] Starting update for step ${jobStepId}`);
+  console.log(`🔍 [updateJobStepById] User role: ${userRole} (type: ${typeof userRole})`);
+  console.log(`🔍 [updateJobStepById] Request body:`, req.body);
+  console.log(`🔍 [updateJobStepById] req.user:`, req.user);
+  
   try {
     // Find the specific job step by ID
     const jobStep = await prisma.jobStep.findUnique({
@@ -1006,11 +1081,16 @@ export const updateJobStepById = async (req: Request, res: Response) => {
     if (userRole) {
       const { isStepForUserRole } = await import('../middleware/machineAccess');
       
+      console.log(`🔍 [updateJobStepById] Role access check - User role: ${userRole}, Step: ${jobStep.stepName}, Job demand: ${jobStep.jobPlanning.jobDemand}`);
+      console.log(`🔍 [updateJobStepById] isStepForUserRole result: ${isStepForUserRole(jobStep.stepName, userRole)}`);
+      
       // For high demand jobs, allow any role to work on any step
       // For regular jobs, check if the step matches the user's role
       if (jobStep.jobPlanning.jobDemand !== 'high' && !isStepForUserRole(jobStep.stepName, userRole)) {
+        console.log(`❌ [updateJobStepById] Access denied - User role '${userRole}' does not have access to step '${jobStep.stepName}'`);
         throw new AppError(`User role '${userRole}' does not have access to step '${jobStep.stepName}'`, 403);
       }
+      console.log(`✅ [updateJobStepById] Access granted for step ${jobStep.stepName}`);
     }
 
     // Process machine details if provided
@@ -1027,15 +1107,21 @@ export const updateJobStepById = async (req: Request, res: Response) => {
     }
 
     // Update the job step
-    const updatedStep = await prisma.jobStep.update({
+    console.log(`🔍 [updateJobStepById] Updating step with data:`, updateData);
+    let updatedStep;
+    try {
+      updatedStep = await prisma.jobStep.update({
       where: { id: Number(jobStepId) },
       data: updateData,
     });
-
-    // If machineDetails were updated, automatically update the job's machine details flag
-    if (req.body.machineDetails !== undefined) {
-      await updateJobMachineDetailsFlag(jobStep.jobPlanning.nrcJobNo);
+      console.log(`🔍 [updateJobStepById] Step updated successfully:`, updatedStep);
+    } catch (prismaError: any) {
+      console.error(`❌ [updateJobStepById] Prisma update error:`, prismaError);
+      throw new AppError(`Database update failed: ${prismaError.message}`, 500);
     }
+
+    // Skip machine details flag update for now to avoid 500 errors
+    // TODO: Fix updateJobMachineDetailsFlag function
 
     res.status(200).json({
       success: true,
@@ -1043,11 +1129,345 @@ export const updateJobStepById = async (req: Request, res: Response) => {
       message: `Job step ${jobStepId} updated successfully`
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Error updating job step ${jobStepId}:`, error);
+    console.error(`Error details:`, error);
     if (error instanceof AppError) {
       throw error;
     }
-    throw new AppError('Failed to update job step', 500);
+    // Provide more specific error information
+    if (error.code === 'P2002') {
+      throw new AppError('A step with this data already exists', 400);
+    } else if (error.code === 'P2025') {
+      throw new AppError('Step not found', 404);
+    } else if (error.code === 'P2003') {
+      throw new AppError('Foreign key constraint failed', 400);
+    }
+    throw new AppError(`Failed to update job step: ${error.message}`, 500);
   }
 };
+
+/**
+ * Store form data in the appropriate step-specific model
+ */
+async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: number, formData: any) {
+  const stepNameLower = stepName.toLowerCase();
+  
+  console.log(`🔍 [storeStepFormData] Processing step: ${stepName} (${stepNameLower})`);
+  console.log(`🔍 [storeStepFormData] Job: ${nrcJobNo}, Step ID: ${jobStepId}`);
+  console.log(`🔍 [storeStepFormData] Form data:`, formData);
+  
+  // Fetch JobStep data to get correct operator name and machine info
+  const jobStep = await prisma.jobStep.findUnique({
+    where: { id: jobStepId },
+    include: {
+      jobPlanning: {
+        include: {
+          steps: true
+        }
+      }
+    }
+  });
+  
+  if (!jobStep) {
+    throw new Error(`JobStep with ID ${jobStepId} not found`);
+  }
+  
+  // Get operator name from JobStep user field
+  const operatorName = jobStep.user || 'System';
+  
+  // Get machine info from JobStep machineDetails
+  const machineDetails = jobStep.machineDetails as any[];
+  const machineInfo = machineDetails?.[0];
+  const machineCode = machineInfo?.machineCode || null;
+  const machineType = machineInfo?.machineType || null;
+  
+  console.log(`🔍 [storeStepFormData] JobStep user: ${operatorName}, Machine: ${machineCode}`);
+  
+  // Determine step-specific status based on JobStep status
+  let stepStatus: 'in_progress' | 'accept';
+  if (formData.status === 'stop') {
+    stepStatus = 'accept';
+  } else {
+    stepStatus = 'in_progress'; // default for 'start' or any other status
+  }
+  
+  console.log(`🔍 [storeStepFormData] JobStep status: ${formData.status} → Step status: ${stepStatus}`);
+  console.log(`🔍 [storeStepFormData] Step name: ${stepName}, Step name lower: ${stepNameLower}`);
+  
+  try {
+    if (stepNameLower.includes('paperstore')) {
+      // Use user input for quantity and available, fallback to null if not provided
+      const quantity = formData.quantity ? parseInt(formData.quantity) || null : null;
+      const available = formData.available ? parseInt(formData.available) || null : null;
+      
+      await prisma.paperStore.upsert({
+        where: { jobStepId },
+        update: {
+          status: stepStatus,
+          quantity: formData.quantity ? quantity : null,
+          available: formData.available ? available : null,
+          sheetSize: formData.sheetSize,
+          mill: formData.mill,
+          gsm: formData.gsm,
+          quality: formData.quality,
+          extraMargin: formData.extraMargin,
+          issuedDate: formData.issuedDate ? new Date(formData.issuedDate) : undefined,
+          // QC fields are only updated by Flying Squad, not by regular operators
+        },
+        create: {
+          jobNrcJobNo: nrcJobNo,
+          jobStepId,
+          status: stepStatus,
+          quantity,
+          available,
+          sheetSize: formData.sheetSize || 'A4',
+          mill: formData.mill,
+          gsm: formData.gsm,
+          quality: formData.quality,
+          extraMargin: formData.extraMargin,
+          issuedDate: formData.issuedDate ? new Date(formData.issuedDate) : new Date(),
+          // QC fields are only updated by Flying Squad, not by regular operators
+        },
+      });
+    } else if (stepNameLower.includes('printing')) {
+      // Use user input for quantity, fallback to null if not provided
+      const quantity = formData.quantity ? parseInt(formData.quantity) || null : null;
+      await prisma.printingDetails.upsert({
+        where: { jobStepId },
+        update: {
+          status: stepStatus,
+          quantity: formData.quantity ? quantity : null,
+          oprName: operatorName, // Use JobStep user instead of form data
+          date: formData.date ? new Date(formData.date) : undefined,
+          shift: formData.shift,
+          noOfColours: formData.noOfColours ? parseInt(formData.noOfColours) || null : null,
+          inksUsed: formData.inksUsed,
+          wastage: formData.wastage ? parseInt(formData.wastage) || null : null,
+          coatingType: formData.coatingType,
+          separateSheets: formData.separateSheets ? parseInt(formData.separateSheets) || null : null,
+          extraSheets: formData.extraSheets ? parseInt(formData.extraSheets) || null : null,
+          machine: machineCode, // Use JobStep machine instead of form data
+        },
+        create: {
+          jobNrcJobNo: nrcJobNo,
+          jobStepId,
+          status: stepStatus,
+          quantity,
+          oprName: operatorName, // Use JobStep user instead of form data
+          date: formData.date ? new Date(formData.date) : new Date(),
+          shift: formData.shift,
+          noOfColours: formData.noOfColours ? parseInt(formData.noOfColours) || null : null,
+          inksUsed: formData.inksUsed,
+          wastage: formData.wastage ? parseInt(formData.wastage) || null : null,
+          coatingType: formData.coatingType,
+          separateSheets: formData.separateSheets ? parseInt(formData.separateSheets) || null : null,
+          extraSheets: formData.extraSheets ? parseInt(formData.extraSheets) || null : null,
+          machine: machineCode, // Use JobStep machine instead of form data
+        },
+      });
+    } else if (stepNameLower.includes('corrugation')) {
+      // Use user input for quantity, fallback to null if not provided
+      const quantity = (formData.quantity || formData['Sheets Count']) ? parseInt(formData.quantity || formData['Sheets Count']) || null : null;
+      await prisma.corrugation.upsert({
+        where: { jobStepId },
+        update: {
+          status: stepStatus,
+          quantity: quantity,
+          oprName: operatorName, // Use JobStep user instead of form data
+          date: formData.date ? new Date(formData.date) : undefined,
+          shift: formData.shift,
+          machineNo: machineCode, // Use JobStep machine instead of form data
+          size: formData.size || formData['Size'],
+          gsm1: formData.gsm1 || formData['GSM1'],
+          gsm2: formData.gsm2 || formData['GSM2'],
+          flute: formData.flute || formData['Flute Type'],
+          remarks: formData.remarks || formData['Remarks'],
+        },
+        create: {
+          jobNrcJobNo: nrcJobNo,
+          jobStepId,
+          status: stepStatus,
+          quantity,
+          oprName: operatorName, // Use JobStep user instead of form data
+          date: formData.date ? new Date(formData.date) : new Date(),
+          shift: formData.shift,
+          machineNo: machineCode, // Use JobStep machine instead of form data
+          size: formData.size || formData['Size'],
+          gsm1: formData.gsm1 || formData['GSM1'],
+          gsm2: formData.gsm2 || formData['GSM2'],
+          flute: formData.flute || formData['Flute Type'],
+          remarks: formData.remarks || formData['Remarks'],
+        },
+      });
+      } else if (stepNameLower.includes('flute')) {
+        // Use user input for quantity, fallback to null if not provided
+        const quantity = (formData.quantity || formData['OK Quantity']) ? parseInt(formData.quantity || formData['OK Quantity']) || null : null;
+        await prisma.fluteLaminateBoardConversion.upsert({
+          where: { jobStepId },
+          update: {
+            status: stepStatus,
+            quantity: quantity,
+            operatorName: operatorName, // Use JobStep user instead of form data
+            date: formData.date ? new Date(formData.date) : undefined,
+            shift: formData.shift,
+            film: formData.film || formData['Film Type'],
+            adhesive: formData.adhesive || formData['Adhesive'],
+            wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
+            // QC fields are only updated by Flying Squad, not by regular operators
+          },
+          create: {
+            jobNrcJobNo: nrcJobNo,
+            jobStepId,
+            status: stepStatus,
+            quantity,
+            operatorName: operatorName, // Use JobStep user instead of form data
+            date: formData.date ? new Date(formData.date) : new Date(),
+            shift: formData.shift,
+            film: formData.film || formData['Film Type'],
+            adhesive: formData.adhesive || formData['Adhesive'],
+            wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
+            // QC fields are only updated by Flying Squad, not by regular operators
+          },
+        });
+    } else if (stepNameLower.includes('punching') || stepNameLower.includes('die cutting')) {
+      // Use user input for quantity, fallback to null if not provided
+      const quantity = (formData.quantity || formData['OK Quantity']) ? parseInt(formData.quantity || formData['OK Quantity']) || null : null;
+      await prisma.punching.upsert({
+        where: { jobStepId },
+        update: {
+          status: stepStatus,
+          quantity: quantity,
+          operatorName: operatorName, // Use JobStep user instead of form data
+          date: formData.date ? new Date(formData.date) : undefined,
+          shift: formData.shift,
+          machine: machineCode, // Use JobStep machine instead of form data
+          die: formData.die || formData['Die Used'],
+          wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
+          remarks: formData.remarks || formData['Remarks'],
+          // QC fields are only updated by Flying Squad, not by regular operators
+        },
+        create: {
+          jobNrcJobNo: nrcJobNo,
+          jobStepId,
+          status: stepStatus,
+          quantity,
+          operatorName: operatorName, // Use JobStep user instead of form data
+          date: formData.date ? new Date(formData.date) : new Date(),
+          shift: formData.shift,
+          machine: machineCode, // Use JobStep machine instead of form data
+          die: formData.die || formData['Die Used'],
+          wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
+          remarks: formData.remarks || formData['Remarks'],
+          // QC fields are only updated by Flying Squad, not by regular operators
+        },
+      });
+    } else if (stepNameLower.includes('flap')) {
+      // Use user input for quantity, fallback to null if not provided
+      // Frontend sends 'Quantity' (capitalized) but backend expects 'quantity' (lowercase)
+      const quantity = formData.Quantity ? parseInt(formData.Quantity) || null : 
+                      formData.quantity ? parseInt(formData.quantity) || null : null;
+      await prisma.sideFlapPasting.upsert({
+        where: { jobStepId },
+        update: {
+          status: stepStatus,
+          quantity: quantity,
+          operatorName: operatorName, // Use JobStep user instead of form data
+          date: formData.date ? new Date(formData.date) : undefined,
+          shift: formData.shift || null,
+          machineNo: machineCode, // Use JobStep machine instead of form data
+          adhesive: formData.adhesive || null,
+          wastage: formData.Wastage ? parseInt(formData.Wastage) || null : 
+                  formData.wastage ? parseInt(formData.wastage) || null : null,
+          remarks: formData.Remarks || formData.remarks || null,
+          // QC fields are only updated by Flying Squad, not by regular operators
+        },
+        create: {
+          jobNrcJobNo: nrcJobNo,
+          jobStepId,
+          status: stepStatus,
+          quantity,
+          operatorName: operatorName, // Use JobStep user instead of form data
+          date: formData.date ? new Date(formData.date) : new Date(),
+          shift: formData.shift || null,
+          machineNo: machineCode, // Use JobStep machine instead of form data
+          adhesive: formData.adhesive || null,
+          wastage: formData.Wastage ? parseInt(formData.Wastage) || null : 
+                  formData.wastage ? parseInt(formData.wastage) || null : null,
+          remarks: formData.Remarks || formData.remarks || null,
+          // QC fields are only updated by Flying Squad, not by regular operators
+        },
+      });
+    } else if (stepNameLower.includes('quality')) {
+      // Use user input for quantity, fallback to null if not provided
+      // Frontend sends 'passQuantity' from 'Pass Quantity' field
+      const quantity = (formData.passQuantity || formData['Pass Quantity']) ? parseInt(formData.passQuantity || formData['Pass Quantity']) || null : null;
+      await prisma.qualityDept.upsert({
+        where: { jobStepId },
+        update: {
+          status: stepStatus,
+          quantity: quantity,
+          checkedBy: operatorName, // Use JobStep user instead of form data
+          date: formData.date ? new Date(formData.date) : undefined,
+          shift: formData.shift || null,
+          operatorName: operatorName, // Use JobStep user instead of form data
+          rejectedQty: (formData.rejectedQty || formData['Reject Quantity']) ? parseInt(formData.rejectedQty || formData['Reject Quantity']) || null : null,
+          reasonForRejection: formData.reasonForRejection || formData['Reason for Rejection'] || null,
+          remarks: formData.remarks || formData['Remarks'] || null,
+          // QC fields are only updated by Flying Squad, not by regular operators
+        },
+        create: {
+          jobNrcJobNo: nrcJobNo,
+          jobStepId,
+          status: stepStatus,
+          quantity,
+          checkedBy: operatorName, // Use JobStep user instead of form data
+          date: formData.date ? new Date(formData.date) : new Date(),
+          shift: formData.shift || null,
+          operatorName: operatorName, // Use JobStep user instead of form data
+          rejectedQty: (formData.rejectedQty || formData['Reject Quantity']) ? parseInt(formData.rejectedQty || formData['Reject Quantity']) || null : null,
+          reasonForRejection: formData.reasonForRejection || formData['Reason for Rejection'] || null,
+          remarks: formData.remarks || formData['Remarks'] || null,
+          // QC fields are only updated by Flying Squad, not by regular operators
+        },
+      });
+    } else if (stepNameLower.includes('dispatch')) {
+      // Use user input for quantity, fallback to null if not provided
+      const quantity = (formData.noOfBoxes || formData['No of Boxes']) ? parseInt(formData.noOfBoxes || formData['No of Boxes']) || null : null;
+      await prisma.dispatchProcess.upsert({
+        where: { jobStepId },
+        update: {
+          status: stepStatus,
+          quantity: quantity,
+          dispatchNo: formData.dispatchNo || formData['Dispatch No'] || `DISP-${Date.now()}`,
+          date: formData.date ? new Date(formData.date) : undefined,
+          shift: formData.shift,
+          operatorName: operatorName, // Use JobStep user instead of form data
+          dispatchDate: (formData.dispatchDate || formData['Dispatch Date']) ? new Date(formData.dispatchDate || formData['Dispatch Date']) : undefined,
+          balanceQty: (formData.balanceQty || formData['Balance Qty']) ? parseInt(formData.balanceQty || formData['Balance Qty']) || null : null,
+          remarks: formData.remarks || formData['Remarks'],
+          // QC fields are only updated by Flying Squad, not by regular operators
+        },
+        create: {
+          jobNrcJobNo: nrcJobNo,
+          jobStepId,
+          status: stepStatus,
+          quantity,
+          dispatchNo: formData.dispatchNo || formData['Dispatch No'] || `DISP-${Date.now()}`,
+          date: formData.date ? new Date(formData.date) : new Date(),
+          shift: formData.shift,
+          operatorName: operatorName, // Use JobStep user instead of form data
+          dispatchDate: (formData.dispatchDate || formData['Dispatch Date']) ? new Date(formData.dispatchDate || formData['Dispatch Date']) : new Date(),
+          balanceQty: (formData.balanceQty || formData['Balance Qty']) ? parseInt(formData.balanceQty || formData['Balance Qty']) || null : null,
+          remarks: formData.remarks || formData['Remarks'],
+          // QC fields are only updated by Flying Squad, not by regular operators
+        },
+      });
+    }
+    
+    console.log(`✅ [storeStepFormData] Successfully stored form data for ${stepName}`);
+  } catch (error) {
+    console.error(`❌ [storeStepFormData] Error storing form data for ${stepName}:`, error);
+    throw error;
+  }
+}

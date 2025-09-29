@@ -79,13 +79,15 @@ export const getAllDispatchProcesses = async (req: Request, res: Response) => {
 
 export const getDispatchProcessByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
-  const dispatchProcesses = await prisma.dispatchProcess.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  const dispatchProcesses = await prisma.dispatchProcess.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
   res.status(200).json({ success: true, data: dispatchProcesses });
 };
 
 
 export const updateDispatchProcess = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const userRole = req.user?.role;
   // Check if Flying Squad is trying to update non-QC fields
   if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
@@ -114,7 +116,7 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
   try {
     // Step 1: Find the DispatchProcess record by jobNrcJobNo
     const existingDispatchProcess = await prisma.dispatchProcess.findFirst({
-      where: { jobNrcJobNo: nrcJobNo },
+      where: { jobNrcJobNo: decodedNrcJobNo },
     });
 
     if (!existingDispatchProcess) {
@@ -150,7 +152,7 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
       await logUserActionWithResource(
         req.user.userId,
         ActionTypes.JOBSTEP_UPDATED,
-        `Updated DispatchProcess step with jobNrcJobNo: ${nrcJobNo}`,
+        `Updated DispatchProcess step with jobNrcJobNo: ${decodedNrcJobNo}`,
         'DispatchProcess',
         nrcJobNo
       );

@@ -184,13 +184,15 @@ export const getAllFluteLaminateBoardConversions = async (req: Request, res: Res
 
 export const getFluteLaminateBoardConversionByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
-  const flutes = await prisma.fluteLaminateBoardConversion.findMany({ where: { jobNrcJobNo: nrcJobNo } });
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  const flutes = await prisma.fluteLaminateBoardConversion.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
   res.status(200).json({ success: true, data: flutes });
 };
 
 
 export const updateFluteLaminateBoardConversion = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const userRole = req.user?.role;
   // Check if Flying Squad is trying to update non-QC fields
   if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
@@ -219,7 +221,7 @@ export const updateFluteLaminateBoardConversion = async (req: Request, res: Resp
   try {
     // Step 1: Find the record using jobNrcJobNo
     const existingRecord = await prisma.fluteLaminateBoardConversion.findFirst({
-      where: { jobNrcJobNo: nrcJobNo },
+      where: { jobNrcJobNo: decodedNrcJobNo },
     });
 
     if (!existingRecord) {
@@ -255,7 +257,7 @@ export const updateFluteLaminateBoardConversion = async (req: Request, res: Resp
       await logUserActionWithResource(
         req.user.userId,
         ActionTypes.JOBSTEP_UPDATED,
-        `Updated FluteLaminateBoardConversion step with jobNrcJobNo: ${nrcJobNo}`,
+        `Updated FluteLaminateBoardConversion step with jobNrcJobNo: ${decodedNrcJobNo}`,
         'FluteLaminateBoardConversion',
         nrcJobNo
       );

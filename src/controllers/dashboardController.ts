@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
+import { getFilteredJobNumbers } from '../middleware/machineAccess';
 
 // Aggregated dashboard data endpoint
 export const getDashboardData = async (req: Request, res: Response) => {
@@ -281,5 +282,66 @@ export const getJobAggregatedData = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Job aggregated data fetch error:', error);
     throw new AppError('Failed to fetch job data', 500);
+  }
+};
+
+// Get accurate job counts for status overview
+export const getJobCounts = async (req: Request, res: Response) => {
+  try {
+    const userMachineIds = req.userMachineIds;
+    const userRole = req.user?.role || '';
+    
+    // Get accessible job numbers
+    const accessibleJobNumbers = await getFilteredJobNumbers(userMachineIds || null, userRole);
+    
+    // Get active job plannings (jobs that are still in progress)
+    const activeJobPlannings = await prisma.jobPlanning.findMany({
+      where: { nrcJobNo: { in: accessibleJobNumbers } },
+      select: { nrcJobNo: true, jobDemand: true }
+    });
+    
+    // Get completed jobs
+    const completedJobs = await prisma.completedJob.findMany({
+      where: { nrcJobNo: { in: accessibleJobNumbers } },
+      select: { nrcJobNo: true, completedAt: true }
+    });
+    
+    // Count active jobs (job plannings that exist)
+    const activeJobs = activeJobPlannings.length;
+    
+    // Count completed jobs
+    const completedJobsCount = completedJobs.length;
+    
+    // Count high demand jobs
+    const highDemandJobs = activeJobPlannings.filter(jp => jp.jobDemand === 'high').length;
+    
+    // Count in-progress jobs (jobs with at least one step started)
+    const inProgressJobs = await prisma.jobPlanning.findMany({
+      where: { 
+        nrcJobNo: { in: accessibleJobNumbers },
+        steps: {
+          some: {
+            status: { in: ['start', 'stop'] }
+          }
+        }
+      },
+      select: { nrcJobNo: true }
+    });
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        totalOrders: activeJobs + completedJobsCount,
+        activeJobs: activeJobs,
+        completedJobs: completedJobsCount,
+        highDemandJobs: highDemandJobs,
+        inProgressJobs: inProgressJobs.length,
+        notStartedJobs: activeJobs - inProgressJobs.length
+      }
+    });
+    
+  } catch (error) {
+    console.error('Job counts fetch error:', error);
+    throw new AppError('Failed to fetch job counts', 500);
   }
 }; 

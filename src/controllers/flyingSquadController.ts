@@ -293,12 +293,18 @@ export const performQCCheck = async (req: Request, res: Response) => {
     throw new AppError('You are not authorized to perform QC checks. Required roles: admin or flying_squad', 403);
   }
 
+  // Support both URL parameter and body parameter for stepId
   const { id } = req.params;
-  const { remarks } = req.body;
+  const { stepId, remarks } = req.body;
+  const actualStepId = id || stepId;
+
+  if (!actualStepId) {
+    throw new AppError('Step ID is required', 400);
+  }
 
   // Find the job step
   const jobStep = await prisma.jobStep.findUnique({
-    where: { id: parseInt(id) },
+    where: { id: parseInt(actualStepId) },
     include: {
       jobPlanning: {
         select: {
