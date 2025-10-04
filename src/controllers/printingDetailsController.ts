@@ -5,6 +5,7 @@ import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { validateWorkflowStep } from '../utils/workflowValidator';
 import { checkMachineAccess, getFilteredJobNumbers } from '../middleware/machineAccess';
 import { RoleManager } from '../utils/roleUtils';
+import { calculateShift } from '../utils/autoPopulateFields';
 
 export const createPrintingDetails = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -257,26 +258,35 @@ export const updatePrintingDetails = async (req: Request, res: Response) => {
     throw new AppError('PrintingDetails not found', 404);
 
   // Enforce machine access for non-admin/non-flying-squad users based on the linked job step
-  if (req.user?.userId && req.user?.role) {
-    const jobStep = await prisma.jobStep.findFirst({
-      where: { printingDetails: { id: existingPrintingDetails.id } },
-      select: { id: true, stepName: true }
-    });
-    if (jobStep) {
-      const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
-      const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
-      if (!bypass) {
-        const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
-        if (!hasAccess) {
-          throw new AppError('Access denied: You do not have access to machines for this step', 403);
-        }
+  const jobStep = await prisma.jobStep.findFirst({
+    where: { printingDetails: { id: existingPrintingDetails.id } },
+    select: { id: true, stepName: true }
+  });
+  
+  if (req.user?.userId && req.user?.role && jobStep) {
+    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+    const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+    if (!bypass) {
+      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+      if (!hasAccess) {
+        throw new AppError('Access denied: You do not have access to machines for this step', 403);
       }
     }
   }
 
+  // Filter out non-editable fields (fields that already have data)
+  const { filterEditableFields } = await import('../utils/fieldEditability');
+  const editableData = filterEditableFields(existingPrintingDetails, req.body);
+
+  // Auto-populate common step fields (date, shift, operator, machine)
+  const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
+  const populatedData = jobStep 
+    ? await autoPopulateStepFields(editableData, jobStep.id, req.user?.userId, decodedNrcJobNo)
+    : editableData;
+
   const printingDetails = await prisma.printingDetails.update({
     where: { id: existingPrintingDetails.id },
-    data: req.body, 
+    data: populatedData, 
   });
 
   // Auto-update job's machine details flag if machine field present
@@ -340,5 +350,82 @@ export const getPrintingDetailsByNrcJobNo = async (req: Request, res: Response) 
   // URL decode the nrcJobNo parameter to handle spaces and special characters
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const printingDetails = await prisma.printingDetails.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
-  res.status(200).json({ success: true, data: printingDetails });
+  
+  // Auto-populate missing fields for each printing details record
+  const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
+  const populatedDetails = await Promise.all(
+    printingDetails.map(async (pd) => {
+      // Get jobStepId to find the job step
+      const jobStep = await prisma.jobStep.findFirst({
+        where: { 
+          jobPlanning: {
+            nrcJobNo: decodedNrcJobNo
+          },
+          stepName: 'PrintingDetails'
+        }
+      });
+      
+      if (jobStep) {
+        return await autoPopulateStepFields(pd, jobStep.id, req.user?.userId, decodedNrcJobNo);
+      }
+      return pd;
+    })
+  );
+  
+  // Add editability information for each printing details record
+  const { wrapWithEditability } = await import('../utils/fieldEditability');
+  const dataWithEditability = populatedDetails.map(pd => wrapWithEditability(pd));
+  
+  res.status(200).json({ success: true, data: dataWithEditability });
+};
+
+export const updatePrintingDetailsStatus = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const { status, remarks } = req.body;
+  
+  // Validate status
+  if (!['reject', 'accept', 'hold', 'in_progress'].includes(status)) {
+    throw new AppError('Invalid status. Must be one of: reject, accept, hold, in_progress', 400);
+  }
+  
+  // Find the PrintingDetails by jobNrcJobNo
+  const existing = await prisma.printingDetails.findFirst({
+    where: { jobNrcJobNo: nrcJobNo },
+  });
+  
+  if (!existing) {
+    return res.status(404).json({ success: false, message: 'PrintingDetails not found' });
+  }
+  
+  // Prepare update data
+  const updateData: any = { status: status as any };
+  
+  // Auto-populate date and time for status changes
+  const currentDate = new Date();
+  updateData.date = currentDate;
+  updateData.shift = calculateShift(currentDate);
+  
+  // If status is hold or in_progress, update remarks
+  if (remarks && (status === 'hold' || status === 'in_progress')) {
+    updateData.remarks = remarks;
+  }
+  
+  // Update the status
+  const updated = await prisma.printingDetails.update({
+    where: { id: existing.id },
+    data: updateData,
+  });
+  
+  // Log action
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated PrintingDetails status to ${status} for jobNrcJobNo: ${nrcJobNo}${remarks ? ` with remarks: ${remarks}` : ''}`,
+      'PrintingDetails',
+      nrcJobNo
+    );
+  }
+  
+  res.status(200).json({ success: true, data: updated, message: 'PrintingDetails status updated' });
 };

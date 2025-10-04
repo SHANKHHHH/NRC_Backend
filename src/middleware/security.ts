@@ -27,8 +27,12 @@ export const corsMiddleware = (req: Request, res: Response, next: NextFunction) 
     'http://localhost:3000', 
     'http://localhost:3001', 
     'http://localhost:5173',
-    'http://localhost:52012', // Flutter web app
+    'http://localhost:51246', // Flutter web app (current port)
+    'http://localhost:51345', // Flutter web app (new port)
+    'http://localhost:52012', // Flutter web app alternative port
     'http://localhost:8080', // Flutter web app alternative port
+    'http://localhost:55516', // Flutter web app alternative port
+    'http://localhost:65139', // Flutter web app alternative port
     'https://nrc-backend-his4.onrender.com',
     'https://nrc-frontend.vercel.app',
     'https://nrc-frontend-y5wf.vercel.app',
@@ -39,17 +43,23 @@ export const corsMiddleware = (req: Request, res: Response, next: NextFunction) 
   const origin = req.headers.origin;
   
   // Debug logging
+  const isLocalhost = origin && origin.startsWith('http://localhost:');
+  const isAllowed = isLocalhost || (origin && allowedOrigins.includes(origin));
+  
   console.log('CORS Debug:', {
     method: req.method,
     origin,
+    isLocalhost,
     allowedOrigins,
-    isAllowed: origin && allowedOrigins.includes(origin),
+    isAllowed,
     url: req.url,
     headers: req.headers
   });
   
-  // Always set CORS headers for both preflight and actual requests
-  if (origin) {
+  // Allow all localhost ports for development (Flutter web uses dynamic ports)
+  if (origin && origin.startsWith('http://localhost:')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (origin && allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
   

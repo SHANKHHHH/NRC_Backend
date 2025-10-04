@@ -547,20 +547,34 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
 
 /**
  * Get filtered job numbers based on user machine access (for job-level filtering)
+ * Now supports pagination to prevent performance issues with large datasets
  */
-export const getFilteredJobNumbers = async (userMachineIds: string[] | null, userRole: string): Promise<string[]> => {
+export const getFilteredJobNumbers = async (
+  userMachineIds: string[] | null, 
+  userRole: string,
+  options: { limit?: number; offset?: number } = {}
+): Promise<string[]> => {
+  const { limit = 1000, offset = 0 } = options;
+
   if (userMachineIds === null) {
-    // Admin/flying squad - return all job numbers
+    // Admin/flying squad - return paginated job numbers
     const allJobs = await prisma.job.findMany({
-      select: { nrcJobNo: true }
+      select: { nrcJobNo: true },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      skip: offset
     });
     return allJobs.map(job => job.nrcJobNo);
   }
 
   // Special handling for paperstore users - they can see all jobs (no machine restrictions)
+  // But we paginate to prevent performance issues
   if (userRole.includes('paperstore')) {
     const allJobs = await prisma.job.findMany({
-      select: { nrcJobNo: true }
+      select: { nrcJobNo: true },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      skip: offset
     });
     return allJobs.map(job => job.nrcJobNo);
   }
@@ -605,4 +619,60 @@ export const getFilteredJobNumbers = async (userMachineIds: string[] | null, use
 
   const set = new Set<string>([...jobLevelAccessible, ...planningLevelAccessible]);
   return Array.from(set);
+};
+
+/**
+ * Get total count of filtered job numbers for pagination
+ */
+export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null, userRole: string): Promise<number> => {
+  if (userMachineIds === null) {
+    // Admin/flying squad - return total count
+    return await prisma.job.count();
+  }
+
+  // Special handling for paperstore users - they can see all jobs
+  if (userRole.includes('paperstore')) {
+    return await prisma.job.count();
+  }
+
+  // For other users, get the filtered count using the same logic as getFilteredJobNumbers
+  const [jobs, jobPlannings] = await Promise.all([
+    prisma.job.findMany({ select: { nrcJobNo: true, machineId: true, jobDemand: true } }),
+    prisma.jobPlanning.findMany({
+      select: { nrcJobNo: true, steps: { select: { machineDetails: true, stepNo: true, stepName: true } } }
+    })
+  ]);
+
+  const jobLevelAccessible = jobs
+    .filter(j => (j.machineId && userMachineIds.includes(j.machineId)) || j.jobDemand === 'high')
+    .map(j => j.nrcJobNo);
+
+  const planningLevelAccessible = jobPlannings
+    .filter(p => p.steps.some(s => {
+      // High-demand grants role-based visibility regardless of machine
+      const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
+      if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
+      
+      // Role-based visibility: If step matches user role AND has machine assignment, require machine match
+      if (isStepForUserRole(s.stepName, userRole)) {
+        const stepMachineIds = parseMachineDetails(s.machineDetails);
+        if (stepMachineIds.length > 0) {
+          return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
+        }
+        // If no machine details, allow access (for backward compatibility)
+        return true;
+      }
+      
+      // Machine-based visibility: If step has machine assignment, require machine match
+      const stepMachineIds = parseMachineDetails(s.machineDetails);
+      if (stepMachineIds.length > 0) {
+        return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
+      }
+      
+      return false;
+    }))
+    .map(p => p.nrcJobNo);
+
+  const set = new Set<string>([...jobLevelAccessible, ...planningLevelAccessible]);
+  return set.size;
 };

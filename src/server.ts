@@ -48,6 +48,7 @@ import userRoutes from './routes/userRoute';
 import plannerDashboardRoutes from './routes/plannerDashboardRoute';
 import flyingSquadRoutes from './routes/flyingSquadRoute';
 import machineAssignmentRoutes from './routes/machineAssignmentRoute';
+import jobStepMachineRoutes from './routes/jobStepMachineRoute';
 
 // Load environment variables
 
@@ -109,6 +110,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/planner-dashboard', plannerDashboardRoutes);
 app.use('/api/flying-squad', flyingSquadRoutes);
 app.use('/api/machine-assignments', machineAssignmentRoutes);
+app.use('/api/job-step-machines', jobStepMachineRoutes);
 
 // Test error handling routes
 app.get('/api/test-error', (req: Request, res: Response, next: NextFunction) => {

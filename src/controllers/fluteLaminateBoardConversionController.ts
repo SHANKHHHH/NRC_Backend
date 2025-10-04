@@ -4,6 +4,7 @@ import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { checkJobStepMachineAccess, getFilteredJobNumbers } from '../middleware/machineAccess';
 import { RoleManager } from '../utils/roleUtils';
+import { calculateShift } from '../utils/autoPopulateFields';
 
 export const createFluteLaminateBoardConversion = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -186,7 +187,12 @@ export const getFluteLaminateBoardConversionByNrcJobNo = async (req: Request, re
   const { nrcJobNo } = req.params;
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const flutes = await prisma.fluteLaminateBoardConversion.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
-  res.status(200).json({ success: true, data: flutes });
+  
+  // Add editability information for each flute lamination record
+  const { wrapWithEditability } = await import('../utils/fieldEditability');
+  const dataWithEditability = flutes.map(f => wrapWithEditability(f));
+  
+  res.status(200).json({ success: true, data: dataWithEditability });
 };
 
 
@@ -229,27 +235,36 @@ export const updateFluteLaminateBoardConversion = async (req: Request, res: Resp
     }
 
     // Enforce high-demand bypass or machine access
-    if (req.user?.userId && req.user?.role) {
-      const jobStep = await prisma.jobStep.findFirst({
-        where: { flutelam: { id: existingRecord.id } },
-        select: { id: true, stepName: true }
-      });
-      if (jobStep) {
-        const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
-        const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
-        if (!bypass) {
-          const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
-          if (!hasAccess) {
-            throw new AppError('Access denied: You do not have access to machines for this step', 403);
-          }
+    const jobStep = await prisma.jobStep.findFirst({
+      where: { flutelam: { id: existingRecord.id } },
+      select: { id: true, stepName: true }
+    });
+    
+    if (req.user?.userId && req.user?.role && jobStep) {
+      const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+      const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+      if (!bypass) {
+        const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+        if (!hasAccess) {
+          throw new AppError('Access denied: You do not have access to machines for this step', 403);
         }
       }
     }
 
+    // Filter out non-editable fields (fields that already have data)
+    const { filterEditableFields } = await import('../utils/fieldEditability');
+    const editableData = filterEditableFields(existingRecord, req.body);
+
+    // Auto-populate common step fields (date, shift, operator)
+    const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
+    const populatedData = jobStep 
+      ? await autoPopulateStepFields(editableData, jobStep.id, req.user?.userId, decodedNrcJobNo)
+      : editableData;
+
     // Step 2: Update using the unique ID
     const fluteLaminateBoardConversion = await prisma.fluteLaminateBoardConversion.update({
       where: { id: existingRecord.id },
-      data: req.body,
+      data: populatedData,
     });
 
     // Step 3: Log update
@@ -296,4 +311,55 @@ export const deleteFluteLaminateBoardConversion = async (req: Request, res: Resp
     );
   }
   res.status(200).json({ success: true, message: 'FluteLaminateBoardConversion deleted' });
+};
+
+export const updateFluteLaminateBoardConversionStatus = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const { status, remarks } = req.body;
+  
+  // Validate status
+  if (!['reject', 'accept', 'hold', 'in_progress'].includes(status)) {
+    throw new AppError('Invalid status. Must be one of: reject, accept, hold, in_progress', 400);
+  }
+  
+  // Find the FluteLaminateBoardConversion by jobNrcJobNo
+  const existing = await prisma.fluteLaminateBoardConversion.findFirst({
+    where: { jobNrcJobNo: nrcJobNo },
+  });
+  
+  if (!existing) {
+    return res.status(404).json({ success: false, message: 'FluteLaminateBoardConversion not found' });
+  }
+  
+  // Prepare update data
+  const updateData: any = { status: status as any };
+  
+  // Auto-populate date and time for status changes
+  const currentDate = new Date();
+  updateData.date = currentDate;
+  updateData.shift = calculateShift(currentDate);
+  
+  // If status is hold or in_progress, update remarks
+  if (remarks && (status === 'hold' || status === 'in_progress')) {
+    updateData.remarks = remarks;
+  }
+  
+  // Update the status
+  const updated = await prisma.fluteLaminateBoardConversion.update({
+    where: { id: existing.id },
+    data: updateData,
+  });
+  
+  // Log action
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated FluteLaminateBoardConversion status to ${status} for jobNrcJobNo: ${nrcJobNo}${remarks ? ` with remarks: ${remarks}` : ''}`,
+      'FluteLaminateBoardConversion',
+      nrcJobNo
+    );
+  }
+  
+  res.status(200).json({ success: true, data: updated, message: 'FluteLaminateBoardConversion status updated' });
 }; 

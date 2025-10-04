@@ -77,13 +77,17 @@ function serializeMachine(machine: Machine) {
 export const getAllJobPlannings = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   
+  
   // Get job numbers that are accessible to the user based on machine assignments
   const userRole = req.user?.role || '';
   const accessibleJobNumbers = await getFilteredJobNumbers(userMachineIds || null, userRole);
   
-  // Get all job plannings for accessible jobs
+  // If there are too many job numbers, limit the query to prevent performance issues
+  const limitedJobNumbers = accessibleJobNumbers.slice(0, 1000); // Limit to 1000 jobs max
+  
+  // Get job plannings for accessible jobs with pagination
   const allJobPlannings = await prisma.jobPlanning.findMany({
-    where: { nrcJobNo: { in: accessibleJobNumbers } },
+    where: { nrcJobNo: { in: limitedJobNumbers } },
     include: {
       steps: {
         select: {
@@ -571,9 +575,11 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   const formDataFields = ['quantity', 'oprName', 'size', 'passQuantity', 'checkedBy', 'noOfBoxes', 'dispatchNo', 'remarks'];
   const hasFormData = formDataFields.some(field => req.body[field] !== undefined);
   
-  if (hasFormData) {
-    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Processing form data for step: ${step.stepName}`);
+  // Create individual step records for status changes (start/stop) or when form data is present
+  if (hasFormData || req.body.status === 'start' || req.body.status === 'stop') {
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Processing step data for step: ${step.stepName}`);
     console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Form data received:`, req.body);
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Status: ${req.body.status}, Has form data: ${hasFormData}`);
     
     try {
       // Store form data in the appropriate step-specific model based on step name
@@ -1183,6 +1189,11 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
   const machineType = machineInfo?.machineType || null;
   
   console.log(`🔍 [storeStepFormData] JobStep user: ${operatorName}, Machine: ${machineCode}`);
+  
+  // Calculate shift for auto-population
+  const { calculateShift } = await import('../utils/autoPopulateFields');
+  const currentDate = new Date();
+  const calculatedShift = calculateShift(currentDate);
   
   // Determine step-specific status based on JobStep status
   let stepStatus: 'in_progress' | 'accept';

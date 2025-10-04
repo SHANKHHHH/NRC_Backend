@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
 import { asyncHandler, addMachineFiltering } from '../middleware';
-import { createQualityDept, getQualityDeptById, getAllQualityDepts, updateQualityDept, deleteQualityDept, getQualityDeptByNrcJobNo } from '../controllers/qualityDeptController';
+import { createQualityDept, getQualityDeptById, getAllQualityDepts, updateQualityDept, deleteQualityDept, getQualityDeptByNrcJobNo, updateQualityDeptStatus } from '../controllers/qualityDeptController';
 
 const router = Router();
 
@@ -11,6 +11,7 @@ router.get('/:id', authenticateToken, asyncHandler(getQualityDeptById));
 router.get('/', authenticateToken, addMachineFiltering, asyncHandler(getAllQualityDepts));
 
 router.put('/:nrcJobNo', authenticateToken, asyncHandler(updateQualityDept));
+router.patch('/:nrcJobNo/status', authenticateToken, asyncHandler(updateQualityDeptStatus));
 router.delete('/:id', requireAdminJWT, asyncHandler(deleteQualityDept));
 
 export default router; 

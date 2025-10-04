@@ -5,6 +5,7 @@ import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { validateWorkflowStep } from '../utils/workflowValidator';
 import { checkJobStepMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
 import { RoleManager } from '../utils/roleUtils';
+import { calculateShift } from '../utils/autoPopulateFields';
 
 export const createPunching = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -117,27 +118,38 @@ export const updatePunching = async (req: Request, res: Response) => {
     }
 
     // Enforce high-demand bypass or machine access
-    if (req.user?.userId && req.user?.role) {
-      const jobStep = await prisma.jobStep.findFirst({
-        where: { punching: { id: existingPunching.id } },
-        select: { id: true, stepName: true }
-      });
-      if (jobStep) {
-        const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
-        const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
-        if (!bypass) {
-          const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
-          if (!hasAccess) {
-            throw new AppError('Access denied: You do not have access to machines for this step', 403);
-          }
+    const jobStep = await prisma.jobStep.findFirst({
+      where: { punching: { id: existingPunching.id } },
+      select: { id: true, stepName: true }
+    });
+    
+    if (req.user?.userId && req.user?.role && jobStep) {
+      const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+      const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+      if (!bypass) {
+        const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+        if (!hasAccess) {
+          throw new AppError('Access denied: You do not have access to machines for this step', 403);
         }
       }
     }
 
+    // Filter out non-editable fields (fields that already have data)
+    const { filterEditableFields } = await import('../utils/fieldEditability');
+    const editableData = filterEditableFields(existingPunching, req.body);
+
+    // Auto-populate common step fields and punching-specific fields
+    const { autoPopulateStepFields, autoPopulatePunchingFields } = await import('../utils/autoPopulateFields');
+    let populatedData = editableData;
+    if (jobStep) {
+      populatedData = await autoPopulateStepFields(editableData, jobStep.id, req.user?.userId, decodedNrcJobNo);
+    }
+    populatedData = await autoPopulatePunchingFields(populatedData, decodedNrcJobNo);
+
     // Step 2: Update using its unique `id`
     const punching = await prisma.punching.update({
       where: { id: existingPunching.id },
-      data: req.body,
+      data: populatedData,
     });
 
   // Auto-update job's machine details flag if machine field present
@@ -210,5 +222,85 @@ export const getPunchingByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const punchings = await prisma.punching.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
-  res.status(200).json({ success: true, data: punchings });
+  
+  // Auto-populate missing fields for each punching record
+  const { autoPopulateStepFields, autoPopulatePunchingFields } = await import('../utils/autoPopulateFields');
+  const populatedPunchings = await Promise.all(
+    punchings.map(async (p) => {
+      // Get jobStepId to find the job step
+      const jobStep = await prisma.jobStep.findFirst({
+        where: { 
+          jobPlanning: {
+            nrcJobNo: decodedNrcJobNo
+          },
+          stepName: 'Punching'
+        }
+      });
+      
+      if (jobStep) {
+        // First apply common step fields
+        const withCommonFields = await autoPopulateStepFields(p, jobStep.id, req.user?.userId, decodedNrcJobNo);
+        // Then apply punching specific fields
+        return await autoPopulatePunchingFields(withCommonFields, decodedNrcJobNo);
+      }
+      return p;
+    })
+  );
+  
+  // Add editability information for each punching record
+  const { wrapWithEditability } = await import('../utils/fieldEditability');
+  const dataWithEditability = populatedPunchings.map(p => wrapWithEditability(p));
+  
+  res.status(200).json({ success: true, data: dataWithEditability });
+};
+
+export const updatePunchingStatus = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const { status, remarks } = req.body;
+  
+  // Validate status
+  if (!['reject', 'accept', 'hold', 'in_progress'].includes(status)) {
+    throw new AppError('Invalid status. Must be one of: reject, accept, hold, in_progress', 400);
+  }
+  
+  // Find the Punching by jobNrcJobNo
+  const existing = await prisma.punching.findFirst({
+    where: { jobNrcJobNo: nrcJobNo },
+  });
+  
+  if (!existing) {
+    return res.status(404).json({ success: false, message: 'Punching not found' });
+  }
+  
+  // Prepare update data
+  const updateData: any = { status: status as any };
+  
+  // Auto-populate date and time for status changes
+  const currentDate = new Date();
+  updateData.date = currentDate;
+  updateData.shift = calculateShift(currentDate);
+  
+  // If status is hold or in_progress, update remarks
+  if (remarks && (status === 'hold' || status === 'in_progress')) {
+    updateData.remarks = remarks;
+  }
+  
+  // Update the status
+  const updated = await prisma.punching.update({
+    where: { id: existing.id },
+    data: updateData,
+  });
+  
+  // Log action
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated Punching status to ${status} for jobNrcJobNo: ${nrcJobNo}${remarks ? ` with remarks: ${remarks}` : ''}`,
+      'Punching',
+      nrcJobNo
+    );
+  }
+  
+  res.status(200).json({ success: true, data: updated, message: 'Punching status updated' });
 };

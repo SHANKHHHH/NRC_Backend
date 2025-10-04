@@ -19,6 +19,13 @@ export const checkJobCompletion = async (req: Request, res: Response) => {
       include: {
         steps: {
           include: {
+            paperStore: true,
+            printingDetails: true,
+            corrugation: true,
+            flutelam: true,
+            punching: true,
+            sideFlapPasting: true,
+            qualityDept: true,
             dispatchProcess: true
           }
         }
@@ -150,14 +157,14 @@ export const completeJob = async (req: Request, res: Response) => {
         purchaseOrderDetails: purchaseOrder ?? Prisma.JsonNull,
         allSteps: jobPlanning.steps,
         allStepDetails: {
-          paperStore: jobPlanning.steps.map(s => s.paperStore).filter(Boolean),
-          printingDetails: jobPlanning.steps.map(s => s.printingDetails).filter(Boolean),
-          corrugation: jobPlanning.steps.map(s => s.corrugation).filter(Boolean),
-          flutelam: jobPlanning.steps.map(s => s.flutelam).filter(Boolean),
-          punching: jobPlanning.steps.map(s => s.punching).filter(Boolean),
-          sideFlapPasting: jobPlanning.steps.map(s => s.sideFlapPasting).filter(Boolean),
-          qualityDept: jobPlanning.steps.map(s => s.qualityDept).filter(Boolean),
-          dispatchProcess: jobPlanning.steps.map(s => s.dispatchProcess).filter(Boolean)
+          paperStore: jobPlanning.steps.filter(s => s.paperStore).map(s => s.paperStore),
+          printingDetails: jobPlanning.steps.filter(s => s.printingDetails).map(s => s.printingDetails),
+          corrugation: jobPlanning.steps.filter(s => s.corrugation).map(s => s.corrugation),
+          flutelam: jobPlanning.steps.filter(s => s.flutelam).map(s => s.flutelam),
+          punching: jobPlanning.steps.filter(s => s.punching).map(s => s.punching),
+          sideFlapPasting: jobPlanning.steps.filter(s => s.sideFlapPasting).map(s => s.sideFlapPasting),
+          qualityDept: jobPlanning.steps.filter(s => s.qualityDept).map(s => s.qualityDept),
+          dispatchProcess: jobPlanning.steps.filter(s => s.dispatchProcess).map(s => s.dispatchProcess)
         },
         completedBy: userId,
         totalDuration,
@@ -337,6 +344,13 @@ export const getJobsReadyForCompletion = async (req: Request, res: Response) => 
       include: {
         steps: {
           include: {
+            paperStore: true,
+            printingDetails: true,
+            corrugation: true,
+            flutelam: true,
+            punching: true,
+            sideFlapPasting: true,
+            qualityDept: true,
             dispatchProcess: true
           }
         }

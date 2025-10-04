@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
 import { asyncHandler, addMachineFiltering } from '../middleware';
-import { createSideFlapPasting, getSideFlapPastingById, getAllSideFlapPastings, updateSideFlapPasting, deleteSideFlapPasting, getSideFlapPastingByNrcJobNo } from '../controllers/sideFlapPastingController';
+import { createSideFlapPasting, getSideFlapPastingById, getAllSideFlapPastings, updateSideFlapPasting, deleteSideFlapPasting, getSideFlapPastingByNrcJobNo, updateSideFlapPastingStatus } from '../controllers/sideFlapPastingController';
 
 const router = Router();
 
@@ -11,6 +11,7 @@ router.get('/:id', authenticateToken, asyncHandler(getSideFlapPastingById));
 router.get('/', authenticateToken, addMachineFiltering, asyncHandler(getAllSideFlapPastings));
 
 router.put('/:nrcJobNo', authenticateToken, asyncHandler(updateSideFlapPasting));
+router.patch('/:nrcJobNo/status', authenticateToken, asyncHandler(updateSideFlapPastingStatus));
 router.delete('/:id', requireAdminJWT, asyncHandler(deleteSideFlapPasting));
 
 export default router; 

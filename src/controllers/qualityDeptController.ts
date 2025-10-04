@@ -5,6 +5,7 @@ import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { validateWorkflowStep } from '../utils/workflowValidator';
 import { checkJobStepMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
 import { RoleManager } from '../utils/roleUtils';
+import { calculateShift } from '../utils/autoPopulateFields';
 
 export const createQualityDept = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -81,7 +82,12 @@ export const getQualityDeptByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const qualityDepts = await prisma.qualityDept.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
-  res.status(200).json({ success: true, data: qualityDepts });
+  
+  // Add editability information for each quality dept record
+  const { wrapWithEditability } = await import('../utils/fieldEditability');
+  const dataWithEditability = qualityDepts.map(qd => wrapWithEditability(qd));
+  
+  res.status(200).json({ success: true, data: dataWithEditability });
 };
 
 
@@ -125,27 +131,36 @@ export const updateQualityDept = async (req: Request, res: Response) => {
     }
 
     // Enforce high-demand bypass or machine access
-    if (req.user?.userId && req.user?.role) {
-      const jobStep = await prisma.jobStep.findFirst({
-        where: { qualityDept: { id: existingQualityDept.id } },
-        select: { id: true, stepName: true }
-      });
-      if (jobStep) {
-        const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
-        const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, decodedNrcJobNo);
-        if (!bypass) {
-          const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
-          if (!hasAccess) {
-            throw new AppError('Access denied: You do not have access to machines for this step', 403);
-          }
+    const jobStep = await prisma.jobStep.findFirst({
+      where: { qualityDept: { id: existingQualityDept.id } },
+      select: { id: true, stepName: true }
+    });
+    
+    if (req.user?.userId && req.user?.role && jobStep) {
+      const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+      const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, decodedNrcJobNo);
+      if (!bypass) {
+        const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+        if (!hasAccess) {
+          throw new AppError('Access denied: You do not have access to machines for this step', 403);
         }
       }
     }
 
+    // Filter out non-editable fields (fields that already have data)
+    const { filterEditableFields } = await import('../utils/fieldEditability');
+    const editableData = filterEditableFields(existingQualityDept, req.body);
+
+    // Auto-populate common step fields (date, shift, operator)
+    const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
+    const populatedData = jobStep 
+      ? await autoPopulateStepFields(editableData, jobStep.id, req.user?.userId, decodedNrcJobNo)
+      : editableData;
+
     // Step 2: Update using its unique id
     const qualityDept = await prisma.qualityDept.update({
       where: { id: existingQualityDept.id },
-      data: req.body,
+      data: populatedData,
     });
 
     // Optional Logging
@@ -192,4 +207,55 @@ export const deleteQualityDept = async (req: Request, res: Response) => {
     );
   }
   res.status(200).json({ success: true, message: 'QualityDept deleted' });
+};
+
+export const updateQualityDeptStatus = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const { status, remarks } = req.body;
+  
+  // Validate status
+  if (!['reject', 'accept', 'hold', 'in_progress'].includes(status)) {
+    throw new AppError('Invalid status. Must be one of: reject, accept, hold, in_progress', 400);
+  }
+  
+  // Find the QualityDept by jobNrcJobNo
+  const existing = await prisma.qualityDept.findFirst({
+    where: { jobNrcJobNo: nrcJobNo },
+  });
+  
+  if (!existing) {
+    return res.status(404).json({ success: false, message: 'QualityDept not found' });
+  }
+  
+  // Prepare update data
+  const updateData: any = { status: status as any };
+  
+  // Auto-populate date and time for status changes
+  const currentDate = new Date();
+  updateData.date = currentDate;
+  updateData.shift = calculateShift(currentDate);
+  
+  // If status is hold or in_progress, update remarks
+  if (remarks && (status === 'hold' || status === 'in_progress')) {
+    updateData.remarks = remarks;
+  }
+  
+  // Update the status
+  const updated = await prisma.qualityDept.update({
+    where: { id: existing.id },
+    data: updateData,
+  });
+  
+  // Log action
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated QualityDept status to ${status} for jobNrcJobNo: ${nrcJobNo}${remarks ? ` with remarks: ${remarks}` : ''}`,
+      'QualityDept',
+      nrcJobNo
+    );
+  }
+  
+  res.status(200).json({ success: true, data: updated, message: 'QualityDept status updated' });
 }; 

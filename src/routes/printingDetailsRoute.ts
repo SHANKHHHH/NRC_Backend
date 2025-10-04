@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
 import { asyncHandler, addMachineFiltering } from '../middleware';
-import { createPrintingDetails, getPrintingDetailsById, getAllPrintingDetails, updatePrintingDetails, deletePrintingDetails, getPrintingDetailsByNrcJobNo } from '../controllers/printingDetailsController';
+import { createPrintingDetails, getPrintingDetailsById, getAllPrintingDetails, updatePrintingDetails, deletePrintingDetails, getPrintingDetailsByNrcJobNo, updatePrintingDetailsStatus } from '../controllers/printingDetailsController';
 
 const router = Router();
 
@@ -11,6 +11,7 @@ router.get('/:id', authenticateToken, asyncHandler(getPrintingDetailsById));
 router.get('/', authenticateToken, addMachineFiltering, asyncHandler(getAllPrintingDetails));
 
 router.put('/:nrcJobNo', authenticateToken, asyncHandler(updatePrintingDetails));
+router.patch('/:nrcJobNo/status', authenticateToken, asyncHandler(updatePrintingDetailsStatus));
 router.delete('/:id', requireAdminJWT, asyncHandler(deletePrintingDetails));
 
 export default router;    
