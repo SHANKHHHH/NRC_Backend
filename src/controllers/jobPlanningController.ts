@@ -97,6 +97,11 @@ function serializeMachine(machine: Machine) {
 export const getAllJobPlannings = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   
+  // Get pagination parameters from query (opt-in - only paginate if page param is provided)
+  const page = req.query.page ? parseInt(req.query.page as string) : undefined;
+  const limit = req.query.limit ? parseInt(req.query.limit as string) : 500;
+  const isPaginated = page !== undefined;
+  const skip = isPaginated ? (page - 1) * limit : 0;
   
   // Get job numbers that are accessible to the user based on machine assignments
   const userRole = req.user?.role || '';
@@ -109,7 +114,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     bypassDeduplicationRoles.some(role => userRole.includes(role));
   
   if (shouldBypassDeduplication) {
-    const allPlanningsUnfiltered = await prisma.jobPlanning.findMany({
+    const queryOptions: any = {
       include: {
         steps: {
           select: {
@@ -127,22 +132,51 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
           orderBy: { stepNo: 'asc' }
         }
       },
-      orderBy: { jobPlanId: 'desc' },
-    });
-    return res.status(200).json({
+      orderBy: { jobPlanId: 'desc' }
+    };
+    
+    // Only add pagination if requested
+    if (isPaginated) {
+      queryOptions.skip = skip;
+      queryOptions.take = limit;
+    }
+    
+    const allPlanningsUnfiltered = await prisma.jobPlanning.findMany(queryOptions);
+    
+    // Build response
+    const response: any = {
       success: true,
       count: allPlanningsUnfiltered.length,
-      data: allPlanningsUnfiltered,
-    });
+      data: allPlanningsUnfiltered
+    };
+    
+    // Only include pagination metadata if pagination was requested
+    if (isPaginated && page !== undefined) {
+      const totalCount = await prisma.jobPlanning.count();
+      const totalPages = Math.ceil(totalCount / limit);
+      
+      response.pagination = {
+        currentPage: page,
+        totalPages: totalPages,
+        totalJobs: totalCount,
+        jobsPerPage: limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      };
+    }
+    
+    return res.status(200).json(response);
   }
   
-  // If there are too many job numbers, limit the query to prevent performance issues
-  const limitedJobNumbers = accessibleJobNumbers.slice(0, 1000); // Limit to 1000 jobs max
+  // Paginate the accessible job numbers only if pagination is requested
+  const jobNumbersToFetch = isPaginated 
+    ? accessibleJobNumbers.slice(skip, skip + limit)
+    : accessibleJobNumbers;
   
   // Get ALL job plannings for accessible jobs (NO deduplication)
   // Production roles with machines should see ALL accessible plannings, not just the latest
   const jobPlannings = await prisma.jobPlanning.findMany({
-    where: { nrcJobNo: { in: limitedJobNumbers } },
+    where: { nrcJobNo: { in: jobNumbersToFetch } },
     include: {
       steps: {
         select: {
@@ -209,11 +243,29 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     }
   }
 
-  res.status(200).json({
+  // Build response
+  const response: any = {
     success: true,
     count: jobPlannings.length,
-    data: jobPlannings,
-  });
+    data: jobPlannings
+  };
+  
+  // Only include pagination metadata if pagination was requested
+  if (isPaginated && page !== undefined) {
+    const totalJobs = accessibleJobNumbers.length;
+    const totalPages = Math.ceil(totalJobs / limit);
+    
+    response.pagination = {
+      currentPage: page,
+      totalPages: totalPages,
+      totalJobs: totalJobs,
+      jobsPerPage: limit,
+      hasNextPage: page < totalPages,
+      hasPrevPage: page > 1
+    };
+  }
+
+  res.status(200).json(response);
 };
 
 // Get all JobPlannings with steps
@@ -553,9 +605,9 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
     console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Role access check - User role: ${req.user.role}, Step: ${step.stepName}, Job demand: ${jobPlanning.jobDemand}`);
     console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] isStepForUserRole result: ${isStepForUserRole(step.stepName, req.user.role)}`);
     
-    // For high demand jobs, allow any role to work on any step
-    // For regular jobs, check if the step matches the user's role
-    if (jobPlanning.jobDemand !== 'high' && !isStepForUserRole(step.stepName, req.user.role)) {
+    // Always check if the step matches the user's role (even for high demand jobs)
+    // High demand jobs bypass machine access but still respect role-based step access
+    if (!isStepForUserRole(step.stepName, req.user.role)) {
       console.log(`❌ [upsertStepByNrcJobNoAndStepNo] Access denied - User role '${req.user.role}' does not have access to step '${step.stepName}'`);
       throw new AppError(`User role '${req.user.role}' does not have access to step '${step.stepName}'`, 403);
     }
@@ -1157,9 +1209,9 @@ export const updateJobStepById = async (req: Request, res: Response) => {
       console.log(`🔍 [updateJobStepById] Role access check - User role: ${userRole}, Step: ${jobStep.stepName}, Job demand: ${jobStep.jobPlanning.jobDemand}`);
       console.log(`🔍 [updateJobStepById] isStepForUserRole result: ${isStepForUserRole(jobStep.stepName, userRole)}`);
       
-      // For high demand jobs, allow any role to work on any step
-      // For regular jobs, check if the step matches the user's role
-      if (jobStep.jobPlanning.jobDemand !== 'high' && !isStepForUserRole(jobStep.stepName, userRole)) {
+      // Always check if the step matches the user's role (even for high demand jobs)
+      // High demand jobs bypass machine access but still respect role-based step access
+      if (!isStepForUserRole(jobStep.stepName, userRole)) {
         console.log(`❌ [updateJobStepById] Access denied - User role '${userRole}' does not have access to step '${jobStep.stepName}'`);
         throw new AppError(`User role '${userRole}' does not have access to step '${jobStep.stepName}'`, 403);
       }

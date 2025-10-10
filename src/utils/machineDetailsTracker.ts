@@ -50,11 +50,17 @@ export const updateJobMachineDetailsFlag = async (nrcJobNo: string): Promise<voi
       );
     });
 
-    // Update the job's machine details flag
-    await prisma.job.update({
-      where: { nrcJobNo },
-      data: { isMachineDetailsFilled: hasAnyMachineDetails }
-    });
+    // Update the job's machine details flag (if Job record exists)
+    // For jobPlanning-only records (like urgent jobs without Job record), skip this update
+    const jobExists = await prisma.job.findUnique({ where: { nrcJobNo } });
+    if (jobExists) {
+      await prisma.job.update({
+        where: { nrcJobNo },
+        data: { isMachineDetailsFilled: hasAnyMachineDetails }
+      });
+    } else {
+      console.log(`Job record not found for ${nrcJobNo}, skipping isMachineDetailsFilled update`);
+    }
   } catch (error) {
     console.error('Error updating job machine details flag:', error);
     throw error;

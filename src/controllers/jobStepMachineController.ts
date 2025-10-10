@@ -124,12 +124,23 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Check if this is an urgent job
+    // Check job.jobDemand first (existing functionality - UNCHANGED)
     const job = await prisma.job.findFirst({
       where: { nrcJobNo: nrcJobNo },
       select: { jobDemand: true }
     });
 
-    const isUrgentJob = job?.jobDemand === 'high';
+    let isUrgentJob = job?.jobDemand === 'high';
+    
+    // Fallback: If no Job record, check jobPlanning.jobDemand
+    // This only adds support for jobPlanning-only records without affecting existing jobs
+    if (!job) {
+      const jobPlanning = await prisma.jobPlanning.findFirst({
+        where: { nrcJobNo: nrcJobNo },
+        select: { jobDemand: true }
+      });
+      isUrgentJob = jobPlanning?.jobDemand === 'high';
+    }
 
     // For urgent jobs, skip machine access verification
     // For regular jobs, verify user has access to this machine
@@ -326,12 +337,23 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Check if this is an urgent job
+    // Check job.jobDemand first (existing functionality - UNCHANGED)
     const job = await prisma.job.findFirst({
       where: { nrcJobNo: nrcJobNo },
       select: { jobDemand: true }
     });
 
-    const isUrgentJob = job?.jobDemand === 'high';
+    let isUrgentJob = job?.jobDemand === 'high';
+    
+    // Fallback: If no Job record, check jobPlanning.jobDemand
+    // This only adds support for jobPlanning-only records without affecting existing jobs
+    if (!job) {
+      const jobPlanning = await prisma.jobPlanning.findFirst({
+        where: { nrcJobNo: nrcJobNo },
+        select: { jobDemand: true }
+      });
+      isUrgentJob = jobPlanning?.jobDemand === 'high';
+    }
 
     // For urgent jobs, skip machine access verification
     // For regular jobs, verify user has access to this machine
@@ -695,12 +717,23 @@ export const holdWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Check if this is an urgent job
+    // Check job.jobDemand first (existing functionality - UNCHANGED)
     const job = await prisma.job.findFirst({
       where: { nrcJobNo: nrcJobNo },
       select: { jobDemand: true }
     });
 
-    const isUrgentJob = job?.jobDemand === 'high';
+    let isUrgentJob = job?.jobDemand === 'high';
+    
+    // Fallback: If no Job record, check jobPlanning.jobDemand
+    // This only adds support for jobPlanning-only records without affecting existing jobs
+    if (!job) {
+      const jobPlanning = await prisma.jobPlanning.findFirst({
+        where: { nrcJobNo: nrcJobNo },
+        select: { jobDemand: true }
+      });
+      isUrgentJob = jobPlanning?.jobDemand === 'high';
+    }
 
     // For urgent jobs, skip machine access verification
     // For regular jobs, verify user has access to this machine
@@ -814,12 +847,23 @@ export const resumeWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Check if this is an urgent job
+    // Check job.jobDemand first (existing functionality - UNCHANGED)
     const job = await prisma.job.findFirst({
       where: { nrcJobNo: nrcJobNo },
       select: { jobDemand: true }
     });
 
-    const isUrgentJob = job?.jobDemand === 'high';
+    let isUrgentJob = job?.jobDemand === 'high';
+    
+    // Fallback: If no Job record, check jobPlanning.jobDemand
+    // This only adds support for jobPlanning-only records without affecting existing jobs
+    if (!job) {
+      const jobPlanning = await prisma.jobPlanning.findFirst({
+        where: { nrcJobNo: nrcJobNo },
+        select: { jobDemand: true }
+      });
+      isUrgentJob = jobPlanning?.jobDemand === 'high';
+    }
 
     // For urgent jobs, skip machine access verification
     // For regular jobs, verify user has access to this machine
@@ -1035,22 +1079,31 @@ export const getAllHeldMachines = async (req: Request, res: Response) => {
               hasHeldMachines: stepHeldMachines.length > 0,
               heldMachinesCount: stepHeldMachines.length,
               heldMachines: stepHeldMachines.map((m: any) => ({
+                // Machine details
                 machineId: m.machineId,
                 machineCode: m.machine.machineCode,
                 machineType: m.machine.machineType,
                 unit: m.machine.unit,
                 description: m.machine.description,
                 capacity: m.machine.capacity,
+                
+                // JobStepMachine status and hold info
+                jobStepMachineStatus: m.status, // The actual status from JobStepMachine table (hold/in_progress/stop/etc)
                 holdRemark: m.remarks,
                 heldAt: m.updatedAt,
+                startedAt: m.startedAt,
+                completedAt: m.completedAt,
+                
+                // User who held it
                 heldBy: {
                   id: m.user?.id,
                   name: m.user?.name,
                   email: m.user?.email,
                   role: m.user?.role
                 },
-                formData: m.formData,
-                startedAt: m.startedAt
+                
+                // Form data (work in progress)
+                formData: m.formData
               })),
               stepSpecificData: stepSpecificData,
               stepHoldRemark: stepSpecificData?.holdRemark
@@ -1123,12 +1176,23 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Check if this is an urgent job
+    // Check job.jobDemand first (existing functionality - UNCHANGED)
     const job = await prisma.job.findFirst({
       where: { nrcJobNo: nrcJobNo },
       select: { jobDemand: true }
     });
 
-    const isUrgentJob = job?.jobDemand === 'high';
+    let isUrgentJob = job?.jobDemand === 'high';
+    
+    // Fallback: If no Job record, check jobPlanning.jobDemand
+    // This only adds support for jobPlanning-only records without affecting existing jobs
+    if (!job) {
+      const jobPlanning = await prisma.jobPlanning.findFirst({
+        where: { nrcJobNo: nrcJobNo },
+        select: { jobDemand: true }
+      });
+      isUrgentJob = jobPlanning?.jobDemand === 'high';
+    }
 
     // For urgent jobs, skip machine access verification
     // For regular jobs, verify user has access to this machine

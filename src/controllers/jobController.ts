@@ -117,13 +117,24 @@ export const getAllJobs = async (req: Request, res: Response) => {
   try {
     const userMachineIds = req.userMachineIds; // From middleware
     
+    // Get pagination parameters from query (opt-in - only paginate if page param is provided)
+    const page = req.query.page ? parseInt(req.query.page as string) : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 500;
+    const isPaginated = page !== undefined;
+    const skip = isPaginated ? (page - 1) * limit : 0;
+    
     // Get job numbers that are accessible to the user based on machine assignments
     const userRole = req.user?.role || '';
     const accessibleJobNumbers = await getFilteredJobNumbers(userMachineIds || null, userRole);
     
+    // Paginate the accessible job numbers only if pagination is requested
+    const jobNumbers = isPaginated 
+      ? accessibleJobNumbers.slice(skip, skip + limit)
+      : accessibleJobNumbers;
+    
     const jobs = await prisma.job.findMany({
       where: {
-        nrcJobNo: { in: accessibleJobNumbers }
+        nrcJobNo: { in: jobNumbers }
       },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -158,12 +169,33 @@ export const getAllJobs = async (req: Request, res: Response) => {
     // Get unified role-based job data
     const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
     const safeJobs = await UnifiedJobDataHelper.getRoleBasedJobData(userMachineIds || null, userRole);
-
-    res.status(200).json({
+    
+    // Filter safe jobs to match the job numbers (paginated or all)
+    const filteredSafeJobs = safeJobs.filter(job => jobNumbers.includes(job.nrcJobNo));
+    
+    // Build response
+    const response: any = {
       success: true,
-      count: safeJobs.length,
-      data: safeJobs,
-    });
+      count: filteredSafeJobs.length,
+      data: filteredSafeJobs
+    };
+    
+    // Only include pagination metadata if pagination was requested
+    if (isPaginated && page !== undefined) {
+      const totalJobs = accessibleJobNumbers.length;
+      const totalPages = Math.ceil(totalJobs / limit);
+      
+      response.pagination = {
+        currentPage: page,
+        totalPages: totalPages,
+        totalJobs: totalJobs,
+        jobsPerPage: limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      };
+    }
+
+    res.status(200).json(response);
   } catch (error) {
     console.error('Error fetching jobs:', error);
     

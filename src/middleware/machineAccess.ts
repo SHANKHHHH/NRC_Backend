@@ -472,9 +472,19 @@ export const allowHighDemandBypass = async (
   nrcJobNo: string
 ): Promise<boolean> => {
   try {
+    // First check job.jobDemand (existing functionality - UNCHANGED)
     const job = await prisma.job.findFirst({ where: { nrcJobNo }, select: { jobDemand: true } });
     if (job?.jobDemand === 'high' && isStepForUserRole(stepName, userRole)) {
       return true;
+    }
+    
+    // If no Job record found, fallback to check jobPlanning.jobDemand
+    // This only adds support for jobPlanning-only records without affecting existing jobs
+    if (!job) {
+      const jobPlanning = await prisma.jobPlanning.findFirst({ where: { nrcJobNo }, select: { jobDemand: true } });
+      if (jobPlanning?.jobDemand === 'high' && isStepForUserRole(stepName, userRole)) {
+        return true;
+      }
     }
   } catch {
     // fallthrough: no bypass
@@ -505,6 +515,7 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
   const filteredJobSteps: number[] = [];
   for (const jobStep of allJobSteps) {
     // High-demand visibility: role-based visibility regardless of machine
+    // Check job.jobDemand first (existing functionality - UNCHANGED)
     const job = await prisma.job.findFirst({
       where: { nrcJobNo: jobStep.jobPlanning.nrcJobNo },
       select: { jobDemand: true }
@@ -512,6 +523,19 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
     if (job?.jobDemand === 'high' && isStepForUserRole(jobStep.stepName, userRole)) {
       filteredJobSteps.push(jobStep.id);
       continue;
+    }
+    
+    // Fallback: If no Job record, check jobPlanning.jobDemand
+    // This only adds support for jobPlanning-only records without affecting existing jobs
+    if (!job) {
+      const jobPlanning = await prisma.jobPlanning.findFirst({
+        where: { nrcJobNo: jobStep.jobPlanning.nrcJobNo },
+        select: { jobDemand: true }
+      });
+      if (jobPlanning?.jobDemand === 'high' && isStepForUserRole(jobStep.stepName, userRole)) {
+        filteredJobSteps.push(jobStep.id);
+        continue;
+      }
     }
 
     // Role-based visibility: If step matches user role AND has machine assignment, require machine match
@@ -554,7 +578,7 @@ export const getFilteredJobNumbers = async (
   userRole: string,
   options: { limit?: number; offset?: number } = {}
 ): Promise<string[]> => {
-  const { limit = 1000, offset = 0 } = options;
+  const { limit = 7000, offset = 0 } = options;
 
   if (userMachineIds === null) {
     // Admin/Planner/Flying Squad/QC Manager (bypass): return union of Job and JobPlanning job numbers
@@ -606,7 +630,7 @@ export const getFilteredJobNumbers = async (
   const [jobs, jobPlannings] = await Promise.all([
     prisma.job.findMany({ select: { nrcJobNo: true, machineId: true, jobDemand: true } }),
     prisma.jobPlanning.findMany({
-      select: { nrcJobNo: true, steps: { select: { machineDetails: true, stepNo: true, stepName: true } } }
+      select: { nrcJobNo: true, jobDemand: true, steps: { select: { machineDetails: true, stepNo: true, stepName: true } } }
     })
   ]);
 
@@ -617,8 +641,14 @@ export const getFilteredJobNumbers = async (
   const planningLevelAccessible = jobPlannings
     .filter(p => p.steps.some(s => {
       // High-demand grants role-based visibility regardless of machine
+      // Check job.jobDemand first (existing functionality - UNCHANGED)
       const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
       if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
+      
+      // Fallback: If no Job record, check jobPlanning.jobDemand
+      // This only adds support for jobPlanning-only records without affecting existing jobs
+      const jobExists = jobs.some(j => j.nrcJobNo === p.nrcJobNo);
+      if (!jobExists && p.jobDemand === 'high' && isStepForUserRole(s.stepName, userRole)) return true;
       
       // Role-based visibility: If step matches user role AND has machine assignment, require machine match
       if (isStepForUserRole(s.stepName, userRole)) {
