@@ -23,7 +23,7 @@ declare global {
 
 /**
  * Get machine IDs assigned to a user
- * Returns null for admin/flying squad/planner (no filtering needed)
+ * Returns null for admin/planner/flying squad/qc_manager (no filtering needed)
  */
 export const getUserMachineIds = async (userId: string, userRole: string): Promise<string[] | null> => {
   // Parse role if it's a JSON string
@@ -39,9 +39,9 @@ export const getUserMachineIds = async (userId: string, userRole: string): Promi
     }
   }
 
-  // Admins, Flying Squad members, and QC Managers bypass machine restrictions
+  // Admins, Planners, Flying Squad members, and QC Managers bypass machine restrictions
   const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
-  if (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.hasRole(roleString, 'qc_manager')) {
+  if (RoleManager.isAdmin(roleString) || RoleManager.isPlanner(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.hasRole(roleString, 'qc_manager')) {
     return null;
   }
 
@@ -60,8 +60,8 @@ export const getUserMachineIds = async (userId: string, userRole: string): Promi
  * Check if user has access to a specific job's machine
  */
 export const checkJobMachineAccess = async (userId: string, userRole: string, jobId: number): Promise<boolean> => {
-  // Admins, Flying Squad members, and QC Managers have access to all jobs
-  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
+  // Admins, Planners, Flying Squad members, and QC Managers have access to all jobs
+  if (RoleManager.isAdmin(userRole) || RoleManager.isPlanner(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
     return true;
   }
 
@@ -90,8 +90,8 @@ export const checkJobMachineAccess = async (userId: string, userRole: string, jo
  * Check if user has access to a specific PO's machines
  */
 export const checkPOMachineAccess = async (userId: string, userRole: string, poId: number): Promise<boolean> => {
-  // Admins, Flying Squad members, and QC Managers have access to all POs
-  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
+  // Admins, Planners, Flying Squad members, and QC Managers have access to all POs
+  if (RoleManager.isAdmin(userRole) || RoleManager.isPlanner(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
     return true;
   }
 
@@ -219,10 +219,10 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
 
     console.log('🔍 [MACHINE FILTERING DEBUG] Parsed role:', parsedRole);
 
-    // Admins, Flying Squad members, and QC Managers bypass machine restrictions
+    // Admins, Planners, Flying Squad members, and QC Managers bypass machine restrictions
     const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
-    if (userRole && (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.hasRole(roleString, 'qc_manager'))) {
-      console.log('🔍 [MACHINE FILTERING DEBUG] Admin/Flying Squad/QC Manager - bypassing machine restrictions');
+    if (userRole && (RoleManager.isAdmin(roleString) || RoleManager.isPlanner(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.hasRole(roleString, 'qc_manager'))) {
+      console.log('🔍 [MACHINE FILTERING DEBUG] Admin/Planner/Flying Squad/QC Manager - bypassing machine restrictions');
       req.userMachineIds = null; // Indicate no filtering needed
       req.userRole = userRole; // Pass user role for high demand filtering
       return next();
@@ -254,8 +254,8 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
  * Generic machine access check
  */
 export const checkMachineAccess = async (userId: string, userRole: string, machineId: string): Promise<boolean> => {
-  // Admins, Flying Squad members, and QC Managers have access to all machines
-  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
+  // Admins, Planners, Flying Squad members, and QC Managers have access to all machines
+  if (RoleManager.isAdmin(userRole) || RoleManager.isPlanner(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
     return true;
   }
 
@@ -274,8 +274,8 @@ export const checkMachineAccess = async (userId: string, userRole: string, machi
  * Check machine access for job step operations
  */
 export const checkJobStepMachineAccess = async (userId: string, userRole: string, jobStepId: number): Promise<boolean> => {
-  // Admins, Flying Squad members, and QC Managers have access to all job steps
-  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
+  // Admins, Planners, Flying Squad members, and QC Managers have access to all job steps
+  if (RoleManager.isAdmin(userRole) || RoleManager.isPlanner(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
     return true;
   }
 
@@ -327,8 +327,8 @@ export const checkJobStepMachineAccessWithAction = async (
   jobStepId: number, 
   action: 'start' | 'stop' | 'complete'
 ): Promise<boolean> => {
-  // Admins, Flying Squad members, and QC Managers have access to all job step operations
-  if (RoleManager.isAdmin(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
+  // Admins, Planners, Flying Squad members, and QC Managers have access to all job step operations
+  if (RoleManager.isAdmin(userRole) || RoleManager.isPlanner(userRole) || RoleManager.isFlyingSquad(userRole) || RoleManager.hasRole(userRole, 'qc_manager')) {
     return true;
   }
 
@@ -557,7 +557,7 @@ export const getFilteredJobNumbers = async (
   const { limit = 1000, offset = 0 } = options;
 
   if (userMachineIds === null) {
-    // Admin/Flying Squad/Planner (bypass): return union of Job and JobPlanning job numbers
+    // Admin/Planner/Flying Squad/QC Manager (bypass): return union of Job and JobPlanning job numbers
     // (some plannings may not have Jobs yet)
     const [jobs, plannings] = await Promise.all([
       prisma.job.findMany({
@@ -649,7 +649,7 @@ export const getFilteredJobNumbers = async (
  */
 export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null, userRole: string): Promise<number> => {
   if (userMachineIds === null) {
-    // Admin/flying squad - return total count
+    // Admin/Planner/Flying Squad/QC Manager - return total count
     return await prisma.job.count();
   }
 
