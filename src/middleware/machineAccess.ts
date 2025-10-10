@@ -39,9 +39,9 @@ export const getUserMachineIds = async (userId: string, userRole: string): Promi
     }
   }
 
-  // Admins, Flying Squad members, QC Managers, and Planners bypass machine restrictions
+  // Admins, Flying Squad members, and QC Managers bypass machine restrictions
   const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
-  if (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.isPlanner(roleString) || RoleManager.hasRole(roleString, 'qc_manager')) {
+  if (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.hasRole(roleString, 'qc_manager')) {
     return null;
   }
 
@@ -219,10 +219,10 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
 
     console.log('🔍 [MACHINE FILTERING DEBUG] Parsed role:', parsedRole);
 
-    // Admins, Flying Squad members, QC Managers, and Planners bypass machine restrictions
+    // Admins, Flying Squad members, and QC Managers bypass machine restrictions
     const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
-    if (userRole && (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.isPlanner(roleString) || RoleManager.hasRole(roleString, 'qc_manager'))) {
-      console.log('🔍 [MACHINE FILTERING DEBUG] Admin/Planner/Flying Squad/QC Manager - bypassing machine restrictions');
+    if (userRole && (RoleManager.isAdmin(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.hasRole(roleString, 'qc_manager'))) {
+      console.log('🔍 [MACHINE FILTERING DEBUG] Admin/Flying Squad/QC Manager - bypassing machine restrictions');
       req.userMachineIds = null; // Indicate no filtering needed
       req.userRole = userRole; // Pass user role for high demand filtering
       return next();
@@ -547,22 +547,59 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
 
 /**
  * Get filtered job numbers based on user machine access (for job-level filtering)
+ * Now supports pagination to prevent performance issues with large datasets
  */
-export const getFilteredJobNumbers = async (userMachineIds: string[] | null, userRole: string): Promise<string[]> => {
+export const getFilteredJobNumbers = async (
+  userMachineIds: string[] | null, 
+  userRole: string,
+  options: { limit?: number; offset?: number } = {}
+): Promise<string[]> => {
+  const { limit = 1000, offset = 0 } = options;
+
   if (userMachineIds === null) {
-    // Admin/flying squad - return all job numbers
-    const allJobs = await prisma.job.findMany({
-      select: { nrcJobNo: true }
-    });
-    return allJobs.map(job => job.nrcJobNo);
+    // Admin/Flying Squad/Planner (bypass): return union of Job and JobPlanning job numbers
+    // (some plannings may not have Jobs yet)
+    const [jobs, plannings] = await Promise.all([
+      prisma.job.findMany({
+        select: { nrcJobNo: true },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset
+      }),
+      prisma.jobPlanning.findMany({
+        select: { nrcJobNo: true },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset
+      })
+    ]);
+    const set = new Set<string>();
+    jobs.forEach(j => set.add(j.nrcJobNo));
+    plannings.forEach(p => set.add(p.nrcJobNo));
+    return Array.from(set);
   }
 
   // Special handling for paperstore users - they can see all jobs (no machine restrictions)
+  // Return union of Job and JobPlanning job numbers (same as bypass users)
   if (userRole.includes('paperstore')) {
-    const allJobs = await prisma.job.findMany({
-      select: { nrcJobNo: true }
-    });
-    return allJobs.map(job => job.nrcJobNo);
+    const [jobs, plannings] = await Promise.all([
+      prisma.job.findMany({
+        select: { nrcJobNo: true },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset
+      }),
+      prisma.jobPlanning.findMany({
+        select: { nrcJobNo: true },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset
+      })
+    ]);
+    const set = new Set<string>();
+    jobs.forEach(j => set.add(j.nrcJobNo));
+    plannings.forEach(p => set.add(p.nrcJobNo));
+    return Array.from(set);
   }
 
   // Include job-level machine filtering (job.machineId) OR step-level machine filtering
@@ -605,4 +642,60 @@ export const getFilteredJobNumbers = async (userMachineIds: string[] | null, use
 
   const set = new Set<string>([...jobLevelAccessible, ...planningLevelAccessible]);
   return Array.from(set);
+};
+
+/**
+ * Get total count of filtered job numbers for pagination
+ */
+export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null, userRole: string): Promise<number> => {
+  if (userMachineIds === null) {
+    // Admin/flying squad - return total count
+    return await prisma.job.count();
+  }
+
+  // Special handling for paperstore users - they can see all jobs
+  if (userRole.includes('paperstore')) {
+    return await prisma.job.count();
+  }
+
+  // For other users, get the filtered count using the same logic as getFilteredJobNumbers
+  const [jobs, jobPlannings] = await Promise.all([
+    prisma.job.findMany({ select: { nrcJobNo: true, machineId: true, jobDemand: true } }),
+    prisma.jobPlanning.findMany({
+      select: { nrcJobNo: true, steps: { select: { machineDetails: true, stepNo: true, stepName: true } } }
+    })
+  ]);
+
+  const jobLevelAccessible = jobs
+    .filter(j => (j.machineId && userMachineIds.includes(j.machineId)) || j.jobDemand === 'high')
+    .map(j => j.nrcJobNo);
+
+  const planningLevelAccessible = jobPlannings
+    .filter(p => p.steps.some(s => {
+      // High-demand grants role-based visibility regardless of machine
+      const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
+      if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
+      
+      // Role-based visibility: If step matches user role AND has machine assignment, require machine match
+      if (isStepForUserRole(s.stepName, userRole)) {
+        const stepMachineIds = parseMachineDetails(s.machineDetails);
+        if (stepMachineIds.length > 0) {
+          return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
+        }
+        // If no machine details, allow access (for backward compatibility)
+        return true;
+      }
+      
+      // Machine-based visibility: If step has machine assignment, require machine match
+      const stepMachineIds = parseMachineDetails(s.machineDetails);
+      if (stepMachineIds.length > 0) {
+        return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
+      }
+      
+      return false;
+    }))
+    .map(p => p.nrcJobNo);
+
+  const set = new Set<string>([...jobLevelAccessible, ...planningLevelAccessible]);
+  return set.size;
 };

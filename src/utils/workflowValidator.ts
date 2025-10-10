@@ -362,6 +362,13 @@ export const checkJobReadyForCompletion = async (nrcJobNo: string): Promise<{
       include: {
         steps: {
           include: {
+            paperStore: true,
+            printingDetails: true,
+            corrugation: true,
+            flutelam: true,
+            punching: true,
+            sideFlapPasting: true,
+            qualityDept: true,
             dispatchProcess: true
           }
         }
@@ -470,14 +477,14 @@ export const autoCompleteJobIfReady = async (nrcJobNo: string, userId?: string):
         purchaseOrderDetails: purchaseOrder ? JSON.parse(JSON.stringify(purchaseOrder)) : null,
         allSteps: jobPlanning.steps,
         allStepDetails: {
-          paperStore: jobPlanning.steps.map((s: any) => s.paperStore).filter(Boolean),
-          printingDetails: jobPlanning.steps.map((s: any) => s.printingDetails).filter(Boolean),
-          corrugation: jobPlanning.steps.map((s: any) => s.corrugation).filter(Boolean),
-          flutelam: jobPlanning.steps.map((s: any) => s.flutelam).filter(Boolean),
-          punching: jobPlanning.steps.map((s: any) => s.punching).filter(Boolean),
-          sideFlapPasting: jobPlanning.steps.map((s: any) => s.sideFlapPasting).filter(Boolean),
-          qualityDept: jobPlanning.steps.map((s: any) => s.qualityDept).filter(Boolean),
-          dispatchProcess: jobPlanning.steps.map((s: any) => s.dispatchProcess).filter(Boolean)
+          paperStore: jobPlanning.steps.filter((s: any) => s.paperStore).map((s: any) => s.paperStore),
+          printingDetails: jobPlanning.steps.filter((s: any) => s.printingDetails).map((s: any) => s.printingDetails),
+          corrugation: jobPlanning.steps.filter((s: any) => s.corrugation).map((s: any) => s.corrugation),
+          flutelam: jobPlanning.steps.filter((s: any) => s.flutelam).map((s: any) => s.flutelam),
+          punching: jobPlanning.steps.filter((s: any) => s.punching).map((s: any) => s.punching),
+          sideFlapPasting: jobPlanning.steps.filter((s: any) => s.sideFlapPasting).map((s: any) => s.sideFlapPasting),
+          qualityDept: jobPlanning.steps.filter((s: any) => s.qualityDept).map((s: any) => s.qualityDept),
+          dispatchProcess: jobPlanning.steps.filter((s: any) => s.dispatchProcess).map((s: any) => s.dispatchProcess)
         },
         completedBy: userId || 'system',
         totalDuration,

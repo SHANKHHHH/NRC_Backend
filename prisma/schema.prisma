@@ -23,6 +23,7 @@ model User {
   jobs           Job[]           @relation("UserJobs")
   purchaseOrders PurchaseOrder[] @relation("UserPurchaseOrders")
   userMachines   UserMachine[]   @relation("UserMachines")
+  jobStepMachines JobStepMachine[] @relation("UserJobStepMachines")
 }
 
 model Job {
@@ -81,6 +82,7 @@ model Job {
   purchaseOrders                PurchaseOrder[]                @relation("JobToPurchaseOrders")
   qualityDepts                  QualityDept[]                  @relation("JobToQualityDept")
   sideFlapPastings              SideFlapPasting[]              @relation("JobToSideFlapPasting")
+  jobStepMachines               JobStepMachine[]               @relation("JobJobStepMachines")
 }
 
 model Machine {
@@ -99,6 +101,7 @@ model Machine {
   jobs        Job[]
   userMachines UserMachine[] @relation("MachineUsers")
   purchaseOrderMachines PurchaseOrderMachine[] @relation("PurchaseOrderMachines")
+  jobStepMachines JobStepMachine[] @relation("MachineJobSteps")
 }
 
 model ActivityLog {
@@ -238,6 +241,7 @@ model PurchaseOrder {
   job                   Job?                @relation("JobToPurchaseOrders", fields: [jobNrcJobNo], references: [nrcJobNo])
   user                  User?               @relation("UserPurchaseOrders", fields: [userId], references: [id])
   purchaseOrderMachines PurchaseOrderMachine[] @relation("PurchaseOrderMachines")
+  jobPlannings          JobPlanning[]       @relation("PurchaseOrderJobPlannings")
 }
 
 model PaperStore {
@@ -258,6 +262,9 @@ model PaperStore {
   job                 Job                  @relation("JobToPaperStore", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPaperStore")
+  holdRemark          String?
+  completeRemark      String?
+  remarks             String?
 }
 
 model ProductionPlanning {
@@ -305,6 +312,9 @@ model PrintingDetails {
   job                 Job                  @relation("JobToPrintingDetails", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPrintingDetails")
+  holdRemark          String?
+  completeRemark      String?
+  remarks             String?
 }
 
 model Corrugation {
@@ -327,6 +337,8 @@ model Corrugation {
   job                 Job                  @relation("JobToCorrugation", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToCorrugation")
+  holdRemark          String?
+  completeRemark      String?
 }
 
 model FluteLaminateBoardConversion {
@@ -346,6 +358,9 @@ model FluteLaminateBoardConversion {
   job                 Job                  @relation("JobToFluteLaminateBoardConversion", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToFluteLaminateBoardConversion")
+  holdRemark          String?
+  completeRemark      String?
+  remarks             String?
 }
 
 model Punching {
@@ -366,6 +381,8 @@ model Punching {
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPunching")
   job                 Job                  @relation("JobToPunching", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
+  holdRemark          String?
+  completeRemark      String?
 }
 
 model SideFlapPasting {
@@ -386,6 +403,8 @@ model SideFlapPasting {
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToSideFlapPasting")
   job                 Job                  @relation("JobToSideFlapPasting", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
+  holdRemark          String?
+  completeRemark      String?
 }
 
 model QualityDept {
@@ -435,12 +454,14 @@ model DieCutting {
 }
 
 model JobPlanning {
-  jobPlanId Int       @id @default(autoincrement())
-  nrcJobNo  String
-  jobDemand JobDemand
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  steps     JobStep[]
+  jobPlanId        Int       @id @default(autoincrement())
+  nrcJobNo         String
+  purchaseOrderId  Int?      // Link to specific Purchase Order
+  jobDemand        JobDemand
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  steps            JobStep[]
+  purchaseOrder    PurchaseOrder? @relation("PurchaseOrderJobPlannings", fields: [purchaseOrderId], references: [id])
 }
 
 model JobStep {
@@ -464,6 +485,72 @@ model JobStep {
   punching        Punching?
   qualityDept     QualityDept?
   sideFlapPasting SideFlapPasting?
+  jobStepMachines JobStepMachine[] @relation("JobStepMachines")
+}
+
+model JobStepMachine {
+  id          String   @id @default(cuid())
+  jobStepId   Int
+  nrcJobNo    String?  // Direct reference to job
+  machineId   String
+  stepNo      Int?     // Step number (1=PaperStore, 2=Printing, etc.)
+  status      String   @default("available") // 'available', 'in_progress', 'hold', 'stop', 'completed'
+  startedAt   DateTime?
+  completedAt DateTime?
+  userId      String?
+  
+  // Individual form fields for each step type
+  // Common fields
+  quantity    Int?
+  remarks     String?
+  
+  // PaperStore fields (step 1)
+  requiredQty Int?
+  availableQty Int?
+  sheetSize   String?
+  gsm         Int?
+  
+  // Printing fields (step 2)
+  colorsUsed     String?
+  processColors  String?
+  specialColors  String?
+  inksUsed       String?
+  coatingType    String?
+  quantityOK     Int?
+  
+  // Corrugation fields (step 3)
+  fluteType   String?
+  gsm1        Int?
+  gsm2        Int?
+  size        String?
+  sheetsCount Int?
+  
+  // Flute Lamination fields (step 4)
+  okQuantity  Int?
+  
+  // Punching/Die Cutting fields (step 5,6)
+  dieUsed     String?
+  
+  // Quality Control fields (step 8)
+  rejectedQty Int?
+  
+  // Legacy formData for backward compatibility
+  formData    Json?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  jobStep     JobStep  @relation("JobStepMachines", fields: [jobStepId], references: [id], onDelete: Cascade)
+  machine     Machine  @relation("MachineJobSteps", fields: [machineId], references: [id])
+  user        User?    @relation("UserJobStepMachines", fields: [userId], references: [id])
+  job         Job?     @relation("JobJobStepMachines", fields: [nrcJobNo], references: [nrcJobNo])
+
+  @@unique([jobStepId, machineId])
+  @@index([status])
+  @@index([userId])
+  @@index([nrcJobNo])
+  @@index([stepNo])
+  @@index([machineId])
 }
 
 model CompletedJob {

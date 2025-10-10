@@ -9,59 +9,79 @@ import { updateJobMachineDetailsFlag } from '../utils/machineDetailsTracker';
 import { getFilteredJobNumbers } from '../middleware/machineAccess';
 
 export const createJobPlanning = async (req: Request, res: Response) => {
-  const { nrcJobNo, jobDemand, steps } = req.body;
+  const { nrcJobNo, jobDemand, steps, purchaseOrderId } = req.body;
   if (!nrcJobNo || !jobDemand || !Array.isArray(steps) || steps.length === 0) {
     throw new AppError('nrcJobNo, jobDemand, and steps are required', 400);
   }
 
   // Debug: Log the incoming data
   console.log('Creating job planning with steps:', JSON.stringify(steps, null, 2));
-
-
-  const jobPlanning = await prisma.jobPlanning.create({
-    data: {
-      nrcJobNo,
-      jobDemand,
-      steps: {
-        create: steps.map((step: any) => ({
-          stepNo: step.stepNo,
-          stepName: step.stepName,
-          status: 'planned', // All new steps start as planned
-          machineDetails: step.machineDetails ? step.machineDetails.map((machine: any) => ({
-            machineId: machine.machineId || machine.id,
-            unit: machine.unit,
-            machineCode: machine.machineCode,
-            machineType: machine.machineType
-          })) : [],
-        })),
-      },
-    },
-    include: { steps: true },
+  
+  // Debug: Log machine details specifically
+  steps.forEach((step: any, index: number) => {
+    console.log(`Step ${index + 1} (${step.stepName}) machineDetails:`, JSON.stringify(step.machineDetails, null, 2));
+    if (step.machineDetails && step.machineDetails.length > 0) {
+      step.machineDetails.forEach((machine: any, machineIndex: number) => {
+        console.log(`  Machine ${machineIndex + 1}:`, JSON.stringify(machine, null, 2));
+        console.log(`  Machine ${machineIndex + 1} keys:`, Object.keys(machine));
+        console.log(`  Machine ${machineIndex + 1} machineId:`, machine.machineId);
+        console.log(`  Machine ${machineIndex + 1} unit:`, machine.unit);
+      });
+    }
   });
 
-  // Immediately update the job's machine details flag based on initial steps
   try {
-    await updateJobMachineDetailsFlag(nrcJobNo);
-  } catch (e) {
-    console.warn('Warning: could not update isMachineDetailsFilled on planning create:', e);
-  }
+    // Debug: Log the data being passed to Prisma
+    const stepsData = steps.map((step: any) => ({
+      stepNo: step.stepNo,
+      stepName: step.stepName,
+      status: 'planned' as const, // All new steps start as planned
+      machineDetails: step.machineDetails || [],
+    }));
+    
+    console.log('Steps data for Prisma:', JSON.stringify(stepsData, null, 2));
+    
+    const jobPlanning = await prisma.jobPlanning.create({
+      data: {
+        nrcJobNo,
+        jobDemand,
+        purchaseOrderId: purchaseOrderId ? parseInt(purchaseOrderId) : null,
+        steps: {
+          create: stepsData,
+        },
+      },
+      include: { 
+        steps: true
+      },
+    });
 
-// Log the job planning creation action
-  if (req.user?.userId) {
-    await logUserActionWithResource(
-      req.user.userId,
-      ActionTypes.JOBPLANNING_CREATED,
-      `Created job planning for job: ${nrcJobNo} with demand: ${jobDemand}`,
-      'JobPlanning',
-      jobPlanning.jobPlanId.toString()
-    );
-  }
+    // Immediately update the job's machine details flag based on initial steps
+    try {
+      await updateJobMachineDetailsFlag(nrcJobNo);
+    } catch (e) {
+      console.warn('Warning: could not update isMachineDetailsFilled on planning create:', e);
+    }
 
-  res.status(201).json({
-    success: true,
-    data: jobPlanning,
-    message: 'Job planning created successfully',
-  });
+    // Log the job planning creation action
+    if (req.user?.userId) {
+      await logUserActionWithResource(
+        req.user.userId,
+        ActionTypes.JOBPLANNING_CREATED,
+        `Created job planning for job: ${nrcJobNo} with demand: ${jobDemand}`,
+        'JobPlanning',
+        jobPlanning.jobPlanId.toString()
+      );
+    }
+
+    res.status(201).json({
+      success: true,
+      data: jobPlanning,
+      message: 'Job planning created successfully',
+    });
+  } catch (error) {
+    console.error('Error creating job planning:', error);
+    throw new AppError('Failed to create job planning', 500);
+  }
 };
 
 // Helper to serialize a Machine object for JSON
@@ -77,13 +97,52 @@ function serializeMachine(machine: Machine) {
 export const getAllJobPlannings = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   
+  
   // Get job numbers that are accessible to the user based on machine assignments
   const userRole = req.user?.role || '';
   const accessibleJobNumbers = await getFilteredJobNumbers(userMachineIds || null, userRole);
   
-  // Get all job plannings for accessible jobs
-  const allJobPlannings = await prisma.jobPlanning.findMany({
-    where: { nrcJobNo: { in: accessibleJobNumbers } },
+  // Bypass branch: Roles that should see ALL plannings without deduplication
+  // Admin, Planner, Flying Squad, QC Manager, PaperStore, Production Head need to see all versions
+  const bypassDeduplicationRoles = ['admin', 'planner', 'flyingsquad', 'qc_manager', 'paperstore', 'production_head'];
+  const shouldBypassDeduplication = userMachineIds === null || 
+    bypassDeduplicationRoles.some(role => userRole.includes(role));
+  
+  if (shouldBypassDeduplication) {
+    const allPlanningsUnfiltered = await prisma.jobPlanning.findMany({
+      include: {
+        steps: {
+          select: {
+            id: true,
+            stepNo: true,
+            stepName: true,
+            machineDetails: true,
+            status: true,
+            startDate: true,
+            endDate: true,
+            user: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: { stepNo: 'asc' }
+        }
+      },
+      orderBy: { jobPlanId: 'desc' },
+    });
+    return res.status(200).json({
+      success: true,
+      count: allPlanningsUnfiltered.length,
+      data: allPlanningsUnfiltered,
+    });
+  }
+  
+  // If there are too many job numbers, limit the query to prevent performance issues
+  const limitedJobNumbers = accessibleJobNumbers.slice(0, 1000); // Limit to 1000 jobs max
+  
+  // Get ALL job plannings for accessible jobs (NO deduplication)
+  // Production roles with machines should see ALL accessible plannings, not just the latest
+  const jobPlannings = await prisma.jobPlanning.findMany({
+    where: { nrcJobNo: { in: limitedJobNumbers } },
     include: {
       steps: {
         select: {
@@ -103,25 +162,6 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     },
     orderBy: { jobPlanId: 'desc' },
   });
-
-  // Group by job number and select the best planning for each job
-  const jobPlanningMap = new Map();
-  allJobPlannings.forEach(planning => {
-    const nrcJobNo = planning.nrcJobNo;
-    if (!jobPlanningMap.has(nrcJobNo)) {
-      jobPlanningMap.set(nrcJobNo, planning);
-    } else {
-      const existing = jobPlanningMap.get(nrcJobNo);
-      // Prioritize high-demand plannings, then most recent
-      if (planning.jobDemand === 'high' && existing.jobDemand !== 'high') {
-        jobPlanningMap.set(nrcJobNo, planning);
-      } else if (planning.jobDemand === existing.jobDemand && planning.createdAt > existing.createdAt) {
-        jobPlanningMap.set(nrcJobNo, planning);
-      }
-    }
-  });
-
-  const jobPlannings = Array.from(jobPlanningMap.values());
 
   // Extract machine IDs more efficiently
   const machineIds = new Set<string>();
@@ -216,6 +256,37 @@ export const getJobPlanningByNrcJobNo = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error in getJobPlanningByNrcJobNo:', error);
     throw new AppError('Failed to get job planning data', 500);
+  }
+};
+
+// Get job planning by Purchase Order ID
+export const getJobPlanningByPurchaseOrderId = async (req: Request, res: Response) => {
+  const { purchaseOrderId } = req.params;
+  
+  try {
+    const jobPlannings = await prisma.jobPlanning.findMany({
+      where: {
+        purchaseOrderId: parseInt(purchaseOrderId)
+      },
+      include: {
+        steps: {
+          orderBy: { stepNo: 'asc' }
+        }
+      }
+    });
+    
+    if (!jobPlannings || jobPlannings.length === 0) {
+      throw new AppError('No job planning found for this Purchase Order', 404);
+    }
+    
+    res.status(200).json({
+      success: true,
+      count: jobPlannings.length,
+      data: jobPlannings
+    });
+  } catch (error) {
+    console.error('Error in getJobPlanningByPurchaseOrderId:', error);
+    throw new AppError('Failed to get job planning by PO ID', 500);
   }
 };
 
@@ -571,9 +642,11 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   const formDataFields = ['quantity', 'oprName', 'size', 'passQuantity', 'checkedBy', 'noOfBoxes', 'dispatchNo', 'remarks'];
   const hasFormData = formDataFields.some(field => req.body[field] !== undefined);
   
-  if (hasFormData) {
-    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Processing form data for step: ${step.stepName}`);
+  // Create individual step records for status changes (start/stop) or when form data is present
+  if (hasFormData || req.body.status === 'start' || req.body.status === 'stop') {
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Processing step data for step: ${step.stepName}`);
     console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Form data received:`, req.body);
+    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Status: ${req.body.status}, Has form data: ${hasFormData}`);
     
     try {
       // Store form data in the appropriate step-specific model based on step name
@@ -1183,6 +1256,11 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
   const machineType = machineInfo?.machineType || null;
   
   console.log(`🔍 [storeStepFormData] JobStep user: ${operatorName}, Machine: ${machineCode}`);
+  
+  // Calculate shift for auto-population
+  const { calculateShift } = await import('../utils/autoPopulateFields');
+  const currentDate = new Date();
+  const calculatedShift = calculateShift(currentDate);
   
   // Determine step-specific status based on JobStep status
   let stepStatus: 'in_progress' | 'accept';

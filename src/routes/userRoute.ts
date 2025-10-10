@@ -6,7 +6,8 @@ import {
   getUserById,
   addRoleToUser,
   removeRoleFromUser,
-  setUserRoles
+  setUserRoles,
+  getUserMachines
 } from '../controllers/userController';
 
 const router = Router();
@@ -16,6 +17,9 @@ router.use(authenticateToken);
 
 // Get all users with parsed roles
 router.get('/', asyncHandler(getAllUsers));
+
+// Get current user's machines (MUST be before /:id to avoid route conflict)
+router.get('-machines', asyncHandler(getUserMachines));
 
 // Get user by ID with parsed roles
 router.get('/:id', asyncHandler(getUserById));

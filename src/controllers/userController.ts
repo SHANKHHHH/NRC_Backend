@@ -335,3 +335,52 @@ export const setUserRoles = async (req: Request, res: Response) => {
     });
   }
 };
+
+/**
+ * Get current user's assigned machines
+ */
+export const getUserMachines = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      throw new AppError('Authentication required', 401);
+    }
+
+    const userMachines = await prisma.userMachine.findMany({
+      where: {
+        userId: userId
+      },
+      select: {
+        id: true,
+        machineId: true,
+        isActive: true,
+        createdAt: true,
+        machine: {
+          select: {
+            machineCode: true,
+            machineType: true,
+            unit: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.status(200).json({
+      success: true,
+      count: userMachines.length,
+      data: userMachines,
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    console.error('Error fetching user machines:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user machines',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};

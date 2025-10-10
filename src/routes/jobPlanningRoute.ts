@@ -9,7 +9,7 @@ import {
 } from '../middleware/flyingSquadPermissions';
 import { addMachineFiltering } from '../middleware';
 import { validateStepTransition, autoCorrectStateInconsistencies } from '../middleware/stepValidation';
-import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps, updateJobStepById } from '../controllers/jobPlanningController';
+import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, getJobPlanningByPurchaseOrderId, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps, updateJobStepById } from '../controllers/jobPlanningController';
 
 const router = Router();
 
@@ -40,6 +40,9 @@ router.get('/:nrcJobNo/steps', authenticateToken, asyncHandler(getStepsByNrcJobN
 
 // Get a specific step for a given nrcJobNo and stepNo
 router.get('/:nrcJobNo/steps/:stepNo', authenticateToken, asyncHandler(getStepByNrcJobNoAndStepNo));
+
+// Get job planning by Purchase Order ID (must be BEFORE /:nrcJobNo)
+router.get('/po/:purchaseOrderId', authenticateToken, asyncHandler(getJobPlanningByPurchaseOrderId));
 
 // Unified update: status and/or machineDetails in one call
 router.put('/:nrcJobNo/steps/:stepNo', 

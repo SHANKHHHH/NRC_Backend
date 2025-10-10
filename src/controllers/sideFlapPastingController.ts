@@ -5,6 +5,7 @@ import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 import { validateWorkflowStep } from '../utils/workflowValidator';
 import { checkJobStepMachineAccess, getFilteredJobStepIds } from '../middleware/machineAccess';
 import { RoleManager } from '../utils/roleUtils';
+import { calculateShift } from '../utils/autoPopulateFields';
 
 export const createSideFlapPasting = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
@@ -81,7 +82,33 @@ export const getSideFlapPastingByNrcJobNo = async (req: Request, res: Response) 
   const { nrcJobNo } = req.params;
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const sideFlaps = await prisma.sideFlapPasting.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
-  res.status(200).json({ success: true, data: sideFlaps });
+  
+  // Auto-populate missing fields for each side flap pasting record
+  const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
+  const populatedSideFlaps = await Promise.all(
+    sideFlaps.map(async (sf) => {
+      // Get jobStepId to find the job step
+      const jobStep = await prisma.jobStep.findFirst({
+        where: { 
+          jobPlanning: {
+            nrcJobNo: decodedNrcJobNo
+          },
+          stepName: 'SideFlapPasting'
+        }
+      });
+      
+      if (jobStep) {
+        return await autoPopulateStepFields(sf, jobStep.id, req.user?.userId, decodedNrcJobNo);
+      }
+      return sf;
+    })
+  );
+  
+  // Add editability information for each side flap pasting record
+  const { wrapWithEditability } = await import('../utils/fieldEditability');
+  const dataWithEditability = populatedSideFlaps.map(sf => wrapWithEditability(sf));
+  
+  res.status(200).json({ success: true, data: dataWithEditability });
 };
 
 
@@ -125,27 +152,36 @@ export const updateSideFlapPasting = async (req: Request, res: Response) => {
     }
 
     // Enforce high-demand bypass or machine access
-    if (req.user?.userId && req.user?.role) {
-      const jobStep = await prisma.jobStep.findFirst({
-        where: { sideFlapPasting: { id: existingSideFlap.id } },
-        select: { id: true, stepName: true }
-      });
-      if (jobStep) {
-        const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
-        const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
-        if (!bypass) {
-          const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
-          if (!hasAccess) {
-            throw new AppError('Access denied: You do not have access to machines for this step', 403);
-          }
+    const jobStep = await prisma.jobStep.findFirst({
+      where: { sideFlapPasting: { id: existingSideFlap.id } },
+      select: { id: true, stepName: true }
+    });
+    
+    if (req.user?.userId && req.user?.role && jobStep) {
+      const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+      const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+      if (!bypass) {
+        const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+        if (!hasAccess) {
+          throw new AppError('Access denied: You do not have access to machines for this step', 403);
         }
       }
     }
 
+    // Filter out non-editable fields (fields that already have data)
+    const { filterEditableFields } = await import('../utils/fieldEditability');
+    const editableData = filterEditableFields(existingSideFlap, req.body);
+
+    // Auto-populate common step fields (date, shift, operator, machine)
+    const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
+    const populatedData = jobStep 
+      ? await autoPopulateStepFields(editableData, jobStep.id, req.user?.userId, decodedNrcJobNo)
+      : editableData;
+
     // Step 2: Update using its unique `id`
     const sideFlapPasting = await prisma.sideFlapPasting.update({
       where: { id: existingSideFlap.id },
-      data: req.body,
+      data: populatedData,
     });
 
   // Auto-update job's machine details flag if machineNo field present
@@ -195,6 +231,56 @@ export const updateSideFlapPasting = async (req: Request, res: Response) => {
   }
 };
 
+export const updateSideFlapPastingStatus = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+  const { status, remarks } = req.body;
+  
+  // Validate status
+  if (!['reject', 'accept', 'hold', 'in_progress'].includes(status)) {
+    throw new AppError('Invalid status. Must be one of: reject, accept, hold, in_progress', 400);
+  }
+  
+  // Find the SideFlapPasting by jobNrcJobNo
+  const existing = await prisma.sideFlapPasting.findFirst({
+    where: { jobNrcJobNo: nrcJobNo },
+  });
+  
+  if (!existing) {
+    return res.status(404).json({ success: false, message: 'SideFlapPasting not found' });
+  }
+  
+  // Prepare update data
+  const updateData: any = { status: status as any };
+  
+  // Auto-populate date and time for status changes
+  const currentDate = new Date();
+  updateData.date = currentDate;
+  updateData.shift = calculateShift(currentDate);
+  
+  // If status is hold or in_progress, update remarks
+  if (remarks && (status === 'hold' || status === 'in_progress')) {
+    updateData.remarks = remarks;
+  }
+  
+  // Update the status
+  const updated = await prisma.sideFlapPasting.update({
+    where: { id: existing.id },
+    data: updateData,
+  });
+  
+  // Log action
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated SideFlapPasting status to ${status} for jobNrcJobNo: ${nrcJobNo}${remarks ? ` with remarks: ${remarks}` : ''}`,
+      'SideFlapPasting',
+      nrcJobNo
+    );
+  }
+  
+  res.status(200).json({ success: true, data: updated, message: 'SideFlapPasting status updated' });
+};
 
 export const deleteSideFlapPasting = async (req: Request, res: Response) => {
   const { id } = req.params;
