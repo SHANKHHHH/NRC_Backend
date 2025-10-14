@@ -325,8 +325,15 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
 };
 
 
-// Complete work on a specific machine
+// Complete work on a specific machine - ONLY updates formData, triggers completion check
 export const completeWorkOnMachine = async (req: Request, res: Response) => {
+  console.log('\n\n✅ ============ COMPLETE WORK ON MACHINE CALLED ============');
+  console.log('Job:', req.params.nrcJobNo);
+  console.log('Step:', req.params.stepNo);
+  console.log('Machine:', req.params.machineId);
+  console.log('FormData:', JSON.stringify(req.body.formData, null, 2));
+  console.log('============================================================\n');
+  
   try {
     const { nrcJobNo, stepNo, machineId } = req.params;
     const userId = req.user?.userId;
@@ -336,8 +343,11 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
       throw new AppError('User not authenticated', 401);
     }
 
+    if (!formData || Object.keys(formData).length === 0) {
+      throw new AppError('Form data is required', 400);
+    }
+
     // Check if this is an urgent job
-    // Check job.jobDemand first (existing functionality - UNCHANGED)
     const job = await prisma.job.findFirst({
       where: { nrcJobNo: nrcJobNo },
       select: { jobDemand: true }
@@ -345,8 +355,6 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
 
     let isUrgentJob = job?.jobDemand === 'high';
     
-    // Fallback: If no Job record, check jobPlanning.jobDemand
-    // This only adds support for jobPlanning-only records without affecting existing jobs
     if (!job) {
       const jobPlanning = await prisma.jobPlanning.findFirst({
         where: { nrcJobNo: nrcJobNo },
@@ -355,7 +363,6 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
       isUrgentJob = jobPlanning?.jobDemand === 'high';
     }
 
-    // For urgent jobs, skip machine access verification
     // For regular jobs, verify user has access to this machine
     if (!isUrgentJob) {
       const userMachine = await prisma.userMachine.findFirst({
@@ -389,75 +396,23 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
     const jobStepMachine = await (prisma as any).jobStepMachine.findFirst({
       where: {
         jobStepId: jobStep.id,
-        machineId: machineId,
-        userId: userId
+        machineId: machineId
       }
     });
 
     if (!jobStepMachine) {
-      throw new AppError('Machine work not found or not assigned to user', 404);
+      throw new AppError('Machine work not found', 404);
     }
 
-    if (jobStepMachine.status !== 'stop') {
-      throw new AppError('Machine must be in stop status to complete', 400);
-    }
-
-    // Update form data to individual fields AND formData for backward compatibility
-    const updateData: any = {
-      formData: formData || jobStepMachine.formData,
-      updatedAt: new Date()
-    };
-
-    // Map form data to individual fields based on step type
-    const stepNoInt = parseInt(stepNo);
-    if (stepNoInt === 1) { // PaperStore
-      if (formData?.quantity) updateData.quantity = formData.quantity;
-      if (formData?.requiredQty) updateData.requiredQty = formData.requiredQty;
-      if (formData?.availableQty) updateData.availableQty = formData.availableQty;
-      if (formData?.sheetSize) updateData.sheetSize = formData.sheetSize;
-      if (formData?.gsm) updateData.gsm = formData.gsm;
-      if (formData?.remarks) updateData.remarks = formData.remarks;
-    } else if (stepNoInt === 2) { // Printing
-      if (formData?.quantity) updateData.quantity = formData.quantity;
-      if (formData?.colors || formData?.colorsUsed) updateData.colorsUsed = formData.colors || formData.colorsUsed;
-      if (formData?.processColors) updateData.processColors = formData.processColors;
-      if (formData?.specialColors) updateData.specialColors = formData.specialColors;
-      if (formData?.inksUsed) updateData.inksUsed = formData.inksUsed;
-      if (formData?.coatingType) updateData.coatingType = formData.coatingType;
-      if (formData?.quantityOK || formData?.finalQuantity) updateData.quantityOK = formData.quantityOK || formData.finalQuantity;
-      if (formData?.remarks) updateData.remarks = formData.remarks;
-    } else if (stepNoInt === 3) { // Corrugation
-      if (formData?.quantity) updateData.quantity = formData.quantity;
-      if (formData?.fluteType) updateData.fluteType = formData.fluteType;
-      if (formData?.gsm1) updateData.gsm1 = formData.gsm1;
-      if (formData?.gsm2) updateData.gsm2 = formData.gsm2;
-      if (formData?.size) updateData.size = formData.size;
-      if (formData?.sheetsCount) updateData.sheetsCount = formData.sheetsCount;
-      if (formData?.remarks) updateData.remarks = formData.remarks;
-    } else if (stepNoInt === 4) { // Flute Lamination
-      if (formData?.quantity) updateData.quantity = formData.quantity;
-      if (formData?.okQuantity || formData?.finalQuantity) updateData.okQuantity = formData.okQuantity || formData.finalQuantity;
-      if (formData?.remarks) updateData.remarks = formData.remarks;
-    } else if (stepNoInt === 5 || stepNoInt === 6) { // Punching/Die Cutting
-      if (formData?.quantity) updateData.quantity = formData.quantity;
-      if (formData?.dieUsed) updateData.dieUsed = formData.dieUsed;
-      if (formData?.okQuantity || formData?.finalQuantity) updateData.okQuantity = formData.okQuantity || formData.finalQuantity;
-      if (formData?.remarks) updateData.remarks = formData.remarks;
-    } else if (stepNoInt === 7) { // Flap Pasting
-      if (formData?.quantity || formData?.finalQuantity) updateData.quantity = formData.quantity || formData.finalQuantity;
-      if (formData?.remarks) updateData.remarks = formData.remarks;
-    } else if (stepNoInt === 8) { // Quality Control
-      if (formData?.quantity) updateData.quantity = formData.quantity;
-      if (formData?.rejectedQty) updateData.rejectedQty = formData.rejectedQty;
-      if (formData?.remarks) updateData.remarks = formData.remarks;
-    } else if (stepNoInt === 9) { // Dispatch
-      if (formData?.quantity || formData?.finalQuantity) updateData.quantity = formData.quantity || formData.finalQuantity;
-      if (formData?.remarks) updateData.remarks = formData.remarks;
-    }
+    // ONLY UPDATE FORMDATA - NO STATUS CHANGE
+    console.log(`📝 Updating formData for machine ${machineId} - NO status change`);
 
     const updatedJobStepMachine = await (prisma as any).jobStepMachine.update({
       where: { id: jobStepMachine.id },
-      data: updateData,
+      data: {
+        formData: formData,
+        updatedAt: new Date()
+      },
       include: {
         machine: true,
         user: {
@@ -466,53 +421,105 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
       }
     });
 
-    // Check if all machines are completed before updating individual step
+    console.log(`✅ FormData updated successfully, current status: ${updatedJobStepMachine.status}`);
+
+    // Get all machines for this step
     const allMachines = await (prisma as any).jobStepMachine.findMany({
       where: { jobStepId: jobStep.id }
     });
     
-    console.log(`🔍 [COMPLETE DEBUG] Found ${allMachines.length} total JobStepMachine entries for this step`);
-    allMachines.forEach((m: any, idx: number) => {
-      console.log(`🔍 [COMPLETE DEBUG] Machine ${idx + 1}: status = ${m.status}, machineId = ${m.machineId}`);
-    });
-    
-    const allMachinesCompleted = allMachines.every((m: any) => m.status === 'stop' || m.status === 'completed');
-    console.log(`🔍 [COMPLETE DEBUG] allMachinesCompleted check result: ${allMachinesCompleted}`);
-    
-    // Only update individual step table if ALL machines are completed
-    if (allMachinesCompleted) {
-      try {
-        console.log(`✅ ALL MACHINES COMPLETED - Updating individual step table to 'accept'`);
-        await _updateIndividualStepWithFormData(stepNoInt, nrcJobNo, formData);
-        console.log(`✅ Individual step table updated successfully`);
-      } catch (error) {
-        console.error(`🔍 [DEBUG] Error in _updateIndividualStepWithFormData:`, error);
-        throw error;
-      }
-    } else {
-      console.log(`⏸️ NOT ALL MACHINES COMPLETED - Individual step will remain unchanged`);
-      console.log(`   Only ${allMachines.filter((m: any) => m.status === 'stop' || m.status === 'completed').length}/${allMachines.length} machines are done`);
-    }
+    // Check if step completion criteria is met
+    const stepNoInt = parseInt(stepNo);
+    const completionCheck = await _checkStepCompletionCriteria(
+      jobStep.id,
+      stepNoInt,
+      nrcJobNo,
+      allMachines
+    );
 
-    // Complete button only updates form data, does not change step status
+    console.log(`\n🎯 Completion check result:`, completionCheck);
+
+    // If step should be completed, update everything
+    if (completionCheck.shouldComplete) {
+      console.log(`\n🎉 STEP COMPLETION TRIGGERED!`);
+      console.log(`Reason: ${completionCheck.reason}`);
+      
+      // Create combined formData - merge ALL machines' formData
+      // This ensures we get all fields even if different machines filled different fields
+      const submittedMachines = allMachines.filter((m: any) => m.formData && Object.keys(m.formData).length > 0);
+      
+      const combinedFormData: any = {
+        quantity: completionCheck.totalOK, // ✅ Calculated total
+        wastage: completionCheck.totalWastage, // ✅ Calculated total
+        status: 'accept'
+      };
+      
+      // Merge all non-quantity fields from all machines
+      // Later machines' values will override earlier ones if there are conflicts
+      submittedMachines.forEach((m: any) => {
+        if (m.formData) {
+          Object.keys(m.formData).forEach(key => {
+            // Skip quantity/wastage fields (we use calculated totals)
+            const lowerKey = key.toLowerCase();
+            if (!lowerKey.includes('quantity') && 
+                !lowerKey.includes('wastage') && 
+                !lowerKey.includes('qty') &&
+                key !== 'Status' && 
+                key !== 'Start Time' && 
+                key !== 'End Time') {
+              combinedFormData[key] = m.formData[key];
+            }
+          });
+        }
+      });
+      
+      console.log(`📊 Combined formData from ${submittedMachines.length} machines:`, {
+        quantity: combinedFormData.quantity,
+        wastage: combinedFormData.wastage,
+        totalFields: Object.keys(combinedFormData).length,
+        status: combinedFormData.status
+      });
+      
+      // Update individual step table with status 'accept'
+      await _updateIndividualStepWithFormData(stepNoInt, nrcJobNo, combinedFormData, allMachines, jobStep.user || undefined, jobStep.id);
+      
+      // Update JobStep status to 'stop' and set endDate
+      await prisma.jobStep.update({
+        where: { id: jobStep.id },
+        data: {
+          status: 'stop',
+          endDate: new Date()
+        }
+      });
+      
+      console.log(`✅ Step ${stepNoInt} completed successfully!`);
+      console.log(`   - JobStep status: 'stop'`);
+      console.log(`   - Individual step status: 'accept'`);
+      console.log(`   - Total OK: ${completionCheck.totalOK}`);
+      console.log(`   - Total Wastage: ${completionCheck.totalWastage}`);
+    } else {
+      console.log(`⏳ Step not yet complete: ${completionCheck.reason}`);
+    }
 
     res.status(200).json({
       success: true,
-      message: 'Form data updated successfully',
+      message: 'Work data submitted successfully',
       data: {
         jobStepMachineId: updatedJobStepMachine.id,
         machineId: updatedJobStepMachine.machineId,
         machineCode: updatedJobStepMachine.machine.machineCode,
         status: updatedJobStepMachine.status,
-        updatedAt: updatedJobStepMachine.updatedAt
+        updatedAt: updatedJobStepMachine.updatedAt,
+        stepCompleted: completionCheck.shouldComplete,
+        completionReason: completionCheck.reason
       }
     });
 
   } catch (error) {
-    console.error('Error completing work on machine:', error);
+    console.error('❌ Error completing work on machine:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to complete work on machine',
+      message: 'Failed to submit work data',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
@@ -1047,22 +1054,21 @@ export const getAllHeldMachines = async (req: Request, res: Response) => {
                 });
                 break;
               case 5: // Punching
-              case 6: // Die Cutting
                 stepSpecificData = await prisma.punching.findFirst({
                   where: { jobNrcJobNo: nrcJobNo }
                 });
                 break;
-              case 7: // Flap Pasting
+              case 6: // Flap Pasting
                 stepSpecificData = await prisma.sideFlapPasting.findFirst({
                   where: { jobNrcJobNo: nrcJobNo }
                 });
                 break;
-              case 8: // Quality Control
+              case 7: // Quality Control
                 stepSpecificData = await prisma.qualityDept.findFirst({
                   where: { jobNrcJobNo: nrcJobNo }
                 });
                 break;
-              case 9: // Dispatch
+              case 8: // Dispatch
                 stepSpecificData = await prisma.dispatchProcess.findFirst({
                   where: { jobNrcJobNo: nrcJobNo }
                 });
@@ -1165,7 +1171,15 @@ export const getAllHeldMachines = async (req: Request, res: Response) => {
 };
 
 // Stop work on a specific machine
+// Stop work on a specific machine - Sets status to 'stop' and triggers completion check
 export const stopWorkOnMachine = async (req: Request, res: Response) => {
+  console.log('\n\n🛑 ============ STOP WORK ON MACHINE CALLED ============');
+  console.log('Job:', req.params.nrcJobNo);
+  console.log('Step:', req.params.stepNo);
+  console.log('Machine:', req.params.machineId);
+  console.log('FormData:', JSON.stringify(req.body.formData, null, 2));
+  console.log('===========================================================\n');
+  
   try {
     const { nrcJobNo, stepNo, machineId } = req.params;
     const userId = req.user?.userId;
@@ -1176,7 +1190,6 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Check if this is an urgent job
-    // Check job.jobDemand first (existing functionality - UNCHANGED)
     const job = await prisma.job.findFirst({
       where: { nrcJobNo: nrcJobNo },
       select: { jobDemand: true }
@@ -1184,8 +1197,6 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
 
     let isUrgentJob = job?.jobDemand === 'high';
     
-    // Fallback: If no Job record, check jobPlanning.jobDemand
-    // This only adds support for jobPlanning-only records without affecting existing jobs
     if (!job) {
       const jobPlanning = await prisma.jobPlanning.findFirst({
         where: { nrcJobNo: nrcJobNo },
@@ -1194,7 +1205,6 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
       isUrgentJob = jobPlanning?.jobDemand === 'high';
     }
 
-    // For urgent jobs, skip machine access verification
     // For regular jobs, verify user has access to this machine
     if (!isUrgentJob) {
       const userMachine = await prisma.userMachine.findFirst({
@@ -1236,19 +1246,20 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
       throw new AppError('Machine work not found', 404);
     }
 
-    // Check if machine is currently working or on hold (handle both 'busy' and 'in_progress' for backward compatibility)
-    if (jobStepMachine.status !== 'in_progress' && jobStepMachine.status !== 'hold' && jobStepMachine.status !== 'busy') {
-      throw new AppError('Machine is not currently working or on hold', 400);
+    // Allow stopping machines that are in_progress, hold, busy, OR available (never started)
+    // This allows users to mark unused machines as 'stop' to trigger step completion
+    if (jobStepMachine.status === 'stop') {
+      throw new AppError('Machine is already stopped', 400);
     }
 
-    // Update machine status to stop
-    let updatedJobStepMachine;
-    try {
-      updatedJobStepMachine = await (prisma as any).jobStepMachine.update({
+    console.log(`🛑 Stopping machine ${machineId} (current status: ${jobStepMachine.status}) - changing status to 'stop' ONLY (no data save)`);
+
+    // Update machine status to 'stop' - DO NOT save formData
+    // FormData is saved only via Complete Work button
+    const updatedJobStepMachine = await (prisma as any).jobStepMachine.update({
         where: { id: jobStepMachine.id },
         data: {
           status: 'stop',
-          formData: formData || jobStepMachine.formData,
           completedAt: new Date(),
           updatedAt: new Date()
         },
@@ -1259,45 +1270,27 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
           }
         }
       });
-    } catch (updateError) {
-      console.error(`❌ [STOP ERROR] Failed to update JobStepMachine ${jobStepMachine.id}:`, updateError);
-      throw new AppError(`Failed to update machine status: ${(updateError as Error).message}`, 500);
-    }
 
-    // Check if all machines for this step are finished (completed or stopped)
-    const allMachines = await (prisma as any).jobStepMachine.findMany({
-      where: { jobStepId: jobStep.id }
-    });
+    console.log(`✅ Machine status updated to 'stop' (formData NOT saved)`);
 
-    console.log(`🔍 [STOP DEBUG] Found ${allMachines.length} total JobStepMachine entries for this step`);
-    allMachines.forEach((m: any, idx: number) => {
-      console.log(`🔍 [STOP DEBUG] Machine ${idx + 1}: status = ${m.status}, machineId = ${m.machineId}`);
-    });
+    // Stop button does NOT trigger completion check
+    // Completion check only happens when Complete Work button saves formData
+    console.log(`ℹ️  Step completion will be checked when Complete Work is clicked`);
 
-    const allFinished = allMachines.every((m: any) => m.status === 'completed' || m.status === 'stop');
-    console.log(`🔍 [STOP DEBUG] allFinished check result: ${allFinished}`);
-    
-    if (allFinished) {
-      // Update the main job step status to 'stop'
+    // Update JobStep status to 'start' if this is the first machine to stop
+    // (JobStep should only go to 'stop' when step actually completes)
+    if (jobStep.status !== 'stop') {
       await prisma.jobStep.update({
         where: { id: jobStep.id },
         data: { 
-          status: 'stop',
-          endDate: new Date()
+          status: 'start'  // Keep as 'start' until step completes
         }
       });
-      
-      console.log(`🔍 [DEBUG] All machines finished, updated JobStep status to 'stop'`);
-      
-      // Don't update individual step status here - it will be updated when complete is called
-      // Individual step tables are populated with form data on completion, not on stop
-    } else {
-      console.log(`🔍 [DEBUG] Not all machines finished yet, JobStep status remains unchanged`);
     }
 
     res.status(200).json({
       success: true,
-      message: 'Work stopped on machine',
+      message: 'Machine stopped successfully',
       data: {
         jobStepMachineId: updatedJobStepMachine.id,
         machineId: updatedJobStepMachine.machineId,
@@ -1306,13 +1299,12 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
         completedAt: updatedJobStepMachine.completedAt,
         updatedAt: updatedJobStepMachine.updatedAt,
         userId: updatedJobStepMachine.userId,
-        userName: updatedJobStepMachine.user?.name,
-        allMachinesFinished: allFinished
+        userName: updatedJobStepMachine.user?.name
       }
     });
 
   } catch (error) {
-    console.error('Error stopping work on machine:', error);
+    console.error('❌ Error stopping work on machine:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to stop work on machine',
@@ -1362,25 +1354,19 @@ async function _updateIndividualStepStatus(stepNo: number, nrcJobNo: string, sta
           data: { status: status as any }
         });
         break;
-      case 6: // Die Cutting
-        await prisma.punching.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { status: status as any }
-        });
-        break;
-      case 7: // Flap Pasting
+      case 6: // Flap Pasting
         await prisma.sideFlapPasting.updateMany({
           where: { jobNrcJobNo: nrcJobNo },
           data: { status: status as any }
         });
         break;
-      case 8: // Quality Control
+      case 7: // Quality Control
         await prisma.qualityDept.updateMany({
           where: { jobNrcJobNo: nrcJobNo },
           data: { status: status as any }
         });
         break;
-      case 9: // Dispatch
+      case 8: // Dispatch
         await prisma.dispatchProcess.updateMany({
           where: { jobNrcJobNo: nrcJobNo },
           data: { status: status as any }
@@ -1441,13 +1427,12 @@ async function _updateIndividualStepHoldRemark(stepNo: number, nrcJobNo: string,
         });
         break;
       case 5: // Punching
-      case 6: // Die Cutting
         await prisma.punching.updateMany({
           where: { jobNrcJobNo: nrcJobNo },
           data: { holdRemark: holdRemark }
         });
         break;
-      case 7: // Flap Pasting
+      case 6: // Flap Pasting
         await prisma.sideFlapPasting.updateMany({
           where: { jobNrcJobNo: nrcJobNo },
           data: { holdRemark: holdRemark }
@@ -1462,11 +1447,269 @@ async function _updateIndividualStepHoldRemark(stepNo: number, nrcJobNo: string,
 }
 
 // Helper function to update individual step tables with form data
-async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: string, formData: any) {
-  console.log(`🚨 [CRITICAL DEBUG] _updateIndividualStepWithFormData FUNCTION CALLED!`);
+// IMPORTANT: This should ONLY be called when ALL machines for the step are completed!
+// Helper function to get previous step's available/OK quantity
+async function _getPreviousStepQuantity(stepNo: number, nrcJobNo: string): Promise<number> {
   try {
-    console.log(`🔍 [DEBUG] _updateIndividualStepWithFormData called with stepNo: ${stepNo}, nrcJobNo: ${nrcJobNo}, formData:`, formData);
+    console.log(`🔍 [GET_PREV_QTY] Getting previous step quantity for step ${stepNo}, job ${nrcJobNo}`);
     
+    // Step 1 (PaperStore) has no previous step
+    if (stepNo === 1) {
+      console.log(`📋 Step 1 has no previous step, returning 0`);
+      return 0;
+    }
+    
+    // Special handling for steps with non-sequential dependencies
+    let quantity = 0;
+    
+    switch (stepNo) {
+      case 2: // Printing gets from PaperStore
+        const paperStoreForPrinting = await prisma.paperStore.findFirst({
+          where: { jobNrcJobNo: nrcJobNo },
+          select: { available: true },
+          orderBy: { id: 'desc' }
+        });
+        quantity = paperStoreForPrinting?.available || 0;
+        console.log(`📋 Step 2 (Printing) gets from PaperStore: ${quantity}`);
+        break;
+        
+      case 3: // Corrugation gets from PaperStore (parallel to Printing)
+        const paperStoreForCorrugation = await prisma.paperStore.findFirst({
+          where: { jobNrcJobNo: nrcJobNo },
+          select: { available: true },
+          orderBy: { id: 'desc' }
+        });
+        quantity = paperStoreForCorrugation?.available || 0;
+        console.log(`📋 Step 3 (Corrugation) gets from PaperStore: ${quantity}`);
+        break;
+        
+      case 4: // Flute Lamination gets from Printing
+        const printing = await prisma.printingDetails.findFirst({
+          where: { jobNrcJobNo: nrcJobNo },
+          select: { quantity: true },
+          orderBy: { id: 'desc' }
+        });
+        quantity = printing?.quantity || 0;
+        console.log(`📋 Step 4 (FluteLamination) gets from Printing: ${quantity}`);
+        break;
+        
+      case 5: // Punching gets from Flute Lamination (stepNo 4)
+        const fluteLam = await prisma.fluteLaminateBoardConversion.findFirst({
+          where: { jobNrcJobNo: nrcJobNo },
+          select: { quantity: true },
+          orderBy: { id: 'desc' }
+        });
+        quantity = fluteLam?.quantity || 0;
+        console.log(`📋 Step 5 (Punching) gets from FluteLamination (stepNo 4): ${quantity}`);
+        break;
+        
+      case 6: // Flap Pasting gets from Punching (stepNo 5) - Die Cutting NOT in job planning!
+        console.log(`🔍 [DEBUG] Querying Punching for job: ${nrcJobNo}`);
+        const punchingForFlap = await prisma.punching.findFirst({
+          where: { jobNrcJobNo: nrcJobNo },
+          select: { id: true, quantity: true, wastage: true, jobNrcJobNo: true },
+          orderBy: { id: 'desc' }
+        });
+        console.log(`🔍 [DEBUG] Query result:`, JSON.stringify(punchingForFlap));
+        quantity = punchingForFlap?.quantity || 0;
+        console.log(`📋 Step 6 (FlapPasting) gets from Punching (stepNo 5): ${quantity} (from record ID: ${punchingForFlap?.id})`);
+        break;
+        
+      case 7: // Quality gets from Flap Pasting (stepNo 6)
+        const flapPasting = await prisma.sideFlapPasting.findFirst({
+          where: { jobNrcJobNo: nrcJobNo },
+          select: { quantity: true },
+          orderBy: { id: 'desc' }
+        });
+        quantity = flapPasting?.quantity || 0;
+        console.log(`📋 Step 7 (Quality) gets from FlapPasting (stepNo 6): ${quantity}`);
+        break;
+        
+      case 8: // Dispatch gets from Quality (stepNo 7)
+        const quality = await prisma.qualityDept.findFirst({
+          where: { jobNrcJobNo: nrcJobNo },
+          select: { quantity: true },
+          orderBy: { id: 'desc' }
+        });
+        quantity = quality?.quantity || 0;
+        console.log(`📋 Step 8 (Dispatch) gets from Quality (stepNo 7): ${quantity}`);
+        break;
+        
+      default:
+        console.log(`⚠️ Unknown step ${stepNo}, returning 0`);
+        quantity = 0;
+    }
+    
+    return quantity;
+  } catch (error) {
+    console.error(`❌ Error getting previous step quantity:`, error);
+    return 0;
+  }
+}
+
+// Helper function to check if step completion criteria is met
+async function _checkStepCompletionCriteria(
+  jobStepId: number,
+  stepNo: number,
+  nrcJobNo: string,
+  allMachines: any[]
+): Promise<{ shouldComplete: boolean; reason: string; totalOK: number; totalWastage: number }> {
+  try {
+    console.log(`\n🎯 [COMPLETION CHECK] Checking completion criteria for step ${stepNo}, job ${nrcJobNo}`);
+    console.log(`📊 Total machines assigned: ${allMachines.length}`);
+    
+    // Get machines that have formData (submitted)
+    const submittedMachines = allMachines.filter((m: any) => m.formData && Object.keys(m.formData).length > 0);
+    console.log(`📝 Machines with formData submitted: ${submittedMachines.length}`);
+    
+    // Calculate total submitted quantities
+    let totalOK = 0;
+    let totalWastage = 0;
+    
+    submittedMachines.forEach((m: any) => {
+      let fData = m.formData as any;
+      
+      // Safety check: if formData is a string, parse it
+      if (typeof fData === 'string') {
+        try {
+          fData = JSON.parse(fData);
+        } catch (e) {
+          console.error(`❌ Failed to parse formData for machine ${m.machineId}`);
+          fData = null;
+        }
+      }
+      
+      if (fData) {
+        // Handle various field name variations (case-insensitive)
+        const okQty = fData.quantity || fData.Quantity || fData.quantityOK || fData.okQuantity || 
+                     fData['Quantity OK'] || fData['OK Quantity'] || 
+                     fData.sheetsCount || fData['Sheets Count'] || 
+                     fData.finalQuantity || 0;
+        const wastage = fData.wastage || fData.Wastage || fData.WASTAGE || 0;
+        
+        console.log(`  🔍 [DEBUG] Machine ${m.machineId} formData:`, JSON.stringify(fData));
+        console.log(`  🔍 [DEBUG] Extracted: okQty=${okQty}, wastage=${wastage}`);
+        
+        totalOK += parseInt(okQty) || 0;
+        totalWastage += parseInt(wastage) || 0;
+        console.log(`  📦 Machine ${m.machineId}: OK=${okQty}, Wastage=${wastage}, Status=${m.status}`);
+      }
+    });
+    
+    const totalSubmitted = totalOK + totalWastage;
+    console.log(`📊 Total quantities - OK: ${totalOK}, Wastage: ${totalWastage}, Total: ${totalSubmitted}`);
+    
+    // Get previous step quantity
+    const previousStepQuantity = await _getPreviousStepQuantity(stepNo, nrcJobNo);
+    console.log(`📋 Previous step quantity: ${previousStepQuantity}`);
+    console.log(`🔍 [DEBUG] previousStepQuantity assigned at line 1585: ${previousStepQuantity}`);
+    
+    // Check criteria 1: Total submitted >= Previous step quantity
+    if (previousStepQuantity > 0 && totalSubmitted >= previousStepQuantity) {
+      console.log(`✅ CRITERIA MET: Total submitted (${totalSubmitted}) >= Previous quantity (${previousStepQuantity})`);
+      return {
+        shouldComplete: true,
+        reason: `Quantity match: ${totalSubmitted} >= ${previousStepQuantity}`,
+        totalOK,
+        totalWastage
+      };
+    }
+    
+    // Check criteria 2: All machines are EXPLICITLY stopped (status = 'stop')
+    // This is for partial quantity scenarios when all machines are manually stopped
+    // Machines with status 'available' (never started) do NOT count as stopped
+    const stoppedMachines = allMachines.filter((m: any) => m.status === 'stop');
+    const inProgressMachines = allMachines.filter((m: any) => m.status === 'in_progress' || m.status === 'hold');
+    const availableMachines = allMachines.filter((m: any) => m.status === 'available');
+    
+    console.log(`🛑 Machine status breakdown:`);
+    console.log(`   - Stopped: ${stoppedMachines.length}`);
+    console.log(`   - In Progress/Hold: ${inProgressMachines.length}`);
+    console.log(`   - Available (not used): ${availableMachines.length}`);
+    console.log(`   - Total: ${allMachines.length}`);
+    
+    // Only complete if:
+    // 1. All machines are stopped (status='stop'), AND
+    // 2. No machines are available (unused) - if machines are unused, quantity should match instead
+    if (stoppedMachines.length === allMachines.length && 
+        availableMachines.length === 0 && 
+        stoppedMachines.length > 0) {
+      console.log(`✅ CRITERIA MET: All ${allMachines.length} machines explicitly stopped`);
+      return {
+        shouldComplete: true,
+        reason: `All ${allMachines.length} machines stopped (partial quantity accepted)`,
+        totalOK,
+        totalWastage
+      };
+    }
+    
+    // If there are unused machines (available), do NOT allow completion without quantity match
+    if (availableMachines.length > 0) {
+      const prevQtyCheck = previousStepQuantity; // Create a const copy to check for variable mutation
+      console.log(`🔍 [DEBUG] previousStepQuantity at line 1629: ${previousStepQuantity}`);
+      console.log(`🔍 [DEBUG] prevQtyCheck (const copy): ${prevQtyCheck}`);
+      console.log(`🔍 [DEBUG] availableMachines.length: ${availableMachines.length}`);
+      console.log(`🔍 [DEBUG] About to log error message with previousStepQuantity: ${previousStepQuantity}`);
+      console.log(`⚠️ Cannot complete: ${availableMachines.length} machine(s) never used. Quantity must match ${previousStepQuantity}.`);
+      console.log(`🔍 [DEBUG] After error message - previousStepQuantity: ${previousStepQuantity}, prevQtyCheck: ${prevQtyCheck}`);
+    }
+    
+    // Criteria not met
+    console.log(`⏳ Criteria NOT met - waiting for more submissions or stops`);
+    return {
+      shouldComplete: false,
+      reason: `Waiting: ${totalSubmitted}/${previousStepQuantity} submitted, ${stoppedMachines.length}/${allMachines.length} stopped`,
+      totalOK,
+      totalWastage
+    };
+    
+  } catch (error) {
+    console.error(`❌ Error checking step completion criteria:`, error);
+    return {
+      shouldComplete: false,
+      reason: 'Error checking criteria',
+      totalOK: 0,
+      totalWastage: 0
+    };
+  }
+}
+
+async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: string, formData: any, allMachines?: any[], jobStepUser?: string, jobStepId?: number) {
+  console.log(`🚨 [CRITICAL DEBUG] _updateIndividualStepWithFormData FUNCTION CALLED!`);
+  console.log(`🔍 [DEBUG] Step: ${stepNo}, Job: ${nrcJobNo}, JobStepId: ${jobStepId}`);
+  console.log(`🔍 [DEBUG] FormData received:`, JSON.stringify(formData, null, 2));
+  console.log(`🔍 [DEBUG] Status to set: ${formData.status || 'accept'}`);
+  console.log(`🔍 [DEBUG] Quantity: ${formData.quantity}, Wastage: ${formData.wastage}`);
+  
+  // ✅ Collect all machine codes that were used (have formData)
+  let machineCodesStr = '';
+  let operatorName = jobStepUser || formData.oprName || formData.operatorName || null;
+  
+  if (allMachines && allMachines.length > 0) {
+    const usedMachines = allMachines.filter((m: any) => m.formData && Object.keys(m.formData).length > 0);
+    
+    // Get machine codes
+    const machineCodes = await Promise.all(
+      usedMachines.map(async (m: any) => {
+        const machine = await prisma.machine.findUnique({
+          where: { id: m.machineId },
+          select: { machineCode: true }
+        });
+        return machine?.machineCode || m.machineId;
+      })
+    );
+    machineCodesStr = machineCodes.join(', ');
+    
+    // Get operator name from first machine's userId if not already set
+    if (!operatorName && usedMachines.length > 0 && usedMachines[0].userId) {
+      operatorName = usedMachines[0].userId;
+    }
+    
+    console.log(`🔧 [DEBUG] Used machines: ${machineCodesStr}`);
+    console.log(`🔧 [DEBUG] Operator: ${operatorName}`);
+  }
+  
+  try {
     // Update the appropriate step table based on step number
     switch (stepNo) {
       case 1: // PaperStore (No machine assignment - keep original flow)
@@ -1474,22 +1717,50 @@ async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: strin
           where: { jobNrcJobNo: nrcJobNo },
           data: {
             quantity: formData.quantity || formData.requiredQty,
-            available: formData.availableQty, // Note: schema field is 'available', not 'availableQty'
+            available: formData.available || formData.availableQty, // Try 'available' first, then 'availableQty'
             sheetSize: formData.sheetSize,
             gsm: formData.gsm,
+            status: formData.status || 'accept' // Add status update
           }
         });
         break;
       case 2: // Printing
         {
+          // Handle field name variations (with spaces, capitals, camelCase)
+          const quantity = formData.quantity || formData['Quantity OK'] || formData.quantityOK || formData.okQuantity;
+          const wastage = formData.wastage || formData.Wastage || formData.WASTAGE;
+          const colors = formData.colors || formData.colorsUsed || formData['Colors Used'];
+          const inks = formData.inksUsed || formData['Inks Used'];
+          const coating = formData.coatingType || formData['Coating Type'];
+          const separateSheets = formData.separateSheets || formData['Separate Sheets'];
+          const extraSheets = formData.extraSheets || formData['Extra Sheets'];
+          
+          console.log(`🔍 [Printing] Mapped fields: quantity=${quantity}, wastage=${wastage}, colors=${colors}, inks=${inks}, coating=${coating}`);
+          console.log(`🔍 [Printing] Machines used: ${machineCodesStr}`);
+          
+          // Auto-populate fields
+          const now = new Date();
+          const currentHour = now.getHours();
+          const shift = currentHour >= 6 && currentHour < 14 ? 'Morning' :
+                       currentHour >= 14 && currentHour < 22 ? 'Afternoon' : 'Night';
+          
           // First, try to update existing records
           const printingResult = await prisma.printingDetails.updateMany({
             where: { jobNrcJobNo: nrcJobNo },
             data: {
-              quantity: formData.quantity,
-              noOfColours: formData.colors || formData.colorsUsed ? parseInt(formData.colors || formData.colorsUsed) : undefined,
-              inksUsed: formData.inksUsed,
-              coatingType: formData.coatingType
+              quantity: quantity ? parseInt(quantity) : undefined,
+              wastage: wastage ? parseInt(wastage) : undefined,
+              noOfColours: colors ? parseInt(colors) : undefined,
+              inksUsed: inks,
+              coatingType: coating,
+              separateSheets: separateSheets ? parseInt(separateSheets) : undefined,
+              extraSheets: extraSheets ? parseInt(extraSheets) : undefined,
+              machine: machineCodesStr || undefined, // ✅ Store all machine codes
+              date: now, // ✅ Auto-populate date
+              shift: shift, // ✅ Auto-populate shift
+              oprName: operatorName || undefined, // ✅ Auto-populate operator name
+              jobStepId: jobStepId || undefined, // ✅ Link to JobStep (required for next step validation)
+              status: formData.status || 'accept' // Only called when all machines complete
             }
           });
           
@@ -1498,32 +1769,63 @@ async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: strin
             await prisma.printingDetails.create({
               data: {
                 jobNrcJobNo: nrcJobNo,
-                quantity: formData.quantity,
-                noOfColours: formData.colors || formData.colorsUsed ? parseInt(formData.colors || formData.colorsUsed) : undefined,
-                inksUsed: formData.inksUsed,
-                coatingType: formData.coatingType,
-                status: 'accept'
+                quantity: quantity ? parseInt(quantity) : undefined,
+                wastage: wastage ? parseInt(wastage) : undefined,
+                noOfColours: colors ? parseInt(colors) : undefined,
+                inksUsed: inks,
+                coatingType: coating,
+                separateSheets: separateSheets ? parseInt(separateSheets) : undefined,
+                extraSheets: extraSheets ? parseInt(extraSheets) : undefined,
+                machine: machineCodesStr || undefined, // ✅ Store all machine codes
+                date: now, // ✅ Auto-populate date
+                shift: shift, // ✅ Auto-populate shift
+                oprName: operatorName || undefined, // ✅ Auto-populate operator name
+                jobStepId: jobStepId || undefined, // ✅ Link to JobStep (required for next step validation)
+                status: formData.status || 'accept' // Only called when all machines complete
               }
             });
             console.log(`Created new PrintingDetails record for job ${nrcJobNo}`);
           } else {
-            console.log(`Updated ${printingResult.count} PrintingDetails records with form data`);
+            console.log(`Updated ${printingResult.count} PrintingDetails records`);
           }
         }
         break;
       case 3: // Corrugation
         {
           console.log(`🔍 [DEBUG] Processing Corrugation case for job ${nrcJobNo}`);
+          
+          // Handle field name variations
+          const sheetsCount = formData.quantity || formData.sheetsCount || formData['Sheets Count'];
+          const fluteType = formData.fluteType || formData.flute || formData['Flute Type'];
+          const gsm1 = formData.gsm1 || formData['GSM1 (Top Face)'] || formData['GSM1'];
+          const gsm2 = formData.gsm2 || formData['GSM2 (Bottom Face)'] || formData['GSM2'];
+          const size = formData.size || formData.Size;
+          
+          console.log(`🔍 [Corrugation] Mapped: sheetsCount=${sheetsCount}, flute=${fluteType}, gsm1=${gsm1}, gsm2=${gsm2}`);
+          console.log(`🔍 [Corrugation] Machines used: ${machineCodesStr}`);
+          
+          // Auto-populate fields
+          const now = new Date();
+          const currentHour = now.getHours();
+          const shift = currentHour >= 6 && currentHour < 14 ? 'Morning' :
+                       currentHour >= 14 && currentHour < 22 ? 'Afternoon' : 'Night';
+          
           // First, try to update existing records
           const corrugationResult = await prisma.corrugation.updateMany({
             where: { jobNrcJobNo: nrcJobNo },
             data: {
-              quantity: formData.quantity,
-              flute: formData.fluteType, // Note: schema field is 'flute', not 'fluteType'
-              gsm1: formData.gsm1?.toString(), // Convert to string
-              gsm2: formData.gsm2?.toString(), // Convert to string
-              size: formData.size,
-              remarks: formData.remarks
+              quantity: sheetsCount ? parseInt(sheetsCount) : undefined,
+              flute: fluteType, // Note: schema field is 'flute', not 'fluteType'
+              gsm1: gsm1?.toString(), // Convert to string
+              gsm2: gsm2?.toString(), // Convert to string
+              size: size,
+              machineNo: machineCodesStr || undefined, // ✅ Store all machine codes
+              date: now, // ✅ Auto-populate date
+              shift: shift, // ✅ Auto-populate shift
+              oprName: operatorName || undefined, // ✅ Auto-populate operator
+              remarks: formData.remarks || formData.Remarks,
+              jobStepId: jobStepId || undefined, // ✅ Link to JobStep (required for next step validation)
+              status: formData.status || 'accept' // Only called when all machines complete
             }
           });
           
@@ -1532,28 +1834,54 @@ async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: strin
             await prisma.corrugation.create({
               data: {
                 jobNrcJobNo: nrcJobNo,
-                quantity: formData.quantity,
-                flute: formData.fluteType,
-                gsm1: formData.gsm1?.toString(), // Convert to string
-                gsm2: formData.gsm2?.toString(), // Convert to string
-                size: formData.size,
-                remarks: formData.remarks,
-                status: 'accept'
+                quantity: sheetsCount ? parseInt(sheetsCount) : undefined,
+                flute: fluteType,
+                gsm1: gsm1?.toString(), // Convert to string
+                gsm2: gsm2?.toString(), // Convert to string
+                size: size,
+                machineNo: machineCodesStr || undefined, // ✅ Store all machine codes
+                date: now, // ✅ Auto-populate date
+                shift: shift, // ✅ Auto-populate shift
+                oprName: operatorName || undefined, // ✅ Auto-populate operator
+                remarks: formData.remarks || formData.Remarks,
+                jobStepId: jobStepId || undefined, // ✅ Link to JobStep (required for next step validation)
+                status: formData.status || 'accept' // Only called when all machines complete
               }
             });
             console.log(`Created new Corrugation record for job ${nrcJobNo}`);
           } else {
-            console.log(`Updated ${corrugationResult.count} Corrugation records with form data`);
+            console.log(`Updated ${corrugationResult.count} Corrugation records`);
           }
         }
         break;
       case 4: // Flute Lamination
         {
+          // Handle field name variations
+          const okQuantity = formData.quantity || formData.okQuantity || formData['OK Quantity'];
+          const wastage = formData.wastage || formData.Wastage;
+          const film = formData.film || formData.filmType || formData['Film Type'];
+          const adhesive = formData.adhesive || formData.Adhesive;
+          
+          console.log(`🔍 [FluteLam] Mapped: okQuantity=${okQuantity}, wastage=${wastage}, film=${film}`);
+          
+          // Auto-populate fields
+          const now = new Date();
+          const currentHour = now.getHours();
+          const shift = currentHour >= 6 && currentHour < 14 ? 'Morning' :
+                       currentHour >= 14 && currentHour < 22 ? 'Afternoon' : 'Night';
+          
           // First, try to update existing records
           const fluteResult = await prisma.fluteLaminateBoardConversion.updateMany({
             where: { jobNrcJobNo: nrcJobNo },
             data: {
-              quantity: formData.quantity
+              quantity: okQuantity ? parseInt(okQuantity) : undefined,
+              wastage: wastage ? parseInt(wastage) : undefined,
+              film: film,
+              adhesive: adhesive,
+              date: now, // ✅ Auto-populate date
+              shift: shift, // ✅ Auto-populate shift
+              operatorName: operatorName || undefined, // ✅ Auto-populate operator
+              status: formData.status || 'accept' // Only called when all machines complete
             }
           });
           
@@ -1562,25 +1890,52 @@ async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: strin
             await prisma.fluteLaminateBoardConversion.create({
               data: {
                 jobNrcJobNo: nrcJobNo,
-                quantity: formData.quantity,
-                status: 'accept'
+                quantity: okQuantity ? parseInt(okQuantity) : undefined,
+                wastage: wastage ? parseInt(wastage) : undefined,
+                film: film,
+                adhesive: adhesive,
+                date: now, // ✅ Auto-populate date
+                shift: shift, // ✅ Auto-populate shift
+                operatorName: operatorName || undefined, // ✅ Auto-populate operator
+                status: formData.status || 'accept' // Only called when all machines complete
               }
             });
             console.log(`Created new FluteLaminateBoardConversion record for job ${nrcJobNo}`);
           } else {
-            console.log(`Updated ${fluteResult.count} FluteLaminateBoardConversion records with form data`);
+            console.log(`Updated ${fluteResult.count} FluteLaminateBoardConversion records (qty=${okQuantity}, wastage=${wastage})`);
           }
         }
         break;
       case 5: // Punching
         {
+          // Handle field name variations
+          const okQuantity = formData.quantity || formData.okQuantity || formData['OK Quantity'];
+          const wastage = formData.wastage || formData.Wastage;
+          const die = formData.dieUsed || formData.die || formData['Die Used (diePunchCode)'];
+          
+          console.log(`🔍 [Punching] Mapped: okQuantity=${okQuantity}, wastage=${wastage}, die=${die}`);
+          console.log(`🔍 [Punching] Machines used: ${machineCodesStr}`);
+          
+          // Auto-populate fields
+          const now = new Date();
+          const currentHour = now.getHours();
+          const shift = currentHour >= 6 && currentHour < 14 ? 'Morning' :
+                       currentHour >= 14 && currentHour < 22 ? 'Afternoon' : 'Night';
+          
           // First, try to update existing records
           const punchingResult = await prisma.punching.updateMany({
             where: { jobNrcJobNo: nrcJobNo },
             data: {
-              quantity: formData.quantity,
-              die: formData.dieUsed, // Note: schema field is 'die', not 'dieUsed'
-              remarks: formData.remarks
+              quantity: okQuantity ? parseInt(okQuantity) : undefined,
+              wastage: wastage ? parseInt(wastage) : undefined,
+              die: die, // Note: schema field is 'die', not 'dieUsed'
+              machine: machineCodesStr || undefined, // ✅ Store all machine codes
+              date: now, // ✅ Auto-populate date
+              shift: shift, // ✅ Auto-populate shift
+              operatorName: operatorName || undefined, // ✅ Auto-populate operator
+              remarks: formData.remarks || formData.Remarks,
+              jobStepId: jobStepId || undefined, // ✅ Link to JobStep (required for next step validation)
+              status: formData.status || 'accept' // Only called when all machines complete
             }
           });
           
@@ -1589,49 +1944,54 @@ async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: strin
             await prisma.punching.create({
               data: {
                 jobNrcJobNo: nrcJobNo,
-                quantity: formData.quantity,
-                die: formData.dieUsed,
-                remarks: formData.remarks,
-                status: 'accept'
+                quantity: okQuantity ? parseInt(okQuantity) : undefined,
+                wastage: wastage ? parseInt(wastage) : undefined,
+                die: die,
+                machine: machineCodesStr || undefined, // ✅ Store all machine codes
+                date: now, // ✅ Auto-populate date
+                shift: shift, // ✅ Auto-populate shift
+                operatorName: operatorName || undefined, // ✅ Auto-populate operator
+                remarks: formData.remarks || formData.Remarks,
+                jobStepId: jobStepId || undefined, // ✅ Link to JobStep (required for next step validation)
+                status: formData.status || 'accept' // Only called when all machines complete
               }
             });
             console.log(`Created new Punching record for job ${nrcJobNo}`);
           } else {
-            console.log(`Updated ${punchingResult.count} Punching records with form data`);
+            console.log(`Updated ${punchingResult.count} Punching records`);
           }
         }
         break;
-      case 6: // Die Cutting
+      case 6: // Flap Pasting (stepNo 6 in database)
         {
-          // First, try to update existing records
-          const dieCuttingResult = await prisma.dieCutting.updateMany({
-            where: { details: nrcJobNo }, // Note: DieCutting doesn't have jobNrcJobNo field
-            data: {
-              details: formData.dieUsed || formData.remarks
-            }
-          });
+          // Handle field name variations
+          const quantity = formData.quantity || formData.Quantity || formData.finalQuantity;
+          const wastage = formData.wastage || formData.Wastage;
+          const adhesive = formData.adhesive || formData.Adhesive;
           
-          // If no records were updated, create a new one
-          if (dieCuttingResult.count === 0) {
-            await prisma.dieCutting.create({
-              data: {
-                details: formData.dieUsed || formData.remarks || nrcJobNo
-              }
-            });
-            console.log(`Created new DieCutting record for job ${nrcJobNo}`);
-          } else {
-            console.log(`Updated ${dieCuttingResult.count} DieCutting records with form data`);
-          }
-        }
-        break;
-      case 7: // Flap Pasting
-        {
+          console.log(`🔍 [Pasting] Mapped: quantity=${quantity}, wastage=${wastage}, adhesive=${adhesive}`);
+          console.log(`🔍 [Pasting] Machines used: ${machineCodesStr}`);
+          
+          // Auto-populate fields
+          const now = new Date();
+          const currentHour = now.getHours();
+          const shift = currentHour >= 6 && currentHour < 14 ? 'Morning' :
+                       currentHour >= 14 && currentHour < 22 ? 'Afternoon' : 'Night';
+          
           // First, try to update existing records
           const flapResult = await prisma.sideFlapPasting.updateMany({
             where: { jobNrcJobNo: nrcJobNo },
             data: {
-              quantity: formData.quantity || formData.finalQuantity,
-              remarks: formData.remarks
+              quantity: quantity ? parseInt(quantity) : undefined,
+              wastage: wastage ? parseInt(wastage) : undefined,
+              adhesive: adhesive,
+              machineNo: machineCodesStr || undefined, // ✅ Store all machine codes
+              date: now, // ✅ Auto-populate date
+              shift: shift, // ✅ Auto-populate shift
+              operatorName: operatorName || undefined, // ✅ Auto-populate operator
+              remarks: formData.remarks || formData.Remarks,
+              jobStepId: jobStepId || undefined, // ✅ Link to JobStep
+              status: formData.status || 'accept' // Only called when all machines complete
             }
           });
           
@@ -1640,18 +2000,25 @@ async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: strin
             await prisma.sideFlapPasting.create({
               data: {
                 jobNrcJobNo: nrcJobNo,
-                quantity: formData.quantity || formData.finalQuantity,
-                remarks: formData.remarks,
-                status: 'accept'
+                quantity: quantity ? parseInt(quantity) : undefined,
+                wastage: wastage ? parseInt(wastage) : undefined,
+                adhesive: adhesive,
+                machineNo: machineCodesStr || undefined, // ✅ Store all machine codes
+                date: now, // ✅ Auto-populate date
+                shift: shift, // ✅ Auto-populate shift
+                operatorName: operatorName || undefined, // ✅ Auto-populate operator
+                remarks: formData.remarks || formData.Remarks,
+                jobStepId: jobStepId || undefined, // ✅ Link to JobStep
+                status: formData.status || 'accept' // Only called when all machines complete
               }
             });
-            console.log(`Created new SideFlapPasting record for job ${nrcJobNo}`);
+            console.log(`Created new SideFlapPasting record for job ${nrcJobNo} with jobStepId ${jobStepId}`);
           } else {
-            console.log(`Updated ${flapResult.count} SideFlapPasting records with form data`);
+            console.log(`Updated ${flapResult.count} SideFlapPasting records (qty=${quantity}, wastage=${wastage}, machines=${machineCodesStr}, jobStepId=${jobStepId})`);
           }
         }
         break;
-      case 8: // Quality Control (No machine assignment - keep original flow)
+      case 7: // Quality Control (stepNo 7 in database - No machine assignment)
         await prisma.qualityDept.updateMany({
           where: { jobNrcJobNo: nrcJobNo },
           data: {
@@ -1661,7 +2028,7 @@ async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: strin
           }
         });
         break;
-      case 9: // Dispatch (No machine assignment - keep original flow)
+      case 8: // Dispatch (stepNo 8 in database - No machine assignment)
         await prisma.dispatchProcess.updateMany({
           where: { jobNrcJobNo: nrcJobNo },
           data: {

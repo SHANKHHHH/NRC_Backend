@@ -658,21 +658,35 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
       throw new AppError('Invalid status value. Must be one of: planned, start, stop', 400);
     }
 
-    const now = new Date();
+    // ✅ PROTECTION: For machine-based steps, prevent status updates via this endpoint
+    // Machine-based steps should only have status updated via completeWorkOnMachine API
+    const machineBasedSteps = ['PrintingDetails', 'Corrugation', 'FluteLaminateBoardConversion', 
+                                'Punching', 'SideFlapPasting'];
+    const isMachineStep = machineBasedSteps.includes(step.stepName);
+    
+    if (isMachineStep && status === 'stop') {
+      console.log(`⚠️ [upsertStepByNrcJobNoAndStepNo] Ignoring status='stop' for machine-based step ${step.stepName}`);
+      console.log(`ℹ️  Status for machine steps is controlled by completeWorkOnMachine API based on completion criteria`);
+      // DO NOT update status for machine-based steps
+      // Just log and skip, but still process other fields
+    } else {
+      // For non-machine steps (PaperStore, Quality, Dispatch) or non-stop statuses, allow status update
+      const now = new Date();
 
-    if (status === 'planned') {
-      updateData.status = 'planned';
-      updateData.startDate = null;
-      updateData.endDate = null;
-      updateData.user = null;
-    } else if (status === 'start') {
-      updateData.status = 'start';
-      updateData.startDate = now;
-      updateData.user = userId || null;
-    } else if (status === 'stop') {
-      updateData.status = 'stop';
-      updateData.endDate = now;
-      updateData.user = userId || null;
+      if (status === 'planned') {
+        updateData.status = 'planned';
+        updateData.startDate = null;
+        updateData.endDate = null;
+        updateData.user = null;
+      } else if (status === 'start') {
+        updateData.status = 'start';
+        updateData.startDate = now;
+        updateData.user = userId || null;
+      } else if (status === 'stop') {
+        updateData.status = 'stop';
+        updateData.endDate = now;
+        updateData.user = userId || null;
+      }
     }
   }
 
