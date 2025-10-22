@@ -37,12 +37,41 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
       })
     }
 
-    await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
+    // 🔒 SINGLE SESSION ENFORCEMENT: Check if user is already logged in somewhere else
+    if (user.activeSessionToken) {
+      // User is already logged in on another device
+      const deviceInfo = user.sessionDeviceInfo || 'Unknown device';
+      const loginTime = user.sessionLoginTime ? new Date(user.sessionLoginTime).toLocaleString() : 'Unknown time';
+      
+      return res.status(403).json({
+        success: false,
+        message: "Already logged in on another device",
+        details: {
+          message: `This account is already logged in on another device (${deviceInfo}) since ${loginTime}. Please logout from that device first.`,
+          sessionDevice: deviceInfo,
+          sessionLoginTime: loginTime
+        }
+      });
+    }
+
+    // Generate new token for this fresh login
+    const accessToken = generateAccessToken(user.id);
+    const deviceInfo = req.headers['user-agent'] || 'Unknown device';
+    
+    // Save session token to database
+    await prisma.user.update({ 
+      where: { id: user.id }, 
+      data: { 
+        lastLogin: new Date(),
+        activeSessionToken: accessToken,
+        sessionLoginTime: new Date(),
+        sessionDeviceInfo: deviceInfo
+      } 
+    });
 
     // Log the login action
-    await logUserAction(user.id, ActionTypes.USER_LOGIN, `Login successful from IP: ${req.ip}`);
+    await logUserAction(user.id, ActionTypes.USER_LOGIN, `Login successful from IP: ${req.ip}, Device: ${deviceInfo}`);
 
-    const accessToken = generateAccessToken(user.id);
     const userActive = user.isActive === true;
     // if (!user.isActive) throw new AppError('Account is deactivated', 401);
 
@@ -73,6 +102,19 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
 };
 
 export const logout = async (req: Request, res: Response) => {
+  // 🔒 SINGLE SESSION ENFORCEMENT: Clear active session token
+  if (req.user?.userId) {
+    // Clear the active session token from database
+    await prisma.user.update({
+      where: { id: req.user.userId },
+      data: { 
+        activeSessionToken: null,
+        sessionLoginTime: null,
+        sessionDeviceInfo: null
+      }
+    });
+  }
+  
   // Log the logout action if user is authenticated
   if (req.user?.userId) {
     await logUserAction(req.user.userId, ActionTypes.USER_LOGOUT, `Logout from IP: ${req.ip}`);

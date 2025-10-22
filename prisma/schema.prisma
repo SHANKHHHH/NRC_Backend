@@ -9,21 +9,24 @@ datasource db {
 }
 
 model User {
-  id             String          @id
-  email          String          @unique
-  phoneNumber    String?
-  password       String
-  role           String
-  name           String?
-  isActive       Boolean         @default(true)
-  lastLogin      DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  activityLogs   ActivityLog[]   @relation("UserActivityLogs")
-  jobs           Job[]           @relation("UserJobs")
-  purchaseOrders PurchaseOrder[] @relation("UserPurchaseOrders")
-  userMachines   UserMachine[]   @relation("UserMachines")
-  jobStepMachines JobStepMachine[] @relation("UserJobStepMachines")
+  id                  String          @id
+  email               String          @unique
+  phoneNumber         String?
+  password            String
+  role                String
+  name                String?
+  isActive            Boolean         @default(true)
+  lastLogin           DateTime?
+  activeSessionToken  String?         // Stores current active session token for single-session enforcement
+  sessionLoginTime    DateTime?       // When current session was created
+  sessionDeviceInfo   String?         // Optional: Store device/browser info
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  activityLogs        ActivityLog[]   @relation("UserActivityLogs")
+  jobs                Job[]           @relation("UserJobs")
+  purchaseOrders      PurchaseOrder[] @relation("UserPurchaseOrders")
+  userMachines        UserMachine[]   @relation("UserMachines")
+  jobStepMachines     JobStepMachine[] @relation("UserJobStepMachines")
 }
 
 model Job {
@@ -474,6 +477,7 @@ model JobStep {
   updatedAt       DateTime                      @updatedAt
   status          JobStepStatus                 @default(planned)
   user            String?
+  completedBy     String?
   startDate       DateTime?
   endDate         DateTime?
   corrugation     Corrugation?

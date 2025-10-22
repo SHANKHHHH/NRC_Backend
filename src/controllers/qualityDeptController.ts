@@ -121,42 +121,22 @@ export const startQualityWork = async (req: Request, res: Response) => {
       throw new AppError('QualityDept job step not found', 404);
     }
 
-    // VALIDATION: Check if previous step is completed (status = accept)
+    // VALIDATION: Check if previous step is started (allows parallel work)
     const allSteps = jobStep.jobPlanning.steps;
     const currentStepIndex = allSteps.findIndex(s => s.id === jobStep.id);
     
     if (currentStepIndex > 0) {
       const previousStep = allSteps[currentStepIndex - 1];
       
-      // Find the previous step's individual form data
-      let previousStepDetail: any = null;
-      switch (previousStep.stepName) {
-        case 'PaperStore':
-          previousStepDetail = await prisma.paperStore.findFirst({ where: { jobStepId: previousStep.id } });
-          break;
-        case 'PrintingDetails':
-          previousStepDetail = await prisma.printingDetails.findFirst({ where: { jobStepId: previousStep.id } });
-          break;
-        case 'Corrugation':
-          previousStepDetail = await prisma.corrugation.findFirst({ where: { jobStepId: previousStep.id } });
-          break;
-        case 'FluteLaminateBoardConversion':
-          previousStepDetail = await prisma.fluteLaminateBoardConversion.findFirst({ where: { jobStepId: previousStep.id } });
-          break;
-        case 'Punching':
-          previousStepDetail = await prisma.punching.findFirst({ where: { jobStepId: previousStep.id } });
-          break;
-        case 'SideFlapPasting':
-          previousStepDetail = await prisma.sideFlapPasting.findFirst({ where: { jobStepId: previousStep.id } });
-          break;
-        default:
-          break;
+      // For START: Previous step must be started (status = 'start' or 'stop')
+      // This allows parallel work - Quality can start while previous step is in progress
+      if (previousStep.status !== 'start' && previousStep.status !== 'stop') {
+        throw new AppError(
+          `Previous step (${previousStep.stepName}) must be started before starting Quality work. Current status: ${previousStep.status}`,
+          400
+        );
       }
       
-      // Check if previous step status is 'accept'
-      if (!previousStepDetail || previousStepDetail.status !== 'accept') {
-        throw new AppError(`Previous step (${previousStep.stepName}) must be completed before starting Quality work`, 400);
-      }
     }
 
     // Find or create QualityDept record

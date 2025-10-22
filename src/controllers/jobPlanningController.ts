@@ -126,6 +126,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
             startDate: true,
             endDate: true,
             user: true,
+            completedBy: true,
             createdAt: true,
             updatedAt: true,
           },
@@ -458,6 +459,7 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
     updateData.user = userId || null;
   } else if (status === 'stop') {
     updateData.endDate = now;
+    updateData.completedBy = userId || null;
   }
 
   const updatedStep = await prisma.jobStep.update({
@@ -473,6 +475,7 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
       updatedAt: true,
       status: true,
       user: true,
+      completedBy: true,
       startDate: true,
       endDate: true,
     },
@@ -612,7 +615,7 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
       throw new AppError(`User role '${req.user.role}' does not have access to step '${step.stepName}'`, 403);
     }
     
-    // Step dependency validation - apply for both 'start' and 'stop' status
+    // Step dependency validation - different rules for 'start' vs 'stop' status
     if (req.body.status === 'start' || req.body.status === 'stop') {
       console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Checking step dependencies for step ${step.stepNo}`);
       
@@ -624,7 +627,7 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
       
       console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Found ${allSteps.length} total steps for job planning`);
       
-      // Check if previous steps are completed
+      // Check if previous steps meet requirements
       const currentStepNo = step.stepNo;
       const previousSteps = allSteps.filter(s => s.stepNo < currentStepNo);
       
@@ -633,16 +636,29 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
         console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Previous step ${prevStep.stepNo} (${prevStep.stepName}): status = ${prevStep.status}`);
       });
       
-      // Check if any previous step is not completed
-      const incompletePreviousSteps = previousSteps.filter(s => s.status !== 'stop');
-      
-      if (incompletePreviousSteps.length > 0) {
-        const incompleteStepNames = incompletePreviousSteps.map(s => `${s.stepName} (step ${s.stepNo})`).join(', ');
-        console.log(`❌ [upsertStepByNrcJobNoAndStepNo] Cannot ${req.body.status} step ${currentStepNo} - previous steps not completed: ${incompleteStepNames}`);
-        throw new AppError(`Cannot ${req.body.status} step ${currentStepNo} (${step.stepName}) - previous steps must be completed first: ${incompleteStepNames}`, 400);
+      if (req.body.status === 'start') {
+        // For START: Previous steps must be started (status = 'start' or 'stop')
+        const notStartedSteps = previousSteps.filter(s => s.status !== 'start' && s.status !== 'stop');
+        
+        if (notStartedSteps.length > 0) {
+          const notStartedStepNames = notStartedSteps.map(s => `${s.stepName} (step ${s.stepNo})`).join(', ');
+          console.log(`❌ [upsertStepByNrcJobNoAndStepNo] Cannot start step ${currentStepNo} - previous steps not started: ${notStartedStepNames}`);
+          throw new AppError(`Cannot start step ${currentStepNo} (${step.stepName}) - previous steps must be started first: ${notStartedStepNames}`, 400);
+        }
+        
+        console.log(`✅ [upsertStepByNrcJobNoAndStepNo] All previous steps started, allowing step ${currentStepNo} to start`);
+      } else if (req.body.status === 'stop') {
+        // For STOP: Previous steps must be completed (status = 'stop')
+        const notCompletedSteps = previousSteps.filter(s => s.status !== 'stop');
+        
+        if (notCompletedSteps.length > 0) {
+          const notCompletedStepNames = notCompletedSteps.map(s => `${s.stepName} (step ${s.stepNo})`).join(', ');
+          console.log(`❌ [upsertStepByNrcJobNoAndStepNo] Cannot stop step ${currentStepNo} - previous steps not completed: ${notCompletedStepNames}`);
+          throw new AppError(`Cannot stop step ${currentStepNo} (${step.stepName}) - previous steps must be completed first: ${notCompletedStepNames}`, 400);
+        }
+        
+        console.log(`✅ [upsertStepByNrcJobNoAndStepNo] All previous steps completed, allowing step ${currentStepNo} to stop`);
       }
-      
-      console.log(`✅ [upsertStepByNrcJobNoAndStepNo] All previous steps completed, allowing step ${currentStepNo} to ${req.body.status}`);
     }
     
     console.log(`✅ [upsertStepByNrcJobNoAndStepNo] Access granted for step ${step.stepName}`);
@@ -685,7 +701,7 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
       } else if (status === 'stop') {
         updateData.status = 'stop';
         updateData.endDate = now;
-        updateData.user = userId || null;
+        updateData.completedBy = userId || null;
       }
     }
   }
@@ -739,6 +755,7 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
       jobPlanningId: true,
       status: true,
       user: true,
+      completedBy: true,
       startDate: true,
       endDate: true,
       createdAt: true,
@@ -850,6 +867,7 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
     updateData.user = userId || null;
   } else if (status === 'stop') {
     updateData.endDate = now;
+    updateData.completedBy = userId || null;
   }
 
   const updatedStep = await prisma.jobStep.update({
@@ -865,6 +883,7 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
       updatedAt: true,
       status: true,
       user: true,
+      completedBy: true,
       startDate: true,
       endDate: true,
     },

@@ -570,7 +570,70 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
 };
 
 /**
+ * Helper function to get previous step name(s) for a given step
+ * Returns array to support parallel steps (e.g., FluteLamination requires both Printing and Corrugation)
+ */
+function getPreviousStepNames(stepName: string): string[] {
+  const stepDependencies: { [key: string]: string[] } = {
+    'PaperStore': [], // First step, no dependencies
+    'PrintingDetails': ['PaperStore'],
+    'Corrugation': ['PaperStore'],
+    'FluteLaminateBoardConversion': ['PrintingDetails', 'Corrugation'], // Requires both parallel steps
+    'Punching': ['FluteLaminateBoardConversion'],
+    'Die Cutting': ['FluteLaminateBoardConversion'], // Alternative to Punching
+    'SideFlapPasting': ['Punching', 'Die Cutting'], // Can follow either
+    'QualityDept': ['SideFlapPasting'],
+    'DispatchProcess': ['QualityDept']
+  };
+
+  return stepDependencies[stepName] || [];
+}
+
+/**
+ * Check if all previous steps for a given step are started/completed in a job (parallel start logic)
+ */
+function arePreviousStepsCompleted(steps: any[], targetStepName: string): boolean {
+  const previousStepNames = getPreviousStepNames(targetStepName);
+  
+  // If no previous steps required, return true
+  if (previousStepNames.length === 0) {
+    return true;
+  }
+
+  // Check if all previous steps exist and are started or completed (status = 'start' or 'stop')
+  for (const prevStepName of previousStepNames) {
+    const prevStep = steps.find(s => s.stepName === prevStepName);
+    
+    // For parallel dependencies (like FluteLamination requiring both Printing and Corrugation)
+    // we need ALL to be started or completed. But for alternatives (like SideFlapPasting after Punching OR Die Cutting)
+    // we need at least ONE to be started or completed
+    if (targetStepName === 'SideFlapPasting' && previousStepNames.includes('Punching') && previousStepNames.includes('Die Cutting')) {
+      // Special case: SideFlapPasting needs either Punching OR Die Cutting
+      const punchingStep = steps.find(s => s.stepName === 'Punching');
+      const dieCuttingStep = steps.find(s => s.stepName === 'Die Cutting');
+      
+      const punchingReady = punchingStep && (punchingStep.status === 'start' || punchingStep.status === 'stop');
+      const dieCuttingReady = dieCuttingStep && (dieCuttingStep.status === 'start' || dieCuttingStep.status === 'stop');
+      
+      if (!punchingReady && !dieCuttingReady) {
+        return false;
+      }
+      // If at least one is started or completed, continue checking other dependencies
+      continue;
+    }
+    
+    // For all other cases, the previous step must exist and be started or completed
+    if (!prevStep || (prevStep.status !== 'start' && prevStep.status !== 'stop')) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Get filtered job numbers based on user machine access (for job-level filtering)
+ * Now includes step dependency filtering - users only see jobs where previous steps are completed
  * Now supports pagination to prevent performance issues with large datasets
  */
 export const getFilteredJobNumbers = async (
@@ -630,7 +693,14 @@ export const getFilteredJobNumbers = async (
   const [jobs, jobPlannings] = await Promise.all([
     prisma.job.findMany({ select: { nrcJobNo: true, machineId: true, jobDemand: true } }),
     prisma.jobPlanning.findMany({
-      select: { nrcJobNo: true, jobDemand: true, steps: { select: { machineDetails: true, stepNo: true, stepName: true } } }
+      select: { 
+        nrcJobNo: true, 
+        jobDemand: true, 
+        steps: { 
+          select: { machineDetails: true, stepNo: true, stepName: true, status: true },
+          orderBy: { stepNo: 'asc' }
+        } 
+      }
     })
   ]);
 
@@ -639,35 +709,59 @@ export const getFilteredJobNumbers = async (
     .map(j => j.nrcJobNo);
 
   const planningLevelAccessible = jobPlannings
-    .filter(p => p.steps.some(s => {
-      // High-demand grants role-based visibility regardless of machine
-      // Check job.jobDemand first (existing functionality - UNCHANGED)
-      const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
-      if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
-      
-      // Fallback: If no Job record, check jobPlanning.jobDemand
-      // This only adds support for jobPlanning-only records without affecting existing jobs
-      const jobExists = jobs.some(j => j.nrcJobNo === p.nrcJobNo);
-      if (!jobExists && p.jobDemand === 'high' && isStepForUserRole(s.stepName, userRole)) return true;
-      
-      // Role-based visibility: If step matches user role AND has machine assignment, require machine match
-      if (isStepForUserRole(s.stepName, userRole)) {
+    .filter(p => {
+      // First check if any step matches user's role and machine access
+      const hasAccessibleStep = p.steps.some(s => {
+        // High-demand grants role-based visibility regardless of machine
+        // Check job.jobDemand first (existing functionality - UNCHANGED)
+        const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
+        if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
+        
+        // Fallback: If no Job record, check jobPlanning.jobDemand
+        // This only adds support for jobPlanning-only records without affecting existing jobs
+        const jobExists = jobs.some(j => j.nrcJobNo === p.nrcJobNo);
+        if (!jobExists && p.jobDemand === 'high' && isStepForUserRole(s.stepName, userRole)) return true;
+        
+        // Role-based visibility: If step matches user role AND has machine assignment, require machine match
+        if (isStepForUserRole(s.stepName, userRole)) {
+          const stepMachineIds = parseMachineDetails(s.machineDetails);
+          if (stepMachineIds.length > 0) {
+            return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
+          }
+          // If no machine details, allow access (for backward compatibility)
+          return true;
+        }
+        
+        // Machine-based visibility: If step has machine assignment, require machine match
         const stepMachineIds = parseMachineDetails(s.machineDetails);
         if (stepMachineIds.length > 0) {
           return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
         }
-        // If no machine details, allow access (for backward compatibility)
+        
+        return false;
+      });
+
+      // If no accessible step, job is not visible
+      if (!hasAccessibleStep) {
+        return false;
+      }
+
+      // 🎯 NEW: Step dependency filtering
+      // Check if the user's relevant steps have their previous steps completed
+      const userRelevantSteps = p.steps.filter(s => isStepForUserRole(s.stepName, userRole));
+      
+      if (userRelevantSteps.length === 0) {
+        // If no steps match user's role, use machine-based filtering only
         return true;
       }
-      
-      // Machine-based visibility: If step has machine assignment, require machine match
-      const stepMachineIds = parseMachineDetails(s.machineDetails);
-      if (stepMachineIds.length > 0) {
-        return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
-      }
-      
-      return false;
-    }))
+
+      // For each step that matches the user's role, check if previous steps are completed
+      const hasStepWithCompletedPrerequisites = userRelevantSteps.some(userStep => {
+        return arePreviousStepsCompleted(p.steps, userStep.stepName);
+      });
+
+      return hasStepWithCompletedPrerequisites;
+    })
     .map(p => p.nrcJobNo);
 
   const set = new Set<string>([...jobLevelAccessible, ...planningLevelAccessible]);
@@ -676,6 +770,7 @@ export const getFilteredJobNumbers = async (
 
 /**
  * Get total count of filtered job numbers for pagination
+ * Now includes step dependency filtering - same logic as getFilteredJobNumbers
  */
 export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null, userRole: string): Promise<number> => {
   if (userMachineIds === null) {
@@ -692,7 +787,14 @@ export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null
   const [jobs, jobPlannings] = await Promise.all([
     prisma.job.findMany({ select: { nrcJobNo: true, machineId: true, jobDemand: true } }),
     prisma.jobPlanning.findMany({
-      select: { nrcJobNo: true, steps: { select: { machineDetails: true, stepNo: true, stepName: true } } }
+      select: { 
+        nrcJobNo: true, 
+        jobDemand: true,
+        steps: { 
+          select: { machineDetails: true, stepNo: true, stepName: true, status: true },
+          orderBy: { stepNo: 'asc' }
+        } 
+      }
     })
   ]);
 
@@ -701,29 +803,57 @@ export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null
     .map(j => j.nrcJobNo);
 
   const planningLevelAccessible = jobPlannings
-    .filter(p => p.steps.some(s => {
-      // High-demand grants role-based visibility regardless of machine
-      const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
-      if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
-      
-      // Role-based visibility: If step matches user role AND has machine assignment, require machine match
-      if (isStepForUserRole(s.stepName, userRole)) {
+    .filter(p => {
+      // First check if any step matches user's role and machine access
+      const hasAccessibleStep = p.steps.some(s => {
+        // High-demand grants role-based visibility regardless of machine
+        const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
+        if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
+        
+        // Fallback: If no Job record, check jobPlanning.jobDemand
+        const jobExists = jobs.some(j => j.nrcJobNo === p.nrcJobNo);
+        if (!jobExists && p.jobDemand === 'high' && isStepForUserRole(s.stepName, userRole)) return true;
+        
+        // Role-based visibility: If step matches user role AND has machine assignment, require machine match
+        if (isStepForUserRole(s.stepName, userRole)) {
+          const stepMachineIds = parseMachineDetails(s.machineDetails);
+          if (stepMachineIds.length > 0) {
+            return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
+          }
+          // If no machine details, allow access (for backward compatibility)
+          return true;
+        }
+        
+        // Machine-based visibility: If step has machine assignment, require machine match
         const stepMachineIds = parseMachineDetails(s.machineDetails);
         if (stepMachineIds.length > 0) {
           return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
         }
-        // If no machine details, allow access (for backward compatibility)
+        
+        return false;
+      });
+
+      // If no accessible step, job is not visible
+      if (!hasAccessibleStep) {
+        return false;
+      }
+
+      // 🎯 NEW: Step dependency filtering
+      // Check if the user's relevant steps have their previous steps completed
+      const userRelevantSteps = p.steps.filter(s => isStepForUserRole(s.stepName, userRole));
+      
+      if (userRelevantSteps.length === 0) {
+        // If no steps match user's role, use machine-based filtering only
         return true;
       }
-      
-      // Machine-based visibility: If step has machine assignment, require machine match
-      const stepMachineIds = parseMachineDetails(s.machineDetails);
-      if (stepMachineIds.length > 0) {
-        return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
-      }
-      
-      return false;
-    }))
+
+      // For each step that matches the user's role, check if previous steps are completed
+      const hasStepWithCompletedPrerequisites = userRelevantSteps.some(userStep => {
+        return arePreviousStepsCompleted(p.steps, userStep.stepName);
+      });
+
+      return hasStepWithCompletedPrerequisites;
+    })
     .map(p => p.nrcJobNo);
 
   const set = new Set<string>([...jobLevelAccessible, ...planningLevelAccessible]);

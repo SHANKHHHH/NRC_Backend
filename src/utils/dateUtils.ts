@@ -20,19 +20,10 @@ export const calculateDateDifference = (date: Date | null | undefined): number |
   };
   
   /**
-   * Calculate shared card diff date as the deadline date (180 days from shade card approval date)
+   * Calculate shared card diff date (difference between current date and shade card approval date)
    * @param shadeCardApprovalDate - The shade card approval date
-   * @returns The deadline date as Unix timestamp (seconds since epoch), or null if no approval date
+   * @returns The difference in days
    */
   export const calculateSharedCardDiffDate = (shadeCardApprovalDate: Date | null | undefined): number | null => {
-    if (!shadeCardApprovalDate) return null;
-    
-    const approvalDate = new Date(shadeCardApprovalDate);
-    
-    // Add 180 days to the approval date
-    const deadlineDate = new Date(approvalDate);
-    deadlineDate.setDate(deadlineDate.getDate() + 180);
-    
-    // Return as Unix timestamp in seconds (for storage as Int)
-    return Math.floor(deadlineDate.getTime() / 1000);
+    return calculateDateDifference(shadeCardApprovalDate);
   };

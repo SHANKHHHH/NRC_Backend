@@ -23,7 +23,8 @@ import {
   corsMiddleware,
   rateLimiter,
   requestSizeLimiter,
-  sanitizeInput
+  sanitizeInput,
+  authenticateToken
 } from './middleware';
 import { batchRequestsMiddleware } from './middleware/batchRequests';
 import { activityLogger } from './middleware/activityLogger';
@@ -45,6 +46,7 @@ import machineRoutes from './routes/machineRoute';
 import completedJobRoutes from './routes/completedJobRoute';
 import dashboardRoutes from './routes/dashboardRoute';
 import userRoutes from './routes/userRoute';
+import { getUserMachines } from './controllers/userController';
 import plannerDashboardRoutes from './routes/plannerDashboardRoute';
 import flyingSquadRoutes from './routes/flyingSquadRoute';
 import machineAssignmentRoutes from './routes/machineAssignmentRoute';
@@ -111,6 +113,9 @@ app.use('/api/planner-dashboard', plannerDashboardRoutes);
 app.use('/api/flying-squad', flyingSquadRoutes);
 app.use('/api/machine-assignments', machineAssignmentRoutes);
 app.use('/api/job-step-machines', jobStepMachineRoutes);
+
+// Direct route for users-machines (for frontend compatibility)
+app.get('/api/users-machines', authenticateToken, asyncHandler(getUserMachines));
 
 // Test error handling routes
 app.get('/api/test-error', (req: Request, res: Response, next: NextFunction) => {

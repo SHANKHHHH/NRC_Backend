@@ -245,6 +245,7 @@ export const getAllCorrugations = async (req: Request, res: Response) => {
       stepName: step.stepName,
       status: step.status,
       user: step.user,
+      completedBy: step.completedBy,
       startDate: step.startDate,
       endDate: step.endDate,
       createdAt: step.createdAt,

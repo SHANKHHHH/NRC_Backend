@@ -52,6 +52,7 @@ export class UnifiedJobDataHelper {
             startDate: true,
             endDate: true,
             user: true,
+            completedBy: true,
             machineDetails: true,
             createdAt: true,
             updatedAt: true
@@ -146,6 +147,7 @@ export class UnifiedJobDataHelper {
             startDate: true,
             endDate: true,
             user: true,
+            completedBy: true,
             machineDetails: true,
             createdAt: true,
             updatedAt: true

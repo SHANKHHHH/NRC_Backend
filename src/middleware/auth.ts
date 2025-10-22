@@ -28,7 +28,7 @@ const getTokenFromHeader = (req: Request): string | null => {
   return null;
 };
 
-// JWT Authentication middleware
+// JWT Authentication middleware with single-session enforcement
 export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
   // Skip authentication for OPTIONS requests (CORS preflight)
   if (req.method === 'OPTIONS') {
@@ -44,6 +44,12 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     const user = await prisma.user.findUnique({ where: { id: decoded.id } });
     if (!user) throw new AppError('User not found', 401);
     if (!user.isActive) throw new AppError('Account is deactivated', 401);
+
+    // 🔒 SINGLE SESSION ENFORCEMENT: Check if this token matches the active session
+    if (user.activeSessionToken && user.activeSessionToken !== token) {
+      // This session has been invalidated by a new login
+      throw new AppError('Session expired. This account is logged in on another device.', 401);
+    }
 
     // Convert role to string format for RoleManager compatibility
     const roleString = typeof user.role === 'string' ? user.role : JSON.stringify(user.role);

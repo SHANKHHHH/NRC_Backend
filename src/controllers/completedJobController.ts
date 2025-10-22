@@ -105,53 +105,6 @@ export const completeJob = async (req: Request, res: Response) => {
       throw new AppError('Job planning not found', 404);
     }
 
-    // Check if all steps have their detail records created
-    const stepsWithMissingDetails: string[] = [];
-    for (const step of jobPlanning.steps) {
-      let hasDetails = false;
-      switch (step.stepName) {
-        case 'PaperStore':
-          hasDetails = !!step.paperStore;
-          break;
-        case 'PrintingDetails':
-          hasDetails = !!step.printingDetails;
-          break;
-        case 'Corrugation':
-          hasDetails = !!step.corrugation;
-          break;
-        case 'FluteLaminateBoardConversion':
-          hasDetails = !!step.flutelam;
-          break;
-        case 'Punching':
-          hasDetails = !!step.punching;
-          break;
-        case 'SideFlapPasting':
-          hasDetails = !!step.sideFlapPasting;
-          break;
-        case 'QualityDept':
-          hasDetails = !!step.qualityDept;
-          break;
-        case 'DispatchProcess':
-          hasDetails = !!step.dispatchProcess;
-          break;
-        default:
-          // Unknown step type - assume it's okay
-          hasDetails = true;
-          break;
-      }
-      
-      if (!hasDetails) {
-        stepsWithMissingDetails.push(`${step.stepName} (Step ${step.stepNo})`);
-      }
-    }
-
-    if (stepsWithMissingDetails.length > 0) {
-      throw new AppError(
-        `Cannot complete job. The following steps are missing detail records: ${stepsWithMissingDetails.join(', ')}. Please complete these steps before finishing the job.`,
-        400
-      );
-    }
-
     // Find a step where status is 'stop' and dispatchProcess.status is 'accept'
     const jobStep = jobPlanning.steps.find(
       step => step.status === 'stop' && step.dispatchProcess && step.dispatchProcess.status === 'accept'

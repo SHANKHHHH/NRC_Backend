@@ -161,6 +161,7 @@ export const getAllFluteLaminateBoardConversions = async (req: Request, res: Res
       stepName: step.stepName,
       status: step.status,
       user: step.user,
+      completedBy: step.completedBy,
       startDate: step.startDate,
       endDate: step.endDate,
       createdAt: step.createdAt,
