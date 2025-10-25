@@ -419,8 +419,8 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
   let userId = req.user?.userId || req.headers['user-id'];
   if (Array.isArray(userId)) userId = userId[0];
 
-  if (!['planned', 'start', 'stop', 'completed'].includes(status)) {
-    throw new AppError('Invalid status value. Must be one of: planned, start, stop, completed', 400);
+  if (!['planned', 'start', 'stop', 'completed', 'major_hold'].includes(status)) {
+    throw new AppError('Invalid status value. Must be one of: planned, start, stop, completed, major_hold', 400);
   }
 
   // Find the job step
@@ -670,8 +670,8 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   // Optional status handling
   if (req.body.status !== undefined) {
     const status = String(req.body.status);
-    if (!['planned', 'start', 'stop'].includes(status)) {
-      throw new AppError('Invalid status value. Must be one of: planned, start, stop', 400);
+    if (!['planned', 'start', 'stop', 'major_hold'].includes(status)) {
+      throw new AppError('Invalid status value. Must be one of: planned, start, stop, major_hold', 400);
     }
 
     // ✅ PROTECTION: For machine-based steps, prevent status updates via this endpoint
@@ -813,8 +813,8 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
   console.log(`🔍 [StepUpdate] Starting step update for job ${decodedNrcJobNo}, step ${stepNo}, status ${status}`);
   console.log(`🔍 [StepUpdate] User ID: ${userId}, Role: ${userRole}`);
 
-  if (!['planned', 'start', 'stop', 'completed'].includes(status)) {
-    throw new AppError('Invalid status value. Must be one of: planned, start, stop, completed', 400);
+  if (!['planned', 'start', 'stop', 'completed', 'major_hold'].includes(status)) {
+    throw new AppError('Invalid status value. Must be one of: planned, start, stop, completed, major_hold', 400);
   }
 
   // Get the prioritized job planning first

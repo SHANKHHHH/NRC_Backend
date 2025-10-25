@@ -266,6 +266,7 @@ model PaperStore {
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPaperStore")
   holdRemark          String?
+  majorHoldRemark     String?
   completeRemark      String?
   remarks             String?
 }
@@ -316,6 +317,7 @@ model PrintingDetails {
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPrintingDetails")
   holdRemark          String?
+  majorHoldRemark     String?
   completeRemark      String?
   remarks             String?
 }
@@ -341,6 +343,7 @@ model Corrugation {
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToCorrugation")
   holdRemark          String?
+  majorHoldRemark     String?
   completeRemark      String?
 }
 
@@ -362,6 +365,7 @@ model FluteLaminateBoardConversion {
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToFluteLaminateBoardConversion")
   holdRemark          String?
+  majorHoldRemark     String?
   completeRemark      String?
   remarks             String?
 }
@@ -385,6 +389,7 @@ model Punching {
   job                 Job                  @relation("JobToPunching", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   holdRemark          String?
+  majorHoldRemark     String?
   completeRemark      String?
 }
 
@@ -407,6 +412,7 @@ model SideFlapPasting {
   job                 Job                  @relation("JobToSideFlapPasting", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   holdRemark          String?
+  majorHoldRemark     String?
   completeRemark      String?
 }
 
@@ -605,6 +611,7 @@ enum StepStatus {
   reject
   accept
   hold
+  major_hold
   in_progress
 }
 

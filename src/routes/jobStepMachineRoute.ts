@@ -7,7 +7,9 @@ import {
   getMachineWorkStatus,
   autoAssignMachineForUrgentJob,
   holdWorkOnMachine,
+  majorHoldWorkOnMachine,
   resumeWorkOnMachine,
+  adminResumeMajorHold,
   stopWorkOnMachine,
   getAllHeldMachines
 } from '../controllers/jobStepMachineController';
@@ -36,11 +38,17 @@ router.get('/:nrcJobNo/steps/:stepNo/machines/status', getMachineWorkStatus);
 // Auto-assign machine for urgent jobs
 router.post('/:nrcJobNo/steps/:stepNo/urgent/start', autoAssignMachineForUrgentJob);
 
-// Hold work on a specific machine
+// Hold work on a specific machine (temporary hold)
 router.post('/:nrcJobNo/steps/:stepNo/machines/:machineId/hold', holdWorkOnMachine);
 
-// Resume work on a specific machine
+// Major hold work on a specific machine (admin/planner only resume)
+router.post('/:nrcJobNo/steps/:stepNo/machines/:machineId/major-hold', majorHoldWorkOnMachine);
+
+// Resume work on a specific machine (temporary hold)
 router.post('/:nrcJobNo/steps/:stepNo/machines/:machineId/resume', resumeWorkOnMachine);
+
+// Admin/Planner resume major hold
+router.post('/:nrcJobNo/steps/:stepNo/machines/:machineId/admin-resume-major-hold', adminResumeMajorHold);
 
 // Stop work on a specific machine
 router.post('/:nrcJobNo/steps/:stepNo/machines/:machineId/stop', stopWorkOnMachine);
