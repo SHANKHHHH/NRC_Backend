@@ -117,18 +117,13 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     const queryOptions: any = {
       include: {
         steps: {
-          select: {
-            id: true,
-            stepNo: true,
-            stepName: true,
-            machineDetails: true,
-            status: true,
-            startDate: true,
-            endDate: true,
-            user: true,
-            completedBy: true,
-            createdAt: true,
-            updatedAt: true,
+          include: {
+            paperStore: {
+              select: {
+                id: true,
+                status: true,
+              }
+            }
           },
           orderBy: { stepNo: 'asc' }
         }
@@ -142,7 +137,20 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
       queryOptions.take = limit;
     }
     
-    const allPlanningsUnfiltered = await prisma.jobPlanning.findMany(queryOptions);
+    const allPlanningsUnfiltered = await prisma.jobPlanning.findMany(queryOptions) as any[];
+    
+    // Enrich PaperStore steps with PaperStore table status
+    // For PaperStore steps, use the PaperStore.status instead of JobStep.status
+    for (const planning of allPlanningsUnfiltered) {
+      if (planning.steps && Array.isArray(planning.steps)) {
+        for (const step of planning.steps) {
+          if (step.stepName === 'PaperStore' && step.paperStore) {
+            // Use PaperStore.status if available (e.g., 'accept'), otherwise use JobStep.status
+            step.status = step.paperStore.status || step.status;
+          }
+        }
+      }
+    }
     
     // Build response
     const response: any = {
@@ -180,17 +188,13 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     where: { nrcJobNo: { in: jobNumbersToFetch } },
     include: {
       steps: {
-        select: {
-          id: true,
-          stepNo: true,
-          stepName: true,
-          machineDetails: true,
-          status: true,
-          startDate: true,
-          endDate: true,
-          user: true,
-          createdAt: true,
-          updatedAt: true,
+        include: {
+          paperStore: {
+            select: {
+              id: true,
+              status: true,
+            }
+          }
         },
         orderBy: { stepNo: 'asc' }
       }
@@ -229,17 +233,37 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
   const machineMap = Object.fromEntries(machines.map(m => [m.id, m]));
 
   // 4. Replace machineId in each step's machineDetails with the full machine object (serialized)
+  // Also enrich PaperStore steps with PaperStore table status
+  // ALSO filter machines to only show machines the user has access to
   for (const planning of jobPlannings) {
     for (const step of planning.steps) {
+      // Enrich PaperStore steps with PaperStore table status
+      if (step.stepName === 'PaperStore' && (step as any).paperStore) {
+        // Use PaperStore.status if available (e.g., 'accept'), otherwise use JobStep.status
+        (step as any).status = (step as any).paperStore.status || step.status;
+      }
+      
       if (Array.isArray(step.machineDetails)) {
-        step.machineDetails = step.machineDetails.map((md: any) => {
-          const mid = (md && typeof md === 'object') ? (md.machineId || md.id) : undefined;
-          if (mid && typeof mid === 'string' && machineMap[mid]) {
-            const base: Record<string, any> = (md && typeof md === 'object') ? (md as Record<string, any>) : {};
-            return { ...base, machine: machineMap[mid] };
-          }
-          return md;
-        });
+        // Filter machines to only show machines the user has access to
+        step.machineDetails = step.machineDetails
+          .map((md: any) => {
+            const mid = (md && typeof md === 'object') ? (md.machineId || md.id) : undefined;
+            if (mid && typeof mid === 'string' && machineMap[mid]) {
+              const base: Record<string, any> = (md && typeof md === 'object') ? (md as Record<string, any>) : {};
+              return { ...base, machine: machineMap[mid] };
+            }
+            return md;
+          })
+          .filter((md: any) => {
+            // For users with machine access, only show machines they have access to
+            if (userMachineIds && userMachineIds.length > 0) {
+              const machineId = md.id || md.machineId;
+              console.log(`🔍 [Machine Filter] Step ${step.stepName}, Machine ${machineId}, User has access: ${machineId && userMachineIds.includes(machineId)}`);
+              return machineId && userMachineIds.includes(machineId);
+            }
+            // For bypass users (admin, planner, etc.), show all machines
+            return true;
+          });
       }
     }
   }
@@ -702,6 +726,9 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
         updateData.status = 'stop';
         updateData.endDate = now;
         updateData.completedBy = userId || null;
+      } else if (status === 'major_hold') {
+        updateData.status = 'major_hold';
+        // Don't clear startDate or endDate for major_hold
       }
     }
   }
@@ -721,14 +748,13 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   }
 
   // Handle form data fields for step completion - store in appropriate step-specific models
-  const formDataFields = ['quantity', 'oprName', 'size', 'passQuantity', 'checkedBy', 'noOfBoxes', 'dispatchNo', 'remarks'];
+  const formDataFields = ['quantity', 'oprName', 'size', 'passQuantity', 'checkedBy', 'noOfBoxes', 'dispatchNo', 'remarks', 'available', 'completeRemark', 'mill', 'gsm', 'quality', 'extraMargin', 'sheetSize'];
   const hasFormData = formDataFields.some(field => req.body[field] !== undefined);
   
-  // Create individual step records for status changes (start/stop) or when form data is present
+  // Call storeStepFormData if there's form data or status change
   if (hasFormData || req.body.status === 'start' || req.body.status === 'stop') {
     console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Processing step data for step: ${step.stepName}`);
     console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Form data received:`, req.body);
-    console.log(`🔍 [upsertStepByNrcJobNoAndStepNo] Status: ${req.body.status}, Has form data: ${hasFormData}`);
     
     try {
       // Store form data in the appropriate step-specific model based on step name
@@ -770,6 +796,33 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
 
   if (machineDetailsProvided) {
     await updateJobMachineDetailsFlag(decodedNrcJobNo);
+  }
+
+  // Log the job step status update action
+  if (userId && typeof userId === 'string' && updateData.status) {
+    try {
+      console.log(`Attempting to log activity for user ${userId}, step ${step.id}, status ${updateData.status}`);
+      await logUserActionWithResource(
+        userId,
+        ActionTypes.JOBSTEP_UPDATED,
+        JSON.stringify({
+          message: `Job step status updated to ${updateData.status}`,
+          nrcJobNo: decodedNrcJobNo,
+          jobPlanId: step.jobPlanningId,
+          stepNo: stepNo,
+          status: updateData.status,
+          startDate: updatedStep.startDate,
+          endDate: updatedStep.endDate
+        }),
+        'JobStep',
+        stepNo
+      );
+      console.log(`Successfully logged activity for user ${userId}, step ${step.id}`);
+    } catch (error) {
+      console.error(`Failed to log activity for user ${userId}, step ${step.id}:`, error);
+    }
+  } else {
+    console.log(`Skipping activity log - userId: ${userId}, type: ${typeof userId}, status: ${updateData.status}`);
   }
 
   // Check if job should be automatically completed when step status is set to 'stop'
@@ -1347,10 +1400,24 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
   const currentDate = new Date();
   const calculatedShift = calculateShift(currentDate);
   
-  // Determine step-specific status based on JobStep status
+  // Determine step-specific status based on JobStep status and completion data
+  // For non-machine steps (PaperStore, QC, Dispatch), only set to 'accept' if completion data is provided
   let stepStatus: 'in_progress' | 'accept';
+  const nonMachineSteps = ['paperstore', 'qualitydept', 'dispatchprocess'];
+  const isNonMachineStep = nonMachineSteps.some(name => stepNameLower.includes(name));
+  const isDispatchStep = stepNameLower.includes('dispatch');
+  
   if (formData.status === 'stop') {
-    stepStatus = 'accept';
+    // For non-machine steps, only accept if completion data exists
+    // NOTE: Dispatch handles its own status based on cumulative quantity, so don't override here
+    if (isNonMachineStep && !isDispatchStep && !formData.available && !formData.completeRemark && !formData.quantity) {
+      stepStatus = 'in_progress'; // Keep in progress until completion form is filled
+    } else if (!isDispatchStep) {
+      stepStatus = 'accept';
+    } else {
+      // Dispatch status will be determined later based on cumulative quantity
+      stepStatus = 'in_progress';
+    }
   } else {
     stepStatus = 'in_progress'; // default for 'start' or any other status
   }
@@ -1597,33 +1664,93 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
     } else if (stepNameLower.includes('dispatch')) {
       // Use user input for quantity, fallback to null if not provided
       const quantity = (formData.noOfBoxes || formData['No of Boxes']) ? parseInt(formData.noOfBoxes || formData['No of Boxes']) || null : null;
+      
+      // 🔥 DISPATCH CUMULATIVE TRACKING: Get existing dispatch record to calculate cumulative quantity
+      const existingDispatch = await prisma.dispatchProcess.findUnique({
+        where: { jobStepId }
+      });
+      
+      let finalStatus = stepStatus;
+      let totalDispatchedQty = 0;
+      let dispatchHistory: any[] = [];
+      
+      // If quantity is provided and this is not just a status update, handle cumulative tracking
+      if (quantity && quantity > 0 && formData.status === 'stop') {
+        // Calculate cumulative dispatched quantity
+        const currentTotal = existingDispatch?.totalDispatchedQty || 0;
+        const newTotal = currentTotal + quantity;
+        totalDispatchedQty = newTotal;
+        
+        // Get job total quantity to check if fully dispatched
+        const job = await prisma.job.findUnique({
+          where: { nrcJobNo },
+          include: { purchaseOrders: true }
+        });
+        const jobQuantity = job?.purchaseOrders?.reduce((sum: number, po: any) => sum + (po.totalPOQuantity || 0), 0) || 0;
+        
+        // Update dispatch history
+        dispatchHistory = existingDispatch?.dispatchHistory 
+          ? (Array.isArray(existingDispatch.dispatchHistory) ? existingDispatch.dispatchHistory : JSON.parse(existingDispatch.dispatchHistory as string))
+          : [];
+        
+        dispatchHistory.push({
+          dispatchDate: new Date().toISOString(),
+          dispatchedQty: quantity,
+          dispatchNo: formData.dispatchNo || formData['Dispatch No'] || `DISP-${Date.now()}`,
+          remarks: formData.remarks || formData['Remarks'] || '',
+          operatorName: operatorName
+        });
+        
+        // If fully dispatched, set status to 'accept'
+        if (newTotal >= jobQuantity) {
+          finalStatus = 'accept';
+          console.log(`✅ [storeStepFormData] Dispatch fully completed: ${newTotal} >= ${jobQuantity}`);
+        } else {
+          // Partial dispatch - keep in_progress
+          finalStatus = 'in_progress';
+          console.log(`📦 [storeStepFormData] Partial dispatch: ${newTotal} / ${jobQuantity}`);
+        }
+      } else {
+        // No quantity change, preserve existing values
+        totalDispatchedQty = existingDispatch?.totalDispatchedQty || 0;
+        dispatchHistory = existingDispatch?.dispatchHistory 
+          ? (Array.isArray(existingDispatch.dispatchHistory) ? existingDispatch.dispatchHistory : JSON.parse(existingDispatch.dispatchHistory as string))
+          : [];
+        // Preserve existing status if record exists
+        if (existingDispatch?.status) {
+          finalStatus = existingDispatch.status as 'in_progress' | 'accept';
+        }
+      }
+      
       await prisma.dispatchProcess.upsert({
         where: { jobStepId },
         update: {
-          status: stepStatus,
+          status: finalStatus,
           quantity: quantity,
           dispatchNo: formData.dispatchNo || formData['Dispatch No'] || `DISP-${Date.now()}`,
           date: formData.date ? new Date(formData.date) : undefined,
           shift: formData.shift,
-          operatorName: operatorName, // Use JobStep user instead of form data
+          operatorName: operatorName,
           dispatchDate: (formData.dispatchDate || formData['Dispatch Date']) ? new Date(formData.dispatchDate || formData['Dispatch Date']) : undefined,
           balanceQty: (formData.balanceQty || formData['Balance Qty']) ? parseInt(formData.balanceQty || formData['Balance Qty']) || null : null,
           remarks: formData.remarks || formData['Remarks'],
-          // QC fields are only updated by Flying Squad, not by regular operators
+          totalDispatchedQty: totalDispatchedQty,
+          dispatchHistory: dispatchHistory,
         },
         create: {
           jobNrcJobNo: nrcJobNo,
           jobStepId,
-          status: stepStatus,
+          status: finalStatus,
           quantity,
           dispatchNo: formData.dispatchNo || formData['Dispatch No'] || `DISP-${Date.now()}`,
           date: formData.date ? new Date(formData.date) : new Date(),
           shift: formData.shift,
-          operatorName: operatorName, // Use JobStep user instead of form data
+          operatorName: operatorName,
           dispatchDate: (formData.dispatchDate || formData['Dispatch Date']) ? new Date(formData.dispatchDate || formData['Dispatch Date']) : new Date(),
           balanceQty: (formData.balanceQty || formData['Balance Qty']) ? parseInt(formData.balanceQty || formData['Balance Qty']) || null : null,
           remarks: formData.remarks || formData['Remarks'],
-          // QC fields are only updated by Flying Squad, not by regular operators
+          totalDispatchedQty: totalDispatchedQty,
+          dispatchHistory: dispatchHistory,
         },
       });
     }

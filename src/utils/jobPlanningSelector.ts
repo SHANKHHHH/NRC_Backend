@@ -59,15 +59,77 @@ export async function getStepsForJob(nrcJobNo: string) {
     include: {
       jobPlanning: {
         select: { jobPlanId: true, nrcJobNo: true }
+      },
+      jobStepMachines: {
+        select: {
+          id: true,
+          machineId: true,
+          status: true,
+          startedAt: true,
+          completedAt: true,
+          userId: true,
+          quantity: true,
+          remarks: true,
+          formData: true,
+          machine: {
+            select: {
+              id: true,
+              machineCode: true,
+              machineType: true,
+              unit: true,
+              status: true,
+            }
+          },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          }
+        }
       }
     },
     orderBy: { stepNo: 'asc' }
   });
   
-  console.log(`🔍 [JobPlanningSelector] Returning ${steps.length} steps from planning ${selectedPlanning.jobPlanId}`);
+  // Enrich machineDetails with JobStepMachine status information and filter by user access
+  const enrichedSteps = steps.map(step => {
+    // If machineDetails is an array, enrich it with JobStepMachine data
+    if (Array.isArray(step.machineDetails) && step.machineDetails.length > 0) {
+      step.machineDetails = step.machineDetails
+        .map((md: any) => {
+          // Find matching JobStepMachine entry
+          const jobStepMachine = step.jobStepMachines?.find(
+            (jsm: any) => jsm.machineId === (md.machineId || md.id)
+          );
+          
+          // Return enriched machine detail
+          return {
+            ...md,
+            // Override with live status from JobStepMachine
+            status: jobStepMachine?.status || md.status || 'available',
+            startedAt: jobStepMachine?.startedAt || md.startedAt,
+            completedAt: jobStepMachine?.completedAt || md.completedAt,
+            userId: jobStepMachine?.userId || md.userId,
+            quantity: jobStepMachine?.quantity || md.quantity,
+            remarks: jobStepMachine?.remarks || md.remarks,
+            formData: jobStepMachine?.formData || md.formData,
+            machine: jobStepMachine?.machine || md.machine,
+            user: jobStepMachine?.user || md.user,
+            // Add count of machines in each status
+            _jobStepMachineId: jobStepMachine?.id,
+          };
+        });
+    }
+    
+    return step;
+  });
+  
+  console.log(`🔍 [JobPlanningSelector] Returning ${enrichedSteps.length} steps from planning ${selectedPlanning.jobPlanId}`);
   
   return {
-    steps,
+    steps: enrichedSteps,
     selectedPlanning
   };
 }
@@ -78,15 +140,80 @@ export async function getStepsForJob(nrcJobNo: string) {
 export async function getJobPlanningData(nrcJobNo: string) {
   const selectedPlanning = await selectBestJobPlanning(nrcJobNo);
   
-  // Get full job planning data
+  // Get full job planning data with JobStepMachine details
   const jobPlanning = await prisma.jobPlanning.findUnique({
     where: { jobPlanId: selectedPlanning.jobPlanId },
     include: {
       steps: {
-        orderBy: { stepNo: 'asc' }
+        orderBy: { stepNo: 'asc' },
+        include: {
+          jobStepMachines: {
+            select: {
+              id: true,
+              machineId: true,
+              status: true,
+              startedAt: true,
+              completedAt: true,
+              userId: true,
+              quantity: true,
+              remarks: true,
+              formData: true,
+              machine: {
+                select: {
+                  id: true,
+                  machineCode: true,
+                  machineType: true,
+                  unit: true,
+                  status: true,
+                }
+              },
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
+              }
+            }
+          }
+        }
       }
     }
   });
+  
+  // Enrich machineDetails with JobStepMachine status information
+  if (jobPlanning) {
+    jobPlanning.steps = jobPlanning.steps.map(step => {
+      // If machineDetails is an array, enrich it with JobStepMachine data
+      if (Array.isArray(step.machineDetails) && step.machineDetails.length > 0) {
+        step.machineDetails = step.machineDetails.map((md: any) => {
+          // Find matching JobStepMachine entry
+          const jobStepMachine = step.jobStepMachines?.find(
+            (jsm: any) => jsm.machineId === (md.machineId || md.id)
+          );
+          
+          // Return enriched machine detail
+          return {
+            ...md,
+            // Override with live status from JobStepMachine
+            status: jobStepMachine?.status || md.status || 'available',
+            startedAt: jobStepMachine?.startedAt || md.startedAt,
+            completedAt: jobStepMachine?.completedAt || md.completedAt,
+            userId: jobStepMachine?.userId || md.userId,
+            quantity: jobStepMachine?.quantity || md.quantity,
+            remarks: jobStepMachine?.remarks || md.remarks,
+            formData: jobStepMachine?.formData || md.formData,
+            machine: jobStepMachine?.machine || md.machine,
+            user: jobStepMachine?.user || md.user,
+            // Add count of machines in each status
+            _jobStepMachineId: jobStepMachine?.id,
+          };
+        });
+      }
+      
+      return step;
+    });
+  }
   
   return jobPlanning;
 }

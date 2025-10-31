@@ -308,9 +308,9 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
     }
   }
 
-  try {
+    try {
     // Step 1: Find the DispatchProcess record by jobNrcJobNo
-    const existingDispatchProcess = await prisma.dispatchProcess.findFirst({
+    const existingDispatchProcess: any = await prisma.dispatchProcess.findFirst({
       where: { jobNrcJobNo: decodedNrcJobNo },
     });
 
@@ -324,8 +324,57 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
     const { filterEditableFields } = await import('../utils/fieldEditability');
     const editableData = filterEditableFields(existingDispatchProcess, req.body);
 
-    // Keep simple flow for Dispatch: use editable data directly
-    const populatedData = editableData;
+    // Handle partial dispatch tracking
+    let populatedData = editableData;
+    const dispatchedQty = editableData.quantity || 0;
+    
+    // If this is a new dispatch (quantity is being set), update partial dispatch tracking
+    if (dispatchedQty > 0) {
+      const currentTotalDispatched = existingDispatchProcess.totalDispatchedQty || 0;
+      const newTotalDispatched = currentTotalDispatched + dispatchedQty;
+      
+      // Get job total quantity to check if fully dispatched
+      const job = await prisma.job.findUnique({ 
+        where: { nrcJobNo: decodedNrcJobNo },
+        include: { purchaseOrders: true }
+      });
+      const jobQuantity = job?.purchaseOrders?.reduce((sum: number, po: any) => sum + (po.totalPOQuantity || 0), 0) || 0;
+      
+      // Update totalDispatchedQty
+      populatedData.totalDispatchedQty = newTotalDispatched;
+      
+      // Update dispatch history
+      const dispatchHistory = existingDispatchProcess.dispatchHistory 
+        ? (Array.isArray(existingDispatchProcess.dispatchHistory) ? existingDispatchProcess.dispatchHistory : JSON.parse(existingDispatchProcess.dispatchHistory as string))
+        : [];
+      
+      dispatchHistory.push({
+        dispatchDate: new Date().toISOString(),
+        dispatchedQty: dispatchedQty,
+        dispatchNo: editableData.dispatchNo || `DISP-${Date.now()}`,
+        remarks: editableData.remarks || '',
+        operatorName: editableData.operatorName || req.user?.userId
+      });
+      
+      populatedData.dispatchHistory = dispatchHistory;
+      
+      // If fully dispatched, set status to 'accept'
+      if (newTotalDispatched >= jobQuantity) {
+        populatedData.status = 'accept';
+        populatedData.date = new Date();
+        // Also update JobStep status to 'stop' to allow job completion
+        if (existingDispatchProcess.jobStepId) {
+          await prisma.jobStep.update({
+            where: { id: existingDispatchProcess.jobStepId },
+            data: { 
+              status: 'stop',
+              endDate: new Date(),
+              completedBy: req.user?.userId || null
+            }
+          });
+        }
+      }
+    }
 
     // Step 2: Update using its unique id
     const dispatchProcess = await prisma.dispatchProcess.update({

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AppError } from '../utils/AppError';
+import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 // Using standard Error instead of Error
 
 const prisma = new PrismaClient();
@@ -518,7 +519,7 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
         completedBy: finalCompletedBy
       };
       
-      await prisma.jobStep.update({
+      const updatedJobStep = await prisma.jobStep.update({
         where: { id: jobStep.id },
         data: updateData
       });
@@ -528,6 +529,33 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
       console.log(`   - Individual step status: 'accept'`);
       console.log(`   - Total OK: ${completionCheck.totalOK}`);
       console.log(`   - Total Wastage: ${completionCheck.totalWastage}`);
+      
+      // Log activity for step completion - log for each user who completed a machine
+      if (userId && typeof userId === 'string') {
+        try {
+          await logUserActionWithResource(
+            userId,
+            ActionTypes.PRODUCTION_STEP_COMPLETED,
+            JSON.stringify({
+              message: `Step ${stepNoInt} (${jobStep.stepName}) completed`,
+              nrcJobNo: nrcJobNo,
+              stepNo: stepNoInt,
+              stepName: jobStep.stepName,
+              totalOK: completionCheck.totalOK,
+              totalWastage: completionCheck.totalWastage,
+              completedBy: finalCompletedBy,
+              endDate: updatedJobStep.endDate
+            }),
+            'JobStep',
+            jobStep.id.toString(),
+            nrcJobNo
+          );
+          console.log(`✅ Logged activity for step ${stepNoInt} completion for user ${userId}`);
+        } catch (error) {
+          console.error(`❌ Failed to log activity for step completion:`, error);
+          // Don't throw - activity logging is not critical
+        }
+      }
     } else {
       console.log(`⏳ Step not yet complete: ${completionCheck.reason}`);
     }

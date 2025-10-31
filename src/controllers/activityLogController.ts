@@ -130,16 +130,18 @@ export const getActivityLogs = async (req: Request, res: Response) => {
 
 /**
  * Get activity logs for a specific user
+ * Also includes completed JobStepMachine entries that may not have activity logs
  */
 export const getUserActivityLogs = async (req: Request, res: Response) => {
   const { userId } = req.params;
   // Removed permission check - all users can view any user's activity logs
 
   const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 50;
+  const limit = parseInt(req.query.limit as string) || 1000; // Increase limit to include all relevant logs
   const skip = (page - 1) * limit;
 
-  const [logs, total] = await Promise.all([
+  // Get activity logs
+  const [activityLogs, activityLogsTotal] = await Promise.all([
     prisma.activityLog.findMany({
       where: { userId },
       include: {
@@ -155,14 +157,167 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       orderBy: {
         createdAt: 'desc'
       },
-      skip,
-      take: limit
+      skip: 0,
+      take: 5000 // Get all activity logs for the user
     }),
     prisma.activityLog.count({ where: { userId } })
   ]);
 
+  // Get JobStepMachine entries for this user (both started and completed)
+  // We need both to show started actions on start date and completed actions on completion date
+  const [startedMachines, completedMachines] = await Promise.all([
+    // Get started machines - use startedAt for the date
+    (prisma as any).jobStepMachine.findMany({
+      where: {
+        userId: userId,
+        startedAt: { not: null }
+      },
+      include: {
+        jobStep: {
+          include: {
+            jobPlanning: {
+              select: {
+                nrcJobNo: true
+              }
+            }
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true
+          }
+        }
+      },
+      orderBy: {
+        startedAt: 'desc'
+      },
+      take: 1000
+    }),
+    // Get completed machines - use completedAt/updatedAt for the date
+    (prisma as any).jobStepMachine.findMany({
+      where: {
+        userId: userId,
+        status: 'stop',
+        completedAt: { not: null }
+      },
+      include: {
+        jobStep: {
+          include: {
+            jobPlanning: {
+              select: {
+                nrcJobNo: true
+              }
+            }
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true
+          }
+        }
+      },
+      orderBy: {
+        completedAt: 'desc'
+      },
+      take: 1000
+    })
+  ]);
+
+  // Convert started JobStepMachine entries to activity log format
+  const startedActivityLogs = startedMachines.map((machine: any) => {
+    const nrcJobNo = machine.nrcJobNo || machine.jobStep?.jobPlanning?.nrcJobNo || '';
+    const startedAt = machine.startedAt;
+
+    // Create a synthetic activity log entry for started action
+    return {
+      id: `machine_started_${machine.id}`,
+      userId: machine.userId,
+      action: 'Production Step Started',
+      details: JSON.stringify({
+        message: `Step ${machine.stepNo || 'N/A'} (${machine.jobStep?.stepName || 'Unknown'}) started`,
+        nrcJobNo: nrcJobNo,
+        stepNo: machine.stepNo,
+        stepName: machine.jobStep?.stepName || 'Unknown',
+        machineId: machine.machineId,
+        startDate: startedAt
+      }),
+      nrcJobNo: nrcJobNo,
+      createdAt: startedAt, // Use startedAt so it shows in the activity on the day it was started
+      updatedAt: machine.updatedAt,
+      user: machine.user,
+      _isMachineLog: true
+    };
+  });
+
+  // Convert completed JobStepMachine entries to activity log format
+  const completedActivityLogs = completedMachines.map((machine: any) => {
+    const formData = machine.formData ? (typeof machine.formData === 'string' ? JSON.parse(machine.formData) : machine.formData) : {};
+    const okQuantity = formData['OK Quantity'] || formData['Quantity OK'] || formData['quantity'] || machine.okQuantity || machine.quantityOK || machine.quantity || 0;
+    const wastage = formData['Wastage'] || 0;
+    const completedAt = machine.completedAt || machine.updatedAt;
+    const nrcJobNo = machine.nrcJobNo || machine.jobStep?.jobPlanning?.nrcJobNo || '';
+    // Use completedAt first (when step was completed), then updatedAt, then createdAt as fallback
+    // This ensures activities appear on the completion date, not the last update date
+    const activityDate = machine.completedAt || machine.updatedAt || machine.createdAt;
+
+    // Create a synthetic activity log entry
+    return {
+      id: `machine_${machine.id}`,
+      userId: machine.userId,
+      action: 'Production Step Completed',
+      details: JSON.stringify({
+        message: `Step ${machine.stepNo || 'N/A'} (${machine.jobStep?.stepName || 'Unknown'}) completed`,
+        nrcJobNo: nrcJobNo,
+        stepNo: machine.stepNo,
+        stepName: machine.jobStep?.stepName || 'Unknown',
+        totalOK: okQuantity,
+        totalWastage: wastage,
+        completedBy: machine.userId,
+        endDate: completedAt,
+        machineId: machine.machineId
+      }),
+      nrcJobNo: nrcJobNo,
+      createdAt: activityDate, // Use completedAt/updatedAt so it shows in the activity on the day it was completed
+      updatedAt: machine.updatedAt,
+      user: machine.user,
+      _isMachineLog: true
+    };
+  });
+
+  // Combine all machine logs
+  const machineActivityLogs = [...startedActivityLogs, ...completedActivityLogs];
+
+  // Combine and deduplicate - prefer activity logs over machine logs for same step
+  const logMap = new Map();
+  
+  // First, add all activity logs
+  activityLogs.forEach(log => {
+    const key = `${log.nrcJobNo}_${log.action}_${log.createdAt}`;
+    if (!logMap.has(key)) {
+      logMap.set(key, log);
+    }
+  });
+
+  // Then add machine logs only if no activity log exists for that action
+  machineActivityLogs.forEach(machineLog => {
+    // Create unique key based on action type and date
+    const key = `${machineLog.nrcJobNo}_${machineLog.action}_${machineLog.createdAt}`;
+    // Only add if no activity log exists for this action
+    if (!logMap.has(key)) {
+      logMap.set(key, machineLog);
+    }
+  });
+
+  const allLogs = Array.from(logMap.values());
+
   // Sanitize data to ensure it's UTF-8 compatible and remove replacement characters
-  const sanitizedLogs = logs.map(log => ({
+  const sanitizedLogs = allLogs.map(log => ({
     ...log,
     details: log.details ? sanitizeString(log.details) : null,
     action: log.action ? sanitizeString(log.action) : log.action,
@@ -171,7 +326,12 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       name: log.user.name ? sanitizeString(log.user.name) : log.user.name,
       email: log.user.email ? sanitizeString(log.user.email) : log.user.email
     } : log.user
-  }));
+  })).sort((a, b) => {
+    // Sort by createdAt descending
+    const dateA = new Date(a.createdAt || a.updatedAt || 0);
+    const dateB = new Date(b.createdAt || b.updatedAt || 0);
+    return dateB.getTime() - dateA.getTime();
+  });
 
   res.status(200).json({
     success: true,
@@ -179,8 +339,8 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     pagination: {
       page,
       limit,
-      total,
-      totalPages: Math.ceil(total / limit)
+      total: sanitizedLogs.length,
+      totalPages: Math.ceil(sanitizedLogs.length / limit)
     }
   });
 };

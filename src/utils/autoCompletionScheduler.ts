@@ -111,8 +111,16 @@ export const checkAndCompleteReadyJobs = async () => {
 
     console.log(`Auto-completion check completed. Checked: ${checkedCount}, Completed: ${completedCount}`);
     
-  } catch (error) {
-    console.error('Error in checkAndCompleteReadyJobs:', error);
+  } catch (error: any) {
+    // Only log if not a DB connectivity error (those are handled by wrapper)
+    const code: string | undefined = (error && error.code) || undefined;
+    const message: string = (error && error.message) || '';
+    const isDbDown = code === 'P1001' || message.includes("Can't reach database server");
+    
+    if (!isDbDown) {
+      console.error('Error in checkAndCompleteReadyJobs:', error);
+    }
+    throw error; // Re-throw to let wrapper handle it
   }
 };
 
