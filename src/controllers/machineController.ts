@@ -57,7 +57,7 @@ export const createMachine = async (req: Request, res: Response) => {
  * Get all machines with optional filtering
  */
 export const getAllMachines = async (req: Request, res: Response) => {
-  const { status, machineType, isActive, page = '1', limit = '50' } = req.query;
+  const { status, machineType, isActive, page = '1', limit = '80' } = req.query;
   
   const pageNum = parseInt(page as string);
   const limitNum = parseInt(limit as string);
@@ -92,6 +92,15 @@ export const getAllMachines = async (req: Request, res: Response) => {
             customerName: true,
             status: true
           }
+        },
+        jobStepMachines: {
+          include: {
+            jobStep: {
+              include: {
+                dispatchProcess: true
+              }
+            }
+          }
         }
       },
       orderBy: { createdAt: 'desc' },
@@ -118,7 +127,7 @@ export const getAllMachines = async (req: Request, res: Response) => {
  * Get available machines (status = available)
  */
 export const getAvailableMachines = async (req: Request, res: Response) => {
-  const { machineType, page = '1', limit = '50' } = req.query;
+  const { machineType, page = '1', limit = '80' } = req.query;
   
   const pageNum = parseInt(page as string);
   const limitNum = parseInt(limit as string);
@@ -177,7 +186,7 @@ export const getAvailableMachines = async (req: Request, res: Response) => {
  * Get busy machines (status = busy)
  */
 export const getBusyMachines = async (req: Request, res: Response) => {
-  const { machineType, page = '1', limit = '50' } = req.query;
+  const { machineType, page = '1', limit = '80' } = req.query;
   
   const pageNum = parseInt(page as string);
   const limitNum = parseInt(limit as string);

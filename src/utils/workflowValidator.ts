@@ -493,7 +493,27 @@ export const autoCompleteJobIfReady = async (nrcJobNo: string, userId?: string):
       }
     });
 
-    // Delete all JobStep records for this job planning
+    // CRITICAL: Clean up all step-specific data BEFORE deleting JobSteps
+    // JobStepMachine is automatically deleted via CASCADE on JobStep deletion
+    // But step-specific tables (PaperStore, PrintingDetails, etc.) need manual deletion
+    
+    const stepIds = jobPlanning.steps.map((s: any) => s.id);
+    
+    // Delete all step-specific records for this job
+    await Promise.all([
+      prisma.paperStore.deleteMany({ where: { jobStepId: { in: stepIds } } }),
+      prisma.printingDetails.deleteMany({ where: { jobStepId: { in: stepIds } } }),
+      prisma.corrugation.deleteMany({ where: { jobStepId: { in: stepIds } } }),
+      prisma.fluteLaminateBoardConversion.deleteMany({ where: { jobStepId: { in: stepIds } } }),
+      prisma.punching.deleteMany({ where: { jobStepId: { in: stepIds } } }),
+      prisma.sideFlapPasting.deleteMany({ where: { jobStepId: { in: stepIds } } }),
+      prisma.qualityDept.deleteMany({ where: { jobStepId: { in: stepIds } } }),
+      prisma.dispatchProcess.deleteMany({ where: { jobStepId: { in: stepIds } } })
+    ]);
+    
+    console.log(`Cleaned up all step-specific data for ${stepIds.length} steps`);
+
+    // Delete all JobStep records for this job planning (this will also delete JobStepMachine via CASCADE)
     await prisma.jobStep.deleteMany({ where: { jobPlanningId: jobPlanning.jobPlanId } });
 
     // Delete the JobPlanning record

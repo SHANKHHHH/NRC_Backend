@@ -58,14 +58,89 @@ export const getAllDispatchProcesses = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
   
-  // Get unified role-specific step data
-  const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-  const dispatchProcessSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds || null, userRole, 'DispatchProcess');
+  // Get accessible job numbers based on user's machine access
+  const { getFilteredJobNumbers } = await import('../middleware/machineAccess');
+  const accessibleJobNumbers = await getFilteredJobNumbers(userMachineIds || null, userRole);
+  
+  // Get all DispatchProcess records for accessible jobs
+  const dispatchProcesses = await prisma.dispatchProcess.findMany({
+    where: { jobNrcJobNo: { in: accessibleJobNumbers } },
+    include: {
+      job: {
+        select: {
+          id: true,
+          nrcJobNo: true,
+          customerName: true,
+          styleItemSKU: true,
+          status: true,
+          latestRate: true,
+          length: true,
+          width: true,
+          height: true,
+          boxDimensions: true,
+          boardSize: true,
+          noUps: true,
+          fluteType: true,
+          jobDemand: true
+        }
+      },
+      jobStep: {
+        select: {
+          id: true,
+          stepNo: true,
+          stepName: true,
+          status: true,
+          startDate: true,
+          endDate: true,
+          user: true,
+          completedBy: true,
+          machineDetails: true
+        }
+      }
+    },
+    orderBy: { id: 'desc' }
+  });
+  
+  // Group by job and format the data
+  const jobsMap = new Map<string, any>();
+  
+  dispatchProcesses.forEach((dp, index) => {
+    if (!jobsMap.has(dp.jobNrcJobNo)) {
+      jobsMap.set(dp.jobNrcJobNo, {
+        nrcJobNo: dp.jobNrcJobNo,
+        jobDetails: dp.job,
+        dispatchDetails: []
+      });
+    }
+    
+    // Add dispatch details to the job
+    jobsMap.get(dp.jobNrcJobNo).dispatchDetails.push({
+      idx: index + 1,
+      id: dp.id,
+      date: dp.date,
+      shift: dp.shift,
+      operatorName: dp.operatorName,
+      dispatchNo: dp.dispatchNo,
+      dispatchDate: dp.dispatchDate,
+      remarks: dp.remarks,
+      balanceQty: dp.balanceQty,
+      qcCheckSignBy: dp.qcCheckSignBy,
+      status: dp.status,
+      jobStepId: dp.jobStepId,
+      qcCheckAt: dp.qcCheckAt,
+      quantity: dp.quantity,
+      dispatchHistory: dp.dispatchHistory,
+      totalDispatchedQty: dp.totalDispatchedQty,
+      stepDetails: dp.jobStep
+    });
+  });
+  
+  const formattedData = Array.from(jobsMap.values());
   
   res.status(200).json({ 
     success: true, 
-    count: dispatchProcessSteps.length, 
-    data: dispatchProcessSteps 
+    count: formattedData.length, 
+    data: formattedData 
   });
 };
 
