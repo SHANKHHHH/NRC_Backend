@@ -1678,33 +1678,69 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
       if (quantity && quantity > 0 && formData.status === 'stop') {
         // Calculate cumulative dispatched quantity
         const currentTotal = existingDispatch?.totalDispatchedQty || 0;
-        const newTotal = currentTotal + quantity;
-        totalDispatchedQty = newTotal;
         
-        // Get job total quantity to check if fully dispatched
+        // Get job total quantity (PO quantity) to check if fully dispatched
         const job = await prisma.job.findUnique({
           where: { nrcJobNo },
           include: { purchaseOrders: true }
         });
         const jobQuantity = job?.purchaseOrders?.reduce((sum: number, po: any) => sum + (po.totalPOQuantity || 0), 0) || 0;
         
-        // Update dispatch history
+        // Calculate how much can be dispatched (remaining PO quantity)
+        const remainingPOQuantity = Math.max(0, jobQuantity - currentTotal);
+        
+        // Actual quantity to dispatch (capped at remaining PO quantity)
+        const actualDispatchQty = Math.min(quantity, remainingPOQuantity);
+        
+        // Calculate excess quantity (if user tried to dispatch more than PO)
+        const excessQuantity = Math.max(0, quantity - remainingPOQuantity);
+        
+        // Calculate new total (only up to PO quantity)
+        const newTotal = currentTotal + actualDispatchQty;
+        totalDispatchedQty = newTotal;
+        
+        // Update dispatch history with actual dispatched quantity
         dispatchHistory = existingDispatch?.dispatchHistory 
           ? (Array.isArray(existingDispatch.dispatchHistory) ? existingDispatch.dispatchHistory : JSON.parse(existingDispatch.dispatchHistory as string))
           : [];
         
         dispatchHistory.push({
           dispatchDate: new Date().toISOString(),
-          dispatchedQty: quantity,
+          dispatchedQty: actualDispatchQty,
           dispatchNo: formData.dispatchNo || formData['Dispatch No'] || `DISP-${Date.now()}`,
           remarks: formData.remarks || formData['Remarks'] || '',
           operatorName: operatorName
         });
         
-        // If fully dispatched, set status to 'accept'
+        // If excess quantity exists, create/update FinishQuantity record
+        if (excessQuantity > 0 && jobQuantity > 0) {
+          // Get the first PO ID for reference (if available)
+          const firstPO = job?.purchaseOrders?.[0];
+          const purchaseOrderId = firstPO?.id || null;
+          
+          // Create or update FinishQuantity record
+          await prisma.finishQuantity.create({
+            data: {
+              jobNrcJobNo: nrcJobNo,
+              purchaseOrderId: purchaseOrderId,
+              overDispatchedQuantity: excessQuantity,
+              totalPOQuantity: jobQuantity,
+              totalDispatchedQuantity: newTotal,
+              status: 'available',
+              remarks: `Excess quantity from dispatch. User tried to dispatch ${quantity}, but PO quantity is ${jobQuantity}. ${actualDispatchQty} dispatched, ${excessQuantity} added to finish quantity.`
+            }
+          });
+          
+          console.log(`✅ [storeStepFormData] Created FinishQuantity: ${excessQuantity} units for job ${nrcJobNo}`);
+        }
+        
+        // If fully dispatched (or exceeded), set status to 'accept'
         if (newTotal >= jobQuantity) {
           finalStatus = 'accept';
           console.log(`✅ [storeStepFormData] Dispatch fully completed: ${newTotal} >= ${jobQuantity}`);
+          if (excessQuantity > 0) {
+            console.log(`📦 [storeStepFormData] Excess ${excessQuantity} units moved to FinishQuantity`);
+          }
         } else {
           // Partial dispatch - keep in_progress
           finalStatus = 'in_progress';
@@ -1753,6 +1789,46 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           dispatchHistory: dispatchHistory,
         },
       });
+    }
+    
+    // ✅ Log activity for non-machine step completion (PaperStore, Quality, Dispatch)
+    // Only log when step is actually completed (status='accept' and JobStep status='stop')
+    if (stepStatus === 'accept' && formData.status === 'stop' && isNonMachineStep && operatorName && operatorName !== 'System') {
+      try {
+        // Get step number from JobStep
+        const stepNo = jobStep.stepNo || 0;
+        
+        // Get quantity for activity log details
+        let quantity = 0;
+        if (stepNameLower.includes('paperstore')) {
+          quantity = formData.available ? parseInt(formData.available) || 0 : 0;
+        } else if (stepNameLower.includes('quality')) {
+          quantity = formData.passQuantity || formData['Pass Quantity'] ? parseInt(formData.passQuantity || formData['Pass Quantity']) || 0 : 0;
+        } else if (stepNameLower.includes('dispatch')) {
+          quantity = formData.noOfBoxes || formData['No of Boxes'] ? parseInt(formData.noOfBoxes || formData['No of Boxes']) || 0 : 0;
+        }
+        
+        await logUserActionWithResource(
+          operatorName,
+          ActionTypes.PRODUCTION_STEP_COMPLETED,
+          JSON.stringify({
+            message: `Step ${stepNo} (${stepName}) completed`,
+            nrcJobNo: nrcJobNo,
+            stepNo: stepNo,
+            stepName: stepName,
+            quantity: quantity,
+            completedBy: operatorName,
+            endDate: jobStep.endDate || new Date()
+          }),
+          'JobStep',
+          jobStepId.toString(),
+          nrcJobNo
+        );
+        console.log(`✅ [storeStepFormData] Logged activity for step ${stepNo} (${stepName}) completion for user ${operatorName}`);
+      } catch (error) {
+        console.error(`❌ [storeStepFormData] Failed to log activity for step completion:`, error);
+        // Don't throw - activity logging is not critical
+      }
     }
     
     console.log(`✅ [storeStepFormData] Successfully stored form data for ${stepName}`);

@@ -229,6 +229,53 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     })
   ]);
 
+  // ✅ Get completed non-machine JobSteps (PaperStore, Quality, Dispatch) for this user
+  // These steps don't have JobStepMachine records, so we need to query JobStep directly
+  // Filter by step names that are non-machine steps
+  const nonMachineStepNames = ['PaperStore', 'QualityDept', 'DispatchProcess'];
+  const completedNonMachineSteps = await prisma.jobStep.findMany({
+    where: {
+      user: userId,
+      status: 'stop',
+      endDate: { not: null },
+      stepName: {
+        in: nonMachineStepNames
+      }
+    },
+    include: {
+      jobPlanning: {
+        select: {
+          nrcJobNo: true
+        }
+      },
+      paperStore: {
+        select: {
+          available: true,
+          quantity: true,
+          status: true
+        }
+      },
+      qualityDept: {
+        select: {
+          quantity: true,
+          rejectedQty: true,
+          status: true
+        }
+      },
+      dispatchProcess: {
+        select: {
+          quantity: true,
+          totalDispatchedQty: true,
+          status: true
+        }
+      }
+    },
+    orderBy: {
+      endDate: 'desc'
+    },
+    take: 1000
+  });
+
   // Convert started JobStepMachine entries to activity log format
   const startedActivityLogs = startedMachines.map((machine: any) => {
     const nrcJobNo = machine.nrcJobNo || machine.jobStep?.jobPlanning?.nrcJobNo || '';
@@ -290,8 +337,75 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     };
   });
 
-  // Combine all machine logs
+  // ✅ Convert completed non-machine JobSteps to activity log format
+  const completedNonMachineActivityLogs = completedNonMachineSteps.map((step: any) => {
+    const nrcJobNo = step.jobPlanning?.nrcJobNo || '';
+    const stepName = step.stepName || 'Unknown';
+    const stepNo = step.stepNo || 0;
+    const completedAt = step.endDate || step.updatedAt || step.createdAt;
+    const activityDate = step.endDate || step.updatedAt || step.createdAt;
+    const completedBy = step.user || step.completedBy || userId;
+
+    // Get quantity based on step type
+    let quantity = 0;
+    let additionalDetails: any = {};
+    
+    if (step.stepName?.toLowerCase().includes('paperstore') && step.paperStore) {
+      quantity = step.paperStore.available || step.paperStore.quantity || 0;
+      additionalDetails = {
+        available: step.paperStore.available,
+        quantity: step.paperStore.quantity
+      };
+    } else if (step.stepName?.toLowerCase().includes('quality') && step.qualityDept) {
+      quantity = step.qualityDept.quantity || 0;
+      additionalDetails = {
+        quantity: step.qualityDept.quantity,
+        rejectedQty: step.qualityDept.rejectedQty
+      };
+    } else if (step.stepName?.toLowerCase().includes('dispatch') && step.dispatchProcess) {
+      quantity = step.dispatchProcess.totalDispatchedQty || step.dispatchProcess.quantity || 0;
+      additionalDetails = {
+        quantity: step.dispatchProcess.quantity,
+        totalDispatchedQty: step.dispatchProcess.totalDispatchedQty
+      };
+    }
+
+    // Get user details for the activity log
+    // JobStep.user is just a userId string, so we'll need to look it up
+    // For now, create a basic user object - the frontend can fetch full user details if needed
+    const userDetails = step.user ? {
+      id: step.user,
+      name: step.user, // Will be the userId string
+      email: null,
+      role: null
+    } : null;
+
+    // Create a synthetic activity log entry
+    return {
+      id: `non_machine_step_${step.id}`,
+      userId: completedBy,
+      action: 'Production Step Completed',
+      details: JSON.stringify({
+        message: `Step ${stepNo} (${stepName}) completed`,
+        nrcJobNo: nrcJobNo,
+        stepNo: stepNo,
+        stepName: stepName,
+        quantity: quantity,
+        completedBy: completedBy,
+        endDate: completedAt,
+        ...additionalDetails
+      }),
+      nrcJobNo: nrcJobNo,
+      createdAt: activityDate, // Use endDate so it shows in the activity on the day it was completed
+      updatedAt: step.updatedAt,
+      user: userDetails,
+      _isNonMachineLog: true
+    };
+  });
+
+  // Combine all machine logs and non-machine step logs
   const machineActivityLogs = [...startedActivityLogs, ...completedActivityLogs];
+  const allStepActivityLogs = [...machineActivityLogs, ...completedNonMachineActivityLogs];
 
   // Combine and deduplicate - prefer activity logs over machine logs for same step
   const logMap = new Map();
@@ -304,13 +418,13 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     }
   });
 
-  // Then add machine logs only if no activity log exists for that action
-  machineActivityLogs.forEach(machineLog => {
+  // Then add machine logs and non-machine step logs only if no activity log exists for that action
+  allStepActivityLogs.forEach(stepLog => {
     // Create unique key based on action type and date
-    const key = `${machineLog.nrcJobNo}_${machineLog.action}_${machineLog.createdAt}`;
+    const key = `${stepLog.nrcJobNo}_${stepLog.action}_${stepLog.createdAt}`;
     // Only add if no activity log exists for this action
     if (!logMap.has(key)) {
-      logMap.set(key, machineLog);
+      logMap.set(key, stepLog);
     }
   });
 

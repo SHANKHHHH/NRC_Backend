@@ -87,6 +87,7 @@ model Job {
   qualityDepts                  QualityDept[]                  @relation("JobToQualityDept")
   sideFlapPastings              SideFlapPasting[]              @relation("JobToSideFlapPasting")
   jobStepMachines               JobStepMachine[]               @relation("JobJobStepMachines")
+  finishQuantities              FinishQuantity[]               @relation("JobToFinishQuantity")
 }
 
 model Machine {
@@ -246,6 +247,8 @@ model PurchaseOrder {
   user                  User?               @relation("UserPurchaseOrders", fields: [userId], references: [id])
   purchaseOrderMachines PurchaseOrderMachine[] @relation("PurchaseOrderMachines")
   jobPlannings          JobPlanning[]       @relation("PurchaseOrderJobPlannings")
+  finishQuantities      FinishQuantity[]    @relation("PurchaseOrderToFinishQuantity")
+  consumedFinishQuantities FinishQuantity[] @relation("PurchaseOrderConsumedFinishQuantity")
 }
 
 model PaperStore {
@@ -585,6 +588,27 @@ model CompletedJob {
   updatedAt            DateTime  @updatedAt
 }
 
+model FinishQuantity {
+  id                     Int      @id @default(autoincrement())
+  jobNrcJobNo            String
+  purchaseOrderId        Int?
+  overDispatchedQuantity Int      // Excess quantity that went to finish quantity
+  totalPOQuantity        Int      // PO quantity for reference
+  totalDispatchedQuantity Int     // Total dispatched quantity for reference
+  status                 FinishQuantityStatus @default(available) // available or consumed
+  consumedByPOId         Int?     // PO that consumed this finish quantity
+  remarks                String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  
+  job                    Job      @relation("JobToFinishQuantity", fields: [jobNrcJobNo], references: [nrcJobNo])
+  purchaseOrder          PurchaseOrder? @relation("PurchaseOrderToFinishQuantity", fields: [purchaseOrderId], references: [id])
+  consumedByPO           PurchaseOrder? @relation("PurchaseOrderConsumedFinishQuantity", fields: [consumedByPOId], references: [id])
+  
+  @@index([jobNrcJobNo])
+  @@index([status])
+}
+
 enum UserRole {
   admin
   planner
@@ -634,6 +658,11 @@ enum JobStepStatus {
   planned
   start
   stop
+}
+
+enum FinishQuantityStatus {
+  available
+  consumed
 }
 
 model UserMachine {

@@ -52,6 +52,7 @@ import flyingSquadRoutes from './routes/flyingSquadRoute';
 import machineAssignmentRoutes from './routes/machineAssignmentRoute';
 import jobStepMachineRoutes from './routes/jobStepMachineRoute';
 import pdAnnouncementRoutes from './routes/pdAnnouncementRoute';
+import finishQuantityRoutes from './routes/finishQuantityRoute';
 
 // Load environment variables
 
@@ -105,6 +106,7 @@ app.use('/api/punching', punchingRoute);
 app.use('/api/side-flap-pasting', sideFlapPastingRoute);
 app.use('/api/quality-dept', qualityDeptRoute);
 app.use('/api/dispatch-process', dispatchProcessRoute);
+app.use('/api/finish-quantity', finishQuantityRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
 app.use('/api/machines', machineRoutes);
 app.use('/api/completed-jobs', completedJobRoutes);

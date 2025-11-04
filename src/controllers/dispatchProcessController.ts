@@ -67,21 +67,12 @@ export const getAllDispatchProcesses = async (req: Request, res: Response) => {
     where: { jobNrcJobNo: { in: accessibleJobNumbers } },
     include: {
       job: {
-        select: {
-          id: true,
-          nrcJobNo: true,
-          customerName: true,
-          styleItemSKU: true,
-          status: true,
-          latestRate: true,
-          length: true,
-          width: true,
-          height: true,
-          boxDimensions: true,
-          boardSize: true,
-          noUps: true,
-          fluteType: true,
-          jobDemand: true
+        include: {
+          purchaseOrders: {
+            select: {
+              totalPOQuantity: true
+            }
+          }
         }
       },
       jobStep: {
@@ -106,9 +97,21 @@ export const getAllDispatchProcesses = async (req: Request, res: Response) => {
   
   dispatchProcesses.forEach((dp, index) => {
     if (!jobsMap.has(dp.jobNrcJobNo)) {
+      // Calculate total PO quantity
+      let totalPOQuantity = 0;
+      if (dp.job && dp.job.purchaseOrders && Array.isArray(dp.job.purchaseOrders)) {
+        totalPOQuantity = dp.job.purchaseOrders.reduce((sum: number, po: any) => {
+          const poQty = po?.totalPOQuantity ?? 0;
+          return sum + (typeof poQty === 'number' ? poQty : parseInt(poQty?.toString() || '0', 10));
+        }, 0);
+      }
+      
       jobsMap.set(dp.jobNrcJobNo, {
         nrcJobNo: dp.jobNrcJobNo,
-        jobDetails: dp.job,
+        jobDetails: {
+          ...dp.job,
+          totalPOQuantity: totalPOQuantity
+        },
         dispatchDetails: []
       });
     }
@@ -406,26 +409,37 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
     // If this is a new dispatch (quantity is being set), update partial dispatch tracking
     if (dispatchedQty > 0) {
       const currentTotalDispatched = existingDispatchProcess.totalDispatchedQty || 0;
-      const newTotalDispatched = currentTotalDispatched + dispatchedQty;
       
-      // Get job total quantity to check if fully dispatched
+      // Get job total quantity (PO quantity) to check if fully dispatched
       const job = await prisma.job.findUnique({ 
         where: { nrcJobNo: decodedNrcJobNo },
         include: { purchaseOrders: true }
       });
       const jobQuantity = job?.purchaseOrders?.reduce((sum: number, po: any) => sum + (po.totalPOQuantity || 0), 0) || 0;
       
+      // Calculate how much can be dispatched (remaining PO quantity)
+      const remainingPOQuantity = Math.max(0, jobQuantity - currentTotalDispatched);
+      
+      // Actual quantity to dispatch (capped at remaining PO quantity)
+      const actualDispatchQty = Math.min(dispatchedQty, remainingPOQuantity);
+      
+      // Calculate excess quantity (if user tried to dispatch more than PO)
+      const excessQuantity = Math.max(0, dispatchedQty - remainingPOQuantity);
+      
+      // Calculate new total (only up to PO quantity)
+      const newTotalDispatched = currentTotalDispatched + actualDispatchQty;
+      
       // Update totalDispatchedQty
       populatedData.totalDispatchedQty = newTotalDispatched;
       
-      // Update dispatch history
+      // Update dispatch history with actual dispatched quantity
       const dispatchHistory = existingDispatchProcess.dispatchHistory 
         ? (Array.isArray(existingDispatchProcess.dispatchHistory) ? existingDispatchProcess.dispatchHistory : JSON.parse(existingDispatchProcess.dispatchHistory as string))
         : [];
       
       dispatchHistory.push({
         dispatchDate: new Date().toISOString(),
-        dispatchedQty: dispatchedQty,
+        dispatchedQty: actualDispatchQty,
         dispatchNo: editableData.dispatchNo || `DISP-${Date.now()}`,
         remarks: editableData.remarks || '',
         operatorName: editableData.operatorName || req.user?.userId
@@ -433,7 +447,29 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
       
       populatedData.dispatchHistory = dispatchHistory;
       
-      // If fully dispatched, set status to 'accept'
+      // If excess quantity exists, create/update FinishQuantity record
+      if (excessQuantity > 0 && jobQuantity > 0) {
+        // Get the first PO ID for reference (if available)
+        const firstPO = job?.purchaseOrders?.[0];
+        const purchaseOrderId = firstPO?.id || null;
+        
+        // Create or update FinishQuantity record
+        await prisma.finishQuantity.create({
+          data: {
+            jobNrcJobNo: decodedNrcJobNo,
+            purchaseOrderId: purchaseOrderId,
+            overDispatchedQuantity: excessQuantity,
+            totalPOQuantity: jobQuantity,
+            totalDispatchedQuantity: newTotalDispatched,
+            status: 'available',
+            remarks: `Excess quantity from dispatch. User tried to dispatch ${dispatchedQty}, but PO quantity is ${jobQuantity}. ${actualDispatchQty} dispatched, ${excessQuantity} added to finish quantity.`
+          }
+        });
+        
+        console.log(`✅ [updateDispatchProcess] Created FinishQuantity: ${excessQuantity} units for job ${decodedNrcJobNo}`);
+      }
+      
+      // If fully dispatched (or exceeded), set status to 'accept'
       if (newTotalDispatched >= jobQuantity) {
         populatedData.status = 'accept';
         populatedData.date = new Date();
@@ -447,6 +483,9 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
               completedBy: req.user?.userId || null
             }
           });
+        }
+        if (excessQuantity > 0) {
+          console.log(`📦 [updateDispatchProcess] Excess ${excessQuantity} units moved to FinishQuantity`);
         }
       }
     }

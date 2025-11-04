@@ -67,14 +67,87 @@ export const getAllQualityDepts = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
   
-  // Get unified role-specific step data
-  const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-  const qualityDeptSteps = await UnifiedJobDataHelper.getRoleSpecificStepData(userMachineIds || null, userRole, 'QualityDept');
+  // Get accessible job numbers based on user's machine access
+  const { getFilteredJobNumbers } = await import('../middleware/machineAccess');
+  const accessibleJobNumbers = await getFilteredJobNumbers(userMachineIds || null, userRole);
+  
+  // Get all QualityDept records for accessible jobs
+  const qualityDepts = await prisma.qualityDept.findMany({
+    where: { jobNrcJobNo: { in: accessibleJobNumbers } },
+    include: {
+      job: {
+        select: {
+          id: true,
+          nrcJobNo: true,
+          customerName: true,
+          styleItemSKU: true,
+          status: true,
+          latestRate: true,
+          length: true,
+          width: true,
+          height: true,
+          boxDimensions: true,
+          boardSize: true,
+          noUps: true,
+          fluteType: true,
+          jobDemand: true
+        }
+      },
+      jobStep: {
+        select: {
+          id: true,
+          stepNo: true,
+          stepName: true,
+          status: true,
+          startDate: true,
+          endDate: true,
+          user: true,
+          completedBy: true,
+          machineDetails: true
+        }
+      }
+    },
+    orderBy: { id: 'desc' }
+  });
+  
+  // Group by job and format the data
+  const jobsMap = new Map<string, any>();
+  
+  qualityDepts.forEach((qd, index) => {
+    if (!jobsMap.has(qd.jobNrcJobNo)) {
+      jobsMap.set(qd.jobNrcJobNo, {
+        nrcJobNo: qd.jobNrcJobNo,
+        jobDetails: qd.job,
+        qualityDetails: []
+      });
+    }
+    
+    // Add quality details to the job
+    jobsMap.get(qd.jobNrcJobNo).qualityDetails.push({
+      idx: index + 1,
+      id: qd.id,
+      date: qd.date,
+      shift: qd.shift,
+      operatorName: qd.operatorName,
+      checkedBy: qd.checkedBy,
+      remarks: qd.remarks,
+      qcCheckSignBy: qd.qcCheckSignBy,
+      status: qd.status,
+      jobStepId: qd.jobStepId,
+      qcCheckAt: qd.qcCheckAt,
+      quantity: qd.quantity,
+      rejectedQty: qd.rejectedQty,
+      reasonForRejection: qd.reasonForRejection,
+      stepDetails: qd.jobStep
+    });
+  });
+  
+  const formattedData = Array.from(jobsMap.values());
   
   res.status(200).json({ 
     success: true, 
-    count: qualityDeptSteps.length, 
-    data: qualityDeptSteps 
+    count: formattedData.length, 
+    data: formattedData 
   });
 };
 
