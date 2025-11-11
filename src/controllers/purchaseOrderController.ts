@@ -1,52 +1,56 @@
-import { Request, Response } from 'express';
-import { prisma } from '../lib/prisma';
-import { AppError } from '../middleware';
-import { calculateSharedCardDiffDate } from '../utils/dateUtils';
+import { Request, Response } from "express";
+import { prisma } from "../lib/prisma";
+import { AppError } from "../middleware";
+import { calculateSharedCardDiffDate } from "../utils/dateUtils";
 
 // Get all purchase orders
 export const getAllPurchaseOrders = async (req: Request, res: Response) => {
   try {
     const userMachineIds = req.userMachineIds; // From middleware
-    
+
     const whereClause: any = {};
-    if (userMachineIds !== null && userMachineIds && userMachineIds.length > 0) {
+    if (
+      userMachineIds !== null &&
+      userMachineIds &&
+      userMachineIds.length > 0
+    ) {
       whereClause.OR = [
         // Direct PO-machine assignments
         {
           purchaseOrderMachines: {
             some: {
-              machineId: { in: userMachineIds }
-            }
-          }
+              machineId: { in: userMachineIds },
+            },
+          },
         },
         // POs linked to jobs on user's machines
         {
           job: {
-            machineId: { in: userMachineIds }
-          }
-        }
+            machineId: { in: userMachineIds },
+          },
+        },
       ];
     }
-    
+
     const purchaseOrders = await prisma.purchaseOrder.findMany({
       where: whereClause,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       include: {
         job: {
           select: {
             nrcJobNo: true,
             customerName: true,
-            styleItemSKU: true
-          }
+            styleItemSKU: true,
+          },
         },
         user: {
           select: {
             id: true,
             name: true,
-            role: true
-          }
-        }
-      }
+            role: true,
+          },
+        },
+      },
     });
 
     res.status(200).json({
@@ -55,11 +59,11 @@ export const getAllPurchaseOrders = async (req: Request, res: Response) => {
       data: purchaseOrders,
     });
   } catch (error) {
-    console.error('Error fetching purchase orders:', error);
+    console.error("Error fetching purchase orders:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch purchase orders',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      message: "Failed to fetch purchase orders",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
@@ -67,107 +71,161 @@ export const getAllPurchaseOrders = async (req: Request, res: Response) => {
 export const createPurchaseOrder = async (req: Request, res: Response) => {
   const data = req.body;
   // Validate required field
-  if (!data.customer || typeof data.customer !== 'string' || !data.customer.trim()) {
-    throw new AppError('Customer is required and must be a non-empty string', 400);
+  if (
+    !data.customer ||
+    typeof data.customer !== "string" ||
+    !data.customer.trim()
+  ) {
+    throw new AppError(
+      "Customer is required and must be a non-empty string",
+      400
+    );
   }
   // Only pass allowed fields to Prisma
   const allowedFields = [
-    'boardSize', 'customer', 'deliveryDate', 'dieCode', 'dispatchDate', 'dispatchQuantity',
-    'fluteType', 'jockeyMonth', 'noOfUps', 'nrcDeliveryDate', 'noOfSheets', 'poDate',
-    'poNumber', 'pendingQuantity', 'pendingValidity', 'plant', 'shadeCardApprovalDate',
-    'srNo', 'style', 'totalPOQuantity', 'unit', 'userId', 'jobNrcJobNo'
+    "boardSize",
+    "customer",
+    "deliveryDate",
+    "dieCode",
+    "dispatchDate",
+    "dispatchQuantity",
+    "fluteType",
+    "jockeyMonth",
+    "noOfUps",
+    "nrcDeliveryDate",
+    "noOfSheets",
+    "poDate",
+    "poNumber",
+    "pendingQuantity",
+    "pendingValidity",
+    "plant",
+    "shadeCardApprovalDate",
+    "srNo",
+    "style",
+    "totalPOQuantity",
+    "unit",
+    "userId",
+    "jobNrcJobNo",
   ];
-  const createData: any = { status: 'created' };
+  const createData: any = { status: "created" };
   for (const field of allowedFields) {
     if (data[field] !== undefined) {
       createData[field] = data[field];
     }
   }
-  
+
   // Calculate shared card diff date
-  createData.sharedCardDiffDate = calculateSharedCardDiffDate(data.shadeCardApprovalDate);
-  
+  createData.sharedCardDiffDate = calculateSharedCardDiffDate(
+    data.shadeCardApprovalDate
+  );
+
   const purchaseOrder = await prisma.purchaseOrder.create({ data: createData });
-  
+
   res.status(201).json({
     success: true,
     data: purchaseOrder,
-    message: 'Purchase order created successfully',
+    message: "Purchase order created successfully",
   });
 };
 
 export const updatePurchaseOrder = async (req: Request, res: Response) => {
   const { id } = req.params;
   const data = req.body;
-  
+
   // Only pass allowed fields to Prisma
   const allowedFields = [
-    'boardSize', 'customer', 'deliveryDate', 'dieCode', 'dispatchDate', 'dispatchQuantity',
-    'fluteType', 'jockeyMonth', 'noOfUps', 'nrcDeliveryDate', 'noOfSheets', 'poDate',
-    'poNumber', 'pendingQuantity', 'pendingValidity', 'plant', 'shadeCardApprovalDate',
-    'srNo', 'style', 'totalPOQuantity', 'unit', 'userId', 'jobNrcJobNo'
+    "boardSize",
+    "customer",
+    "deliveryDate",
+    "dieCode",
+    "dispatchDate",
+    "dispatchQuantity",
+    "fluteType",
+    "jockeyMonth",
+    "noOfUps",
+    "nrcDeliveryDate",
+    "noOfSheets",
+    "poDate",
+    "poNumber",
+    "pendingQuantity",
+    "pendingValidity",
+    "plant",
+    "shadeCardApprovalDate",
+    "srNo",
+    "style",
+    "totalPOQuantity",
+    "unit",
+    "userId",
+    "jobNrcJobNo",
   ];
-  
+
   const updateData: any = {};
   for (const field of allowedFields) {
     if (data[field] !== undefined) {
       updateData[field] = data[field];
     }
   }
-  
+
   // Calculate shared card diff date
-  updateData.sharedCardDiffDate = calculateSharedCardDiffDate(data.shadeCardApprovalDate);
-  
+  updateData.sharedCardDiffDate = calculateSharedCardDiffDate(
+    data.shadeCardApprovalDate
+  );
+
   const purchaseOrder = await prisma.purchaseOrder.update({
     where: { id: Number(id) },
     data: updateData,
   });
-  
+
   res.status(200).json({
     success: true,
     data: purchaseOrder,
-    message: 'Purchase order updated successfully',
+    message: "Purchase order updated successfully",
   });
 };
 
-export const recalculatePurchaseOrderSharedCardDiffDate = async (req: Request, res: Response) => {
+export const recalculatePurchaseOrderSharedCardDiffDate = async (
+  req: Request,
+  res: Response
+) => {
   try {
     // Get all purchase orders that have shadeCardApprovalDate
     const purchaseOrders = await prisma.purchaseOrder.findMany({
       where: {
         shadeCardApprovalDate: {
-          not: null
-        }
+          not: null,
+        },
       },
       select: {
         id: true,
         poNumber: true,
-        shadeCardApprovalDate: true
-      }
+        shadeCardApprovalDate: true,
+      },
     });
 
     let updatedCount = 0;
-    
+
     for (const po of purchaseOrders) {
-      const sharedCardDiffDate = calculateSharedCardDiffDate(po.shadeCardApprovalDate);
-      
+      const sharedCardDiffDate = calculateSharedCardDiffDate(
+        po.shadeCardApprovalDate
+      );
+
       await prisma.purchaseOrder.update({
         where: { id: po.id },
-        data: { sharedCardDiffDate }
+        data: { sharedCardDiffDate },
       });
-      
+
       updatedCount++;
     }
 
     res.status(200).json({
       success: true,
       message: `Successfully recalculated shared card diff date for ${updatedCount} purchase orders`,
-      updatedCount
+      updatedCount,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error recalculating shared card diff dates'
+      message: "Error recalculating shared card diff dates",
     });
   }
 };
@@ -181,44 +239,50 @@ export const deletePurchaseOrder = async (req: Request, res: Response) => {
       where: { id: Number(id) },
       include: {
         job: true,
-        purchaseOrderMachines: true
-      }
+        purchaseOrderMachines: true,
+      },
     });
 
     if (!existingPO) {
-      throw new AppError('Purchase order not found', 404);
+      throw new AppError("Purchase order not found", 404);
     }
 
-    // Check if purchase order is linked to a job
+    // Check if the linked job has job planning
     if (existingPO.job) {
-      throw new AppError(
-        'Cannot delete purchase order that is linked to a job. Please delete or unlink the job first.',
-        400
-      );
+      const jobPlanning = await prisma.jobPlanning.findFirst({
+        where: { nrcJobNo: existingPO.job.nrcJobNo },
+      });
+
+      if (jobPlanning) {
+        throw new AppError(
+          "Cannot delete purchase order with job planning. Please delete the job planning first.",
+          400
+        );
+      }
     }
 
     // Delete the purchase order (related purchaseOrderMachines will be deleted automatically due to cascade)
+    // If there's a job without planning, it will remain (won't be deleted)
     await prisma.purchaseOrder.delete({
-      where: { id: Number(id) }
+      where: { id: Number(id) },
     });
 
     res.status(200).json({
       success: true,
-      message: 'Purchase order deleted successfully',
+      message: "Purchase order deleted successfully",
     });
   } catch (error) {
     if (error instanceof AppError) {
       throw error;
     }
-    console.error('Error deleting purchase order:', error);
+    console.error("Error deleting purchase order:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to delete purchase order',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      message: "Failed to delete purchase order",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
-
 
 // export const updatePurchaseOrderStatus = async (req: Request, res: Response) => {
 //   const { id } = req.params;
