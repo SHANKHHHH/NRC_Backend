@@ -172,6 +172,53 @@ export const recalculatePurchaseOrderSharedCardDiffDate = async (req: Request, r
   }
 };
 
+export const deletePurchaseOrder = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    // Check if purchase order exists
+    const existingPO = await prisma.purchaseOrder.findUnique({
+      where: { id: Number(id) },
+      include: {
+        job: true,
+        purchaseOrderMachines: true
+      }
+    });
+
+    if (!existingPO) {
+      throw new AppError('Purchase order not found', 404);
+    }
+
+    // Check if purchase order is linked to a job
+    if (existingPO.job) {
+      throw new AppError(
+        'Cannot delete purchase order that is linked to a job. Please delete or unlink the job first.',
+        400
+      );
+    }
+
+    // Delete the purchase order (related purchaseOrderMachines will be deleted automatically due to cascade)
+    await prisma.purchaseOrder.delete({
+      where: { id: Number(id) }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Purchase order deleted successfully',
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    console.error('Error deleting purchase order:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete purchase order',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
 
 // export const updatePurchaseOrderStatus = async (req: Request, res: Response) => {
 //   const { id } = req.params;
