@@ -443,10 +443,26 @@ export const autoCompleteJobIfReady = async (nrcJobNo: string, userId?: string):
       return { completed: false, reason: 'Job not found' };
     }
 
-    // Get purchase order details if any
-    const purchaseOrder = await prisma.purchaseOrder.findFirst({
-      where: { jobNrcJobNo: nrcJobNo }
-    });
+    // Get purchase order details - use the specific PO linked to this job planning
+    let purchaseOrder = null;
+    if (jobPlanning.purchaseOrderId) {
+      purchaseOrder = await prisma.purchaseOrder.findUnique({
+        where: { id: jobPlanning.purchaseOrderId }
+      });
+      if (purchaseOrder) {
+        console.log(`✅ [autoCompleteJobIfReady] Using specific PO ID ${jobPlanning.purchaseOrderId} for job planning ${jobPlanning.jobPlanId}`);
+      }
+    }
+    
+    // Fallback to first PO if specific PO not found
+    if (!purchaseOrder) {
+      purchaseOrder = await prisma.purchaseOrder.findFirst({
+        where: { jobNrcJobNo: nrcJobNo }
+      });
+      if (purchaseOrder) {
+        console.log(`⚠️ [autoCompleteJobIfReady] Using first PO (fallback) for job ${nrcJobNo}`);
+      }
+    }
 
     // Calculate total duration
     const startDate = jobPlanning.steps.reduce((earliest: Date | null, step: any) => {

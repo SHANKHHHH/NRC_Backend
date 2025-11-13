@@ -622,8 +622,15 @@ function arePreviousStepsCompleted(steps: any[], targetStepName: string): boolea
       continue;
     }
     
-    // For all other cases, the previous step must exist and be started or completed
-    if (!prevStep || (prevStep.status !== 'start' && prevStep.status !== 'stop')) {
+    // For all other cases, the previous step must exist and be started or completed/accepted
+    if (!prevStep) {
+      return false;
+    }
+    const prevStatus = typeof prevStep.status === 'string'
+      ? prevStep.status.toLowerCase()
+      : '';
+    const allowedStatuses = new Set(['start', 'stop', 'stopped', 'completed', 'accept']);
+    if (!allowedStatuses.has(prevStatus)) {
       return false;
     }
   }
@@ -757,7 +764,11 @@ export const getFilteredJobNumbers = async (
 
       // For each step that matches the user's role, check if previous steps are completed
       const hasStepWithCompletedPrerequisites = userRelevantSteps.some(userStep => {
-        return arePreviousStepsCompleted(p.steps, userStep.stepName);
+        const ready = arePreviousStepsCompleted(p.steps, userStep.stepName);
+        if (!ready && (Array.isArray(userRole) ? userRole.join(',') : userRole).toLowerCase().includes('quality')) {
+          console.log(`🔍 [MachineAccess] Quality filtering blocked job ${p.nrcJobNo} at step ${userStep.stepName}. Steps:`, JSON.stringify(p.steps.map(s => ({ stepName: s.stepName, status: s.status }))));
+        }
+        return ready;
       });
 
       return hasStepWithCompletedPrerequisites;

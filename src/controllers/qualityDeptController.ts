@@ -153,12 +153,44 @@ export const getAllQualityDepts = async (req: Request, res: Response) => {
 
 export const getQualityDeptByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const { jobPlanId } = req.query;
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
-  const qualityDepts = await prisma.qualityDept.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
+  const jobPlanIdNumber = jobPlanId !== undefined ? Number(jobPlanId) : undefined;
+
+  const qualityDepts = await prisma.qualityDept.findMany({
+    where: {
+      jobNrcJobNo: decodedNrcJobNo,
+      ...(jobPlanIdNumber !== undefined && !Number.isNaN(jobPlanIdNumber)
+        ? {
+            jobStep: {
+              is: {
+                jobPlanningId: jobPlanIdNumber,
+              },
+            },
+          }
+        : {}),
+    },
+    include: {
+      jobStep: {
+        select: {
+          id: true,
+          jobPlanningId: true,
+          stepNo: true,
+          status: true,
+        },
+      },
+    },
+  });
   
   // Add editability information for each quality dept record
   const { wrapWithEditability } = await import('../utils/fieldEditability');
-  const dataWithEditability = qualityDepts.map(qd => wrapWithEditability(qd));
+  const dataWithEditability = qualityDepts.map(qd =>
+    wrapWithEditability({
+      ...qd,
+      jobStepId: qd.jobStepId ?? qd.jobStep?.id,
+      jobPlanningId: qd.jobStep?.jobPlanningId ?? null,
+    })
+  );
   
   res.status(200).json({ success: true, data: dataWithEditability });
 };
