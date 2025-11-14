@@ -149,12 +149,44 @@ export const getAllDispatchProcesses = async (req: Request, res: Response) => {
 
 export const getDispatchProcessByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const { jobPlanId } = req.query;
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
-  const dispatchProcesses = await prisma.dispatchProcess.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
+  const jobPlanIdNumber = jobPlanId !== undefined ? Number(jobPlanId) : undefined;
+
+  const dispatchProcesses = await prisma.dispatchProcess.findMany({
+    where: {
+      jobNrcJobNo: decodedNrcJobNo,
+      ...(jobPlanIdNumber !== undefined && !Number.isNaN(jobPlanIdNumber)
+        ? {
+            jobStep: {
+              is: {
+                jobPlanningId: jobPlanIdNumber,
+              },
+            },
+          }
+        : {}),
+    },
+    include: {
+      jobStep: {
+        select: {
+          id: true,
+          jobPlanningId: true,
+          stepNo: true,
+          status: true,
+        },
+      },
+    },
+  });
   
   // Add editability information for each dispatch process record
   const { wrapWithEditability } = await import('../utils/fieldEditability');
-  const dataWithEditability = dispatchProcesses.map(dp => wrapWithEditability(dp));
+  const dataWithEditability = dispatchProcesses.map(dp =>
+    wrapWithEditability({
+      ...dp,
+      jobStepId: dp.jobStepId ?? dp.jobStep?.id,
+      jobPlanningId: dp.jobStep?.jobPlanningId ?? null,
+    })
+  );
   
   res.status(200).json({ success: true, data: dataWithEditability });
 };
@@ -406,16 +438,57 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
     let populatedData = editableData;
     const dispatchedQty = editableData.quantity || 0;
     
+    // Also check if dispatch is already complete (even if no new quantity is being dispatched)
+    // This handles cases where the dispatch was already completed but status wasn't updated
+    let shouldCheckCompletion = false;
+    const currentTotalDispatched = existingDispatchProcess.totalDispatchedQty || 0;
+    let newTotalDispatched = currentTotalDispatched; // Default to current total
+    
     // If this is a new dispatch (quantity is being set), update partial dispatch tracking
     if (dispatchedQty > 0) {
-      const currentTotalDispatched = existingDispatchProcess.totalDispatchedQty || 0;
+      shouldCheckCompletion = true;
       
       // Get job total quantity (PO quantity) to check if fully dispatched
-      const job = await prisma.job.findUnique({ 
-        where: { nrcJobNo: decodedNrcJobNo },
-        include: { purchaseOrders: true }
-      });
-      const jobQuantity = job?.purchaseOrders?.reduce((sum: number, po: any) => sum + (po.totalPOQuantity || 0), 0) || 0;
+      // First try to get the specific PO linked to this job planning
+      let jobQuantity = 0;
+      let purchaseOrderId: number | null = null;
+      
+      if (existingDispatchProcess.jobStepId) {
+        try {
+          // Get the jobStep to find jobPlanningId
+          const jobStep = await prisma.jobStep.findUnique({
+            where: { id: existingDispatchProcess.jobStepId },
+            include: { jobPlanning: { select: { jobPlanId: true, purchaseOrderId: true } } }
+          });
+          
+          if (jobStep?.jobPlanning?.purchaseOrderId) {
+            purchaseOrderId = jobStep.jobPlanning.purchaseOrderId;
+            // Get the specific PO
+            const job = await prisma.job.findUnique({ 
+              where: { nrcJobNo: decodedNrcJobNo },
+              include: { purchaseOrders: true }
+            });
+            
+            const matchingPO = job?.purchaseOrders?.find((po: any) => po.id === purchaseOrderId);
+            if (matchingPO) {
+              jobQuantity = matchingPO.totalPOQuantity || 0;
+              console.log(`✅ [updateDispatchProcess] Using specific PO quantity: ${jobQuantity} for PO ID: ${purchaseOrderId}`);
+            }
+          }
+        } catch (error) {
+          console.error('⚠️ [updateDispatchProcess] Error fetching job planning PO, falling back to sum:', error);
+        }
+      }
+      
+      // Fallback to sum of all POs if specific PO not found
+      if (jobQuantity === 0) {
+        const job = await prisma.job.findUnique({ 
+          where: { nrcJobNo: decodedNrcJobNo },
+          include: { purchaseOrders: true }
+        });
+        jobQuantity = job?.purchaseOrders?.reduce((sum: number, po: any) => sum + (po.totalPOQuantity || 0), 0) || 0;
+        console.log(`⚠️ [updateDispatchProcess] Using sum of all POs: ${jobQuantity}`);
+      }
       
       // Calculate how much can be dispatched (remaining PO quantity)
       const remainingPOQuantity = Math.max(0, jobQuantity - currentTotalDispatched);
@@ -449,9 +522,15 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
       
       // If excess quantity exists, create/update FinishQuantity record
       if (excessQuantity > 0 && jobQuantity > 0) {
-        // Get the first PO ID for reference (if available)
-        const firstPO = job?.purchaseOrders?.[0];
-        const purchaseOrderId = firstPO?.id || null;
+        // Use the purchaseOrderId we found above, or get first PO as fallback
+        if (!purchaseOrderId) {
+          const job = await prisma.job.findUnique({ 
+            where: { nrcJobNo: decodedNrcJobNo },
+            include: { purchaseOrders: true }
+          });
+          const firstPO = job?.purchaseOrders?.[0];
+          purchaseOrderId = firstPO?.id || null;
+        }
         
         // Create or update FinishQuantity record
         await prisma.finishQuantity.create({
@@ -469,10 +548,60 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
         console.log(`✅ [updateDispatchProcess] Created FinishQuantity: ${excessQuantity} units for job ${decodedNrcJobNo}`);
       }
       
+    }
+    
+    // If no new dispatch but we need to check completion, or if we just processed a dispatch
+    if (shouldCheckCompletion || (!dispatchedQty && currentTotalDispatched > 0 && existingDispatchProcess.status === 'in_progress')) {
+      // Get job total quantity (PO quantity) to check if fully dispatched
+      // First try to get the specific PO linked to this job planning
+      let jobQuantity = 0;
+      let purchaseOrderId: number | null = null;
+      
+      if (existingDispatchProcess.jobStepId) {
+        try {
+          // Get the jobStep to find jobPlanningId
+          const jobStep = await prisma.jobStep.findUnique({
+            where: { id: existingDispatchProcess.jobStepId },
+            include: { jobPlanning: { select: { jobPlanId: true, purchaseOrderId: true } } }
+          });
+          
+          if (jobStep?.jobPlanning?.purchaseOrderId) {
+            purchaseOrderId = jobStep.jobPlanning.purchaseOrderId;
+            // Get the specific PO
+            const job = await prisma.job.findUnique({ 
+              where: { nrcJobNo: decodedNrcJobNo },
+              include: { purchaseOrders: true }
+            });
+            
+            const matchingPO = job?.purchaseOrders?.find((po: any) => po.id === purchaseOrderId);
+            if (matchingPO) {
+              jobQuantity = matchingPO.totalPOQuantity || 0;
+              console.log(`✅ [updateDispatchProcess] Using specific PO quantity: ${jobQuantity} for PO ID: ${purchaseOrderId}`);
+            }
+          }
+        } catch (error) {
+          console.error('⚠️ [updateDispatchProcess] Error fetching job planning PO, falling back to sum:', error);
+        }
+      }
+      
+      // Fallback to sum of all POs if specific PO not found
+      if (jobQuantity === 0) {
+        const job = await prisma.job.findUnique({ 
+          where: { nrcJobNo: decodedNrcJobNo },
+          include: { purchaseOrders: true }
+        });
+        jobQuantity = job?.purchaseOrders?.reduce((sum: number, po: any) => sum + (po.totalPOQuantity || 0), 0) || 0;
+        console.log(`⚠️ [updateDispatchProcess] Using sum of all POs: ${jobQuantity}`);
+      }
+      
+      const totalToCheck = shouldCheckCompletion ? (typeof newTotalDispatched !== 'undefined' ? newTotalDispatched : currentTotalDispatched) : currentTotalDispatched;
+      
       // If fully dispatched (or exceeded), set status to 'accept'
-      if (newTotalDispatched >= jobQuantity) {
+      console.log(`🔍 [updateDispatchProcess] Completion check: totalToCheck=${totalToCheck}, jobQuantity=${jobQuantity}, purchaseOrderId=${purchaseOrderId}`);
+      if (totalToCheck >= jobQuantity && jobQuantity > 0) {
         populatedData.status = 'accept';
         populatedData.date = new Date();
+        console.log(`✅ [updateDispatchProcess] Dispatch fully completed: ${totalToCheck} >= ${jobQuantity}, setting status to 'accept'`);
         // Also update JobStep status to 'stop' to allow job completion
         if (existingDispatchProcess.jobStepId) {
           await prisma.jobStep.update({
@@ -483,10 +612,10 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
               completedBy: req.user?.userId || null
             }
           });
+          console.log(`✅ [updateDispatchProcess] Updated JobStep ${existingDispatchProcess.jobStepId} status to 'stop'`);
         }
-        if (excessQuantity > 0) {
-          console.log(`📦 [updateDispatchProcess] Excess ${excessQuantity} units moved to FinishQuantity`);
-        }
+      } else {
+        console.log(`📦 [updateDispatchProcess] Partial dispatch: ${totalToCheck} / ${jobQuantity}, keeping status as 'in_progress'`);
       }
     }
 

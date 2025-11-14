@@ -177,7 +177,8 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
           include: {
             jobPlanning: {
               select: {
-                nrcJobNo: true
+                nrcJobNo: true,
+                jobPlanId: true
               }
             }
           }
@@ -208,7 +209,8 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
           include: {
             jobPlanning: {
               select: {
-                nrcJobNo: true
+                nrcJobNo: true,
+                jobPlanId: true
               }
             }
           }
@@ -245,7 +247,8 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     include: {
       jobPlanning: {
         select: {
-          nrcJobNo: true
+          nrcJobNo: true,
+          jobPlanId: true
         }
       },
       paperStore: {
@@ -279,6 +282,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
   // Convert started JobStepMachine entries to activity log format
   const startedActivityLogs = startedMachines.map((machine: any) => {
     const nrcJobNo = machine.nrcJobNo || machine.jobStep?.jobPlanning?.nrcJobNo || '';
+    const jobPlanId = machine.jobStep?.jobPlanning?.jobPlanId || machine.jobStep?.jobPlanningId || null;
     const startedAt = machine.startedAt;
 
     // Create a synthetic activity log entry for started action
@@ -289,12 +293,14 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       details: JSON.stringify({
         message: `Step ${machine.stepNo || 'N/A'} (${machine.jobStep?.stepName || 'Unknown'}) started`,
         nrcJobNo: nrcJobNo,
+        jobPlanId: jobPlanId, // Include jobPlanId in details
         stepNo: machine.stepNo,
         stepName: machine.jobStep?.stepName || 'Unknown',
         machineId: machine.machineId,
         startDate: startedAt
       }),
       nrcJobNo: nrcJobNo,
+      jobPlanId: jobPlanId, // Include jobPlanId at root level
       createdAt: startedAt, // Use startedAt so it shows in the activity on the day it was started
       updatedAt: machine.updatedAt,
       user: machine.user,
@@ -309,6 +315,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     const wastage = formData['Wastage'] || 0;
     const completedAt = machine.completedAt || machine.updatedAt;
     const nrcJobNo = machine.nrcJobNo || machine.jobStep?.jobPlanning?.nrcJobNo || '';
+    const jobPlanId = machine.jobStep?.jobPlanning?.jobPlanId || machine.jobStep?.jobPlanningId || null;
     // Use completedAt first (when step was completed), then updatedAt, then createdAt as fallback
     // This ensures activities appear on the completion date, not the last update date
     const activityDate = machine.completedAt || machine.updatedAt || machine.createdAt;
@@ -321,6 +328,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       details: JSON.stringify({
         message: `Step ${machine.stepNo || 'N/A'} (${machine.jobStep?.stepName || 'Unknown'}) completed`,
         nrcJobNo: nrcJobNo,
+        jobPlanId: jobPlanId, // Include jobPlanId in details
         stepNo: machine.stepNo,
         stepName: machine.jobStep?.stepName || 'Unknown',
         totalOK: okQuantity,
@@ -330,6 +338,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
         machineId: machine.machineId
       }),
       nrcJobNo: nrcJobNo,
+      jobPlanId: jobPlanId, // Include jobPlanId at root level
       createdAt: activityDate, // Use completedAt/updatedAt so it shows in the activity on the day it was completed
       updatedAt: machine.updatedAt,
       user: machine.user,
@@ -340,6 +349,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
   // ✅ Convert completed non-machine JobSteps to activity log format
   const completedNonMachineActivityLogs = completedNonMachineSteps.map((step: any) => {
     const nrcJobNo = step.jobPlanning?.nrcJobNo || '';
+    const jobPlanId = step.jobPlanning?.jobPlanId || step.jobPlanningId || null;
     const stepName = step.stepName || 'Unknown';
     const stepNo = step.stepNo || 0;
     const completedAt = step.endDate || step.updatedAt || step.createdAt;
@@ -388,6 +398,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       details: JSON.stringify({
         message: `Step ${stepNo} (${stepName}) completed`,
         nrcJobNo: nrcJobNo,
+        jobPlanId: jobPlanId, // Include jobPlanId in details
         stepNo: stepNo,
         stepName: stepName,
         quantity: quantity,
@@ -396,6 +407,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
         ...additionalDetails
       }),
       nrcJobNo: nrcJobNo,
+      jobPlanId: jobPlanId, // Include jobPlanId at root level for easier access
       createdAt: activityDate, // Use endDate so it shows in the activity on the day it was completed
       updatedAt: step.updatedAt,
       user: userDetails,

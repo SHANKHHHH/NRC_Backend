@@ -314,13 +314,16 @@ export const getAllJobPlanningsSimple = async (req: Request, res: Response) => {
 // Get a JobPlanning by nrcJobNo with steps
 export const getJobPlanningByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const jobPlanIdParam = req.query.jobPlanId as string | undefined;
+  const jobPlanIdValue = jobPlanIdParam ? Number(jobPlanIdParam) : undefined;
+  const jobPlanId = jobPlanIdValue !== undefined && !Number.isNaN(jobPlanIdValue) ? jobPlanIdValue : undefined;
   
   // URL decode the nrcJobNo parameter to handle spaces and special characters
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   
   try {
     const { getJobPlanningData } = await import('../utils/jobPlanningSelector');
-    const jobPlanning = await getJobPlanningData(decodedNrcJobNo);
+    const jobPlanning = await getJobPlanningData(decodedNrcJobNo, jobPlanId);
     
   if (!jobPlanning) {
     throw new AppError('JobPlanning not found for that NRC Job No', 404);
@@ -370,13 +373,16 @@ export const getJobPlanningByPurchaseOrderId = async (req: Request, res: Respons
 // Get all steps for a given nrcJobNo
 export const getStepsByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const jobPlanIdParam = req.query.jobPlanId as string | undefined;
+  const jobPlanIdValue = jobPlanIdParam ? Number(jobPlanIdParam) : undefined;
+  const jobPlanId = jobPlanIdValue !== undefined && !Number.isNaN(jobPlanIdValue) ? jobPlanIdValue : undefined;
   
   // URL decode the nrcJobNo parameter to handle spaces and special characters
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   
   try {
     const { getStepsForJob } = await import('../utils/jobPlanningSelector');
-    const { steps } = await getStepsForJob(decodedNrcJobNo);
+    const { steps } = await getStepsForJob(decodedNrcJobNo, jobPlanId);
   
   if (steps.length === 0) {
     throw new AppError('No steps found for that NRC Job No', 404);
@@ -396,29 +402,53 @@ export const getStepsByNrcJobNo = async (req: Request, res: Response) => {
 // Get a specific step for a given nrcJobNo and stepNo
 export const getStepByNrcJobNoAndStepNo = async (req: Request, res: Response) => {
   const { nrcJobNo, stepNo } = req.params;
+  const jobPlanIdParam = req.query.jobPlanId as string | undefined;
+  const jobStepIdParam = req.query.jobStepId as string | undefined;
+  const jobPlanIdValue = jobPlanIdParam ? Number(jobPlanIdParam) : undefined;
+  const jobStepIdValue = jobStepIdParam ? Number(jobStepIdParam) : undefined;
+  const jobPlanId = jobPlanIdValue !== undefined && !Number.isNaN(jobPlanIdValue) ? jobPlanIdValue : undefined;
+  const jobStepId = jobStepIdValue !== undefined && !Number.isNaN(jobStepIdValue) ? jobStepIdValue : undefined;
   
   // URL decode the nrcJobNo parameter to handle spaces and special characters
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   
   console.log(`🚨 [getStepByNrcJobNoAndStepNo] Request for stepNo: ${stepNo}, nrcJobNo: ${decodedNrcJobNo}`);
   
-  // Simple fix: Just query the step directly by stepNo and nrcJobNo
-  const step = await prisma.jobStep.findFirst({
-    where: {
-      stepNo: Number(stepNo),
-      jobPlanning: {
-        nrcJobNo: decodedNrcJobNo
+  let step: any = null;
+
+  if (jobStepId !== undefined && !Number.isNaN(jobStepId)) {
+    step = await prisma.jobStep.findUnique({
+      where: { id: jobStepId },
+      include: {
+        jobPlanning: {
+          select: { jobPlanId: true, nrcJobNo: true }
+        }
       }
-    },
-    include: {
-      jobPlanning: {
-        select: { jobPlanId: true, nrcJobNo: true }
-      }
-    },
-    orderBy: {
-      stepNo: 'asc'
+    });
+    if (step && (step.jobPlanning.nrcJobNo !== decodedNrcJobNo || step.stepNo !== Number(stepNo))) {
+      step = null;
     }
-  });
+  }
+
+  if (!step) {
+    step = await prisma.jobStep.findFirst({
+      where: {
+        stepNo: Number(stepNo),
+        jobPlanning: {
+          nrcJobNo: decodedNrcJobNo,
+          ...(jobPlanId !== undefined ? { jobPlanId } : {})
+        }
+      },
+      include: {
+        jobPlanning: {
+          select: { jobPlanId: true, nrcJobNo: true }
+        }
+      },
+      orderBy: {
+        stepNo: 'asc'
+      }
+    });
+  }
 
   console.log(`🚨 [getStepByNrcJobNoAndStepNo] Found step: ${step?.stepName} (stepNo: ${step?.stepNo}, ID: ${step?.id})`);
 
@@ -565,6 +595,10 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   // URL decode the nrcJobNo parameter to handle spaces and special characters
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   
+  const jobPlanIdInput = (req.body?.jobPlanId ?? req.query?.jobPlanId) as string | number | undefined;
+  const parsedJobPlanId = jobPlanIdInput !== undefined ? Number(jobPlanIdInput) : undefined;
+  const jobPlanId = parsedJobPlanId !== undefined && !Number.isNaN(parsedJobPlanId) ? parsedJobPlanId : undefined;
+
   let userId = req.user?.userId || req.headers['user-id'];
   if (Array.isArray(userId)) userId = userId[0];
   const userRole = req.user?.role;
@@ -578,7 +612,7 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
 
   // Get the prioritized job planning first
   const { getJobPlanningData } = await import('../utils/jobPlanningSelector');
-  const jobPlanning = await getJobPlanningData(decodedNrcJobNo);
+  const jobPlanning = await getJobPlanningData(decodedNrcJobNo, jobPlanId);
   
   if (!jobPlanning) {
     throw new AppError('Job planning not found', 404);
@@ -857,6 +891,10 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
   
   // URL decode the nrcJobNo parameter to handle spaces and special characters
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+
+  const jobPlanIdInput = (req.body?.jobPlanId ?? req.query?.jobPlanId) as string | number | undefined;
+  const parsedJobPlanId = jobPlanIdInput !== undefined ? Number(jobPlanIdInput) : undefined;
+  const jobPlanId = parsedJobPlanId !== undefined && !Number.isNaN(parsedJobPlanId) ? parsedJobPlanId : undefined;
   
   const { status } = req.body;
   let userId = req.user?.userId || req.headers['user-id'];
@@ -872,7 +910,7 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
 
   // Get the prioritized job planning first
   const { getJobPlanningData } = await import('../utils/jobPlanningSelector');
-  const jobPlanning = await getJobPlanningData(decodedNrcJobNo);
+  const jobPlanning = await getJobPlanningData(decodedNrcJobNo, jobPlanId);
   
   console.log(`🔍 [StepUpdate] Found job planning:`, jobPlanning ? `ID ${jobPlanning.jobPlanId}` : 'null');
   
@@ -1410,7 +1448,17 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
   if (formData.status === 'stop') {
     // For non-machine steps, only accept if completion data exists
     // NOTE: Dispatch handles its own status based on cumulative quantity, so don't override here
-    if (isNonMachineStep && !isDispatchStep && !formData.available && !formData.completeRemark && !formData.quantity) {
+    const isQualityStep = stepNameLower.includes('quality');
+    const isPaperStoreStep = stepNameLower.includes('paperstore');
+    
+    // Check if completion data exists based on step type
+    const hasCompletionData = isPaperStoreStep 
+      ? (formData.available || formData.completeRemark || formData.quantity)
+      : isQualityStep
+        ? (formData.passQuantity || formData['Pass Quantity'] || formData.rejectedQty || formData['Reject Quantity'])
+        : (formData.available || formData.completeRemark || formData.quantity);
+    
+    if (isNonMachineStep && !isDispatchStep && !hasCompletionData) {
       stepStatus = 'in_progress'; // Keep in progress until completion form is filled
     } else if (!isDispatchStep) {
       stepStatus = 'accept';
@@ -1443,6 +1491,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           quality: formData.quality,
           extraMargin: formData.extraMargin,
           issuedDate: formData.issuedDate ? new Date(formData.issuedDate) : undefined,
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
         create: {
@@ -1457,6 +1506,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           quality: formData.quality,
           extraMargin: formData.extraMargin,
           issuedDate: formData.issuedDate ? new Date(formData.issuedDate) : new Date(),
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
       });
@@ -1478,6 +1528,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           separateSheets: formData.separateSheets ? parseInt(formData.separateSheets) || null : null,
           extraSheets: formData.extraSheets ? parseInt(formData.extraSheets) || null : null,
           machine: machineCode, // Use JobStep machine instead of form data
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
         },
         create: {
           jobNrcJobNo: nrcJobNo,
@@ -1494,6 +1545,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           separateSheets: formData.separateSheets ? parseInt(formData.separateSheets) || null : null,
           extraSheets: formData.extraSheets ? parseInt(formData.extraSheets) || null : null,
           machine: machineCode, // Use JobStep machine instead of form data
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
         },
       });
     } else if (stepNameLower.includes('corrugation')) {
@@ -1512,7 +1564,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           gsm1: formData.gsm1 || formData['GSM1'],
           gsm2: formData.gsm2 || formData['GSM2'],
           flute: formData.flute || formData['Flute Type'],
-          remarks: formData.remarks || formData['Remarks'],
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
         },
         create: {
           jobNrcJobNo: nrcJobNo,
@@ -1527,7 +1579,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           gsm1: formData.gsm1 || formData['GSM1'],
           gsm2: formData.gsm2 || formData['GSM2'],
           flute: formData.flute || formData['Flute Type'],
-          remarks: formData.remarks || formData['Remarks'],
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
         },
       });
       } else if (stepNameLower.includes('flute')) {
@@ -1544,6 +1596,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
             film: formData.film || formData['Film Type'],
             adhesive: formData.adhesive || formData['Adhesive'],
             wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
+            remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
             // QC fields are only updated by Flying Squad, not by regular operators
           },
           create: {
@@ -1557,6 +1610,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
             film: formData.film || formData['Film Type'],
             adhesive: formData.adhesive || formData['Adhesive'],
             wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
+            remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
             // QC fields are only updated by Flying Squad, not by regular operators
           },
         });
@@ -1574,7 +1628,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           machine: machineCode, // Use JobStep machine instead of form data
           die: formData.die || formData['Die Used'],
           wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
-          remarks: formData.remarks || formData['Remarks'],
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
         create: {
@@ -1588,7 +1642,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           machine: machineCode, // Use JobStep machine instead of form data
           die: formData.die || formData['Die Used'],
           wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
-          remarks: formData.remarks || formData['Remarks'],
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
       });
@@ -1609,7 +1663,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           adhesive: formData.adhesive || null,
           wastage: formData.Wastage ? parseInt(formData.Wastage) || null : 
                   formData.wastage ? parseInt(formData.wastage) || null : null,
-          remarks: formData.Remarks || formData.remarks || null,
+          remarks: formData.Remarks || formData.remarks || formData['Complete Remark'] || null,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
         create: {
@@ -1624,7 +1678,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           adhesive: formData.adhesive || null,
           wastage: formData.Wastage ? parseInt(formData.Wastage) || null : 
                   formData.wastage ? parseInt(formData.wastage) || null : null,
-          remarks: formData.Remarks || formData.remarks || null,
+          remarks: formData.Remarks || formData.remarks || formData['Complete Remark'] || null,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
       });
@@ -1643,7 +1697,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           operatorName: operatorName, // Use JobStep user instead of form data
           rejectedQty: (formData.rejectedQty || formData['Reject Quantity']) ? parseInt(formData.rejectedQty || formData['Reject Quantity']) || null : null,
           reasonForRejection: formData.reasonForRejection || formData['Reason for Rejection'] || null,
-          remarks: formData.remarks || formData['Remarks'] || null,
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
         create: {
@@ -1657,7 +1711,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           operatorName: operatorName, // Use JobStep user instead of form data
           rejectedQty: (formData.rejectedQty || formData['Reject Quantity']) ? parseInt(formData.rejectedQty || formData['Reject Quantity']) || null : null,
           reasonForRejection: formData.reasonForRejection || formData['Reason for Rejection'] || null,
-          remarks: formData.remarks || formData['Remarks'] || null,
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
       });
@@ -1680,11 +1734,38 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
         const currentTotal = existingDispatch?.totalDispatchedQty || 0;
         
         // Get job total quantity (PO quantity) to check if fully dispatched
-        const job = await prisma.job.findUnique({
-          where: { nrcJobNo },
-          include: { purchaseOrders: true }
-        });
-        const jobQuantity = job?.purchaseOrders?.reduce((sum: number, po: any) => sum + (po.totalPOQuantity || 0), 0) || 0;
+        // First try to get the specific PO linked to this job planning
+        let jobQuantity = 0;
+        let purchaseOrderId: number | null = null;
+        
+        if (jobStep?.jobPlanning?.purchaseOrderId) {
+          try {
+            purchaseOrderId = jobStep.jobPlanning.purchaseOrderId;
+            // Get the specific PO
+            const job = await prisma.job.findUnique({
+              where: { nrcJobNo },
+              include: { purchaseOrders: true }
+            });
+            
+            const matchingPO = job?.purchaseOrders?.find((po: any) => po.id === purchaseOrderId);
+            if (matchingPO) {
+              jobQuantity = matchingPO.totalPOQuantity || 0;
+              console.log(`✅ [storeStepFormData] Using specific PO quantity: ${jobQuantity} for PO ID: ${purchaseOrderId}`);
+            }
+          } catch (error) {
+            console.error('⚠️ [storeStepFormData] Error fetching job planning PO, falling back to sum:', error);
+          }
+        }
+        
+        // Fallback to sum of all POs if specific PO not found
+        if (jobQuantity === 0) {
+          const job = await prisma.job.findUnique({
+            where: { nrcJobNo },
+            include: { purchaseOrders: true }
+          });
+          jobQuantity = job?.purchaseOrders?.reduce((sum: number, po: any) => sum + (po.totalPOQuantity || 0), 0) || 0;
+          console.log(`⚠️ [storeStepFormData] Using sum of all POs: ${jobQuantity}`);
+        }
         
         // Calculate how much can be dispatched (remaining PO quantity)
         const remainingPOQuantity = Math.max(0, jobQuantity - currentTotal);
@@ -1714,9 +1795,15 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
         
         // If excess quantity exists, create/update FinishQuantity record
         if (excessQuantity > 0 && jobQuantity > 0) {
-          // Get the first PO ID for reference (if available)
-          const firstPO = job?.purchaseOrders?.[0];
-          const purchaseOrderId = firstPO?.id || null;
+          // Use the purchaseOrderId we found above, or get first PO as fallback
+          if (!purchaseOrderId) {
+            const job = await prisma.job.findUnique({
+              where: { nrcJobNo },
+              include: { purchaseOrders: true }
+            });
+            const firstPO = job?.purchaseOrders?.[0];
+            purchaseOrderId = firstPO?.id || null;
+          }
           
           // Create or update FinishQuantity record
           await prisma.finishQuantity.create({
@@ -1769,7 +1856,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           operatorName: operatorName,
           dispatchDate: (formData.dispatchDate || formData['Dispatch Date']) ? new Date(formData.dispatchDate || formData['Dispatch Date']) : undefined,
           balanceQty: (formData.balanceQty || formData['Balance Qty']) ? parseInt(formData.balanceQty || formData['Balance Qty']) || null : null,
-          remarks: formData.remarks || formData['Remarks'],
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
           totalDispatchedQty: totalDispatchedQty,
           dispatchHistory: dispatchHistory,
         },
@@ -1784,7 +1871,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           operatorName: operatorName,
           dispatchDate: (formData.dispatchDate || formData['Dispatch Date']) ? new Date(formData.dispatchDate || formData['Dispatch Date']) : new Date(),
           balanceQty: (formData.balanceQty || formData['Balance Qty']) ? parseInt(formData.balanceQty || formData['Balance Qty']) || null : null,
-          remarks: formData.remarks || formData['Remarks'],
+          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
           totalDispatchedQty: totalDispatchedQty,
           dispatchHistory: dispatchHistory,
         },

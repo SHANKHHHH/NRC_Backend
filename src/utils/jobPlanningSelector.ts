@@ -8,8 +8,23 @@ const prisma = new PrismaClient();
  * 2. Most recent job plannings (by createdAt)
  * 3. Highest jobPlanId (as fallback)
  */
-export async function selectBestJobPlanning(nrcJobNo: string) {
-  console.log(`🔍 [JobPlanningSelector] Selecting best planning for job: ${nrcJobNo}`);
+export async function selectBestJobPlanning(nrcJobNo: string, jobPlanId?: number) {
+  console.log(`🔍 [JobPlanningSelector] Selecting best planning for job: ${nrcJobNo} (requested jobPlanId: ${jobPlanId ?? 'none'})`);
+  
+  if (jobPlanId !== undefined) {
+    const planning = await prisma.jobPlanning.findUnique({
+      where: { jobPlanId },
+      select: { jobPlanId: true, nrcJobNo: true, jobDemand: true, createdAt: true }
+    });
+    if (!planning) {
+      throw new Error(`Job planning ${jobPlanId} not found`);
+    }
+    if (planning.nrcJobNo !== nrcJobNo) {
+      throw new Error(`Job planning ${jobPlanId} does not belong to job ${nrcJobNo}`);
+    }
+    console.log(`🔍 [JobPlanningSelector] Explicit planning selected: ${planning.jobPlanId}`);
+    return planning;
+  }
   
   // Get all job plannings for this job
   const jobPlannings = await prisma.jobPlanning.findMany({
@@ -48,8 +63,8 @@ export async function selectBestJobPlanning(nrcJobNo: string) {
 /**
  * Get steps for a job using the best job planning selection
  */
-export async function getStepsForJob(nrcJobNo: string) {
-  const selectedPlanning = await selectBestJobPlanning(nrcJobNo);
+export async function getStepsForJob(nrcJobNo: string, jobPlanId?: number) {
+  const selectedPlanning = await selectBestJobPlanning(nrcJobNo, jobPlanId);
   
   // Get steps only from the selected planning to avoid duplicates
   const steps = await prisma.jobStep.findMany({
@@ -137,8 +152,8 @@ export async function getStepsForJob(nrcJobNo: string) {
 /**
  * Get job planning data using the best selection
  */
-export async function getJobPlanningData(nrcJobNo: string) {
-  const selectedPlanning = await selectBestJobPlanning(nrcJobNo);
+export async function getJobPlanningData(nrcJobNo: string, jobPlanId?: number) {
+  const selectedPlanning = await selectBestJobPlanning(nrcJobNo, jobPlanId);
   
   // Get full job planning data with JobStepMachine details
   const jobPlanning = await prisma.jobPlanning.findUnique({

@@ -113,31 +113,55 @@ export const getAllPaperStores = async (req: Request, res: Response) => {
 
 export const getPaperStoreByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
+  const { jobPlanId } = req.query;
   // URL decode the nrcJobNo parameter to handle spaces and special characters
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
-  const paperStores = await prisma.paperStore.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
+  const jobPlanIdNumber = jobPlanId !== undefined ? Number(jobPlanId) : undefined;
+  
+  const paperStores = await prisma.paperStore.findMany({
+    where: {
+      jobNrcJobNo: decodedNrcJobNo,
+      ...(jobPlanIdNumber !== undefined && !Number.isNaN(jobPlanIdNumber)
+        ? {
+            jobStep: {
+              is: {
+                jobPlanningId: jobPlanIdNumber,
+              },
+            },
+          }
+        : {}),
+    },
+    include: {
+      jobStep: {
+        select: {
+          id: true,
+          jobPlanningId: true,
+          stepNo: true,
+          status: true,
+        },
+      },
+    },
+  });
   
   // Auto-populate missing fields for each paper store record
   const { autoPopulateStepFields, autoPopulatePaperStoreFields } = await import('../utils/autoPopulateFields');
   const populatedStores = await Promise.all(
     paperStores.map(async (ps) => {
-      // Get jobStepId to find the job step
-      const jobStep = await prisma.jobStep.findFirst({
-        where: { 
-          jobPlanning: {
-            nrcJobNo: decodedNrcJobNo
-          },
-          stepName: 'PaperStore'
-        }
-      });
-      
-      if (jobStep) {
+      const jobStepId = ps.jobStepId || ps.jobStep?.id;
+      let processed = ps;
+
+      if (jobStepId) {
         // First apply common step fields
-        const withCommonFields = await autoPopulateStepFields(ps, jobStep.id, req.user?.userId, decodedNrcJobNo);
+        const withCommonFields = await autoPopulateStepFields(ps, jobStepId, req.user?.userId, decodedNrcJobNo);
         // Then apply paper store specific fields
-        return await autoPopulatePaperStoreFields(withCommonFields, decodedNrcJobNo);
+        processed = await autoPopulatePaperStoreFields(withCommonFields, decodedNrcJobNo);
       }
-      return ps;
+
+      return {
+        ...processed,
+        jobStepId: jobStepId ?? processed.jobStepId,
+        jobPlanningId: ps.jobStep?.jobPlanningId ?? null,
+      };
     })
   );
   
@@ -324,6 +348,10 @@ export const updatePaperStore = async (req: Request, res: Response) => {
   // URL decode the nrcJobNo parameter to handle spaces and special characters
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const userRole = req.user?.role;
+  const { jobStepId } = req.body;
+  if (jobStepId !== undefined) {
+    delete req.body.jobStepId;
+  }
   // Check if Flying Squad is trying to update non-QC fields
   if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
     const allowedFields = ['qcCheckSignBy', 'qcCheckAt', 'remarks'];
@@ -361,24 +389,55 @@ export const updatePaperStore = async (req: Request, res: Response) => {
   // }
   // res.status(200).json({ success: true, data: paperStore, message: 'PaperStore updated' });
 
-// Step 1: Find the PaperStore by jobNrcJobNo
-const existing = await prisma.paperStore.findFirst({
-  where: { jobNrcJobNo: decodedNrcJobNo },
-});
+// Step 1: Find the PaperStore by jobStepId (preferred) or fallback to jobNrcJobNo
+let existing = jobStepId !== undefined
+  ? await prisma.paperStore.findUnique({
+      where: { jobStepId: Number(jobStepId) },
+    })
+  : null;
 
 if (!existing) {
-  return res.status(404).json({ success: false, message: 'PaperStore not found' });
+  existing = await prisma.paperStore.findFirst({
+    where: { jobNrcJobNo: decodedNrcJobNo },
+  });
 }
 
-  // Machine access enforcement removed for PaperStore as per requirement
+// Machine access enforcement removed for PaperStore as per requirement
 
   // Filter out non-editable fields (fields that already have data)
 const { filterEditableFields } = await import('../utils/fieldEditability');
-const editableData = filterEditableFields(existing, req.body);
+const editableData = filterEditableFields(existing ?? {}, req.body);
+
+// Always allow overriding status when explicitly provided
+if (req.body.status !== undefined) {
+  editableData.status = req.body.status;
+}
 
 // Auto-populate fields from job details
 const { autoPopulatePaperStoreFields } = await import('../utils/autoPopulateFields');
 const populatedData = await autoPopulatePaperStoreFields(editableData, decodedNrcJobNo);
+
+if (!existing) {
+  const created = await prisma.paperStore.create({
+    data: {
+      jobNrcJobNo: decodedNrcJobNo,
+      ...(jobStepId !== undefined ? { jobStepId: Number(jobStepId) } : {}),
+      ...populatedData,
+    },
+  });
+
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_CREATED,
+      `Created PaperStore step with jobNrcJobNo: ${decodedNrcJobNo}`,
+      'PaperStore',
+      decodedNrcJobNo
+    );
+  }
+
+  return res.status(200).json({ success: true, data: created, message: 'PaperStore created' });
+}
 
 // Step 2: Use its ID to update (since ID is unique)
 const updated = await prisma.paperStore.update({

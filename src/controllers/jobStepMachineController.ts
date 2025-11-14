@@ -6,10 +6,107 @@ import { logUserActionWithResource, ActionTypes } from '../lib/logger';
 
 const prisma = new PrismaClient();
 
+type PlanningIdentifiers = {
+  jobPlanId?: number;
+  jobStepId?: number;
+};
+
+function parsePlanningIdentifiers(req: Request): PlanningIdentifiers {
+  const rawJobPlanId =
+    (req.query?.jobPlanId as string | undefined) ??
+    (req.body ? req.body.jobPlanId : undefined) ??
+    ((req.params as any)?.jobPlanId as string | undefined);
+
+  const rawJobStepId =
+    (req.query?.jobStepId as string | undefined) ??
+    (req.body ? req.body.jobStepId : undefined) ??
+    ((req.params as any)?.jobStepId as string | undefined);
+
+  const jobPlanId =
+    rawJobPlanId !== undefined && rawJobPlanId !== null && rawJobPlanId !== ''
+      ? Number(rawJobPlanId)
+      : undefined;
+  const jobStepId =
+    rawJobStepId !== undefined && rawJobStepId !== null && rawJobStepId !== ''
+      ? Number(rawJobStepId)
+      : undefined;
+
+  const normalizedJobPlanId =
+    typeof jobPlanId === 'number' && !Number.isNaN(jobPlanId) ? jobPlanId : undefined;
+  const normalizedJobStepId =
+    typeof jobStepId === 'number' && !Number.isNaN(jobStepId) ? jobStepId : undefined;
+
+  return {
+    jobPlanId: normalizedJobPlanId,
+    jobStepId: normalizedJobStepId,
+  };
+}
+
+async function findJobStepForOperation(
+  nrcJobNo: string,
+  stepNo: number,
+  identifiers: PlanningIdentifiers,
+  include?: any
+) {
+  const { jobPlanId, jobStepId } = identifiers;
+
+  const baseInclude = {
+    jobPlanning: {
+      select: { jobPlanId: true, nrcJobNo: true },
+    },
+  };
+
+  const mergedInclude = include
+    ? {
+        ...include,
+        jobPlanning: include.jobPlanning ?? baseInclude.jobPlanning,
+      }
+    : baseInclude;
+
+  const buildQuery = (where: any) => {
+    const query: any = { where };
+    query.include = mergedInclude;
+    return query;
+  };
+
+  if (jobStepId !== undefined) {
+    const jobStep = await prisma.jobStep.findUnique(
+      buildQuery({ id: jobStepId })
+    ) as any;
+    if (!jobStep) {
+      throw new AppError(`Job step with ID ${jobStepId} not found`, 404);
+    }
+    if (jobStep.jobPlanning.nrcJobNo !== nrcJobNo || jobStep.stepNo !== stepNo) {
+      throw new AppError(
+        `Job step ${jobStepId} does not belong to job ${nrcJobNo} step ${stepNo}`,
+        400
+      );
+    }
+    return jobStep;
+  }
+
+  const jobStep = await prisma.jobStep.findFirst(
+    buildQuery({
+      stepNo,
+      jobPlanning: {
+        nrcJobNo,
+        ...(jobPlanId !== undefined ? { jobPlanId } : {})
+      }
+    })
+  ) as any;
+
+  if (!jobStep) {
+    throw new AppError('Job step not found', 404);
+  }
+
+  return jobStep;
+}
+
 // Get available machines for a specific job step
 export const getAvailableMachines = async (req: Request, res: Response) => {
   try {
     const { nrcJobNo, stepNo } = req.params;
+    const identifiers = parsePlanningIdentifiers(req);
     const userId = req.user?.userId;
 
     if (!userId) {
@@ -17,14 +114,14 @@ export const getAvailableMachines = async (req: Request, res: Response) => {
     }
 
     // Get the job step
-    const jobStep = await prisma.jobStep.findFirst({
-      where: {
+    const jobStep = await findJobStepForOperation(
+      nrcJobNo,
+      parseInt(stepNo),
+      identifiers,
+      {
         jobPlanning: {
-          nrcJobNo: nrcJobNo
+          select: { jobPlanId: true, nrcJobNo: true }
         },
-        stepNo: parseInt(stepNo)
-      },
-      include: {
         jobStepMachines: {
           include: {
             machine: true,
@@ -33,12 +130,8 @@ export const getAvailableMachines = async (req: Request, res: Response) => {
             }
           }
         }
-      } as any
-    });
-
-    if (!jobStep) {
-      throw new AppError('Job step not found', 404);
-    }
+      }
+    );
 
     // Extract machine details from the step's machineDetails JSON
     const machineDetails = jobStep.machineDetails as any[];
@@ -94,6 +187,7 @@ export const getAvailableMachines = async (req: Request, res: Response) => {
         stepId: jobStep.id,
         stepName: jobStep.stepName,
         stepNo: jobStep.stepNo,
+        jobPlanId: jobStep.jobPlanningId,
         machines: availableMachines
       }
     });
@@ -113,6 +207,7 @@ export const getAvailableMachines = async (req: Request, res: Response) => {
 export const startWorkOnMachine = async (req: Request, res: Response) => {
   try {
     const { nrcJobNo, stepNo, machineId } = req.params;
+    const identifiers = parsePlanningIdentifiers(req);
     const userId = req.user?.userId;
     const { formData } = req.body;
 
@@ -160,14 +255,11 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Get the job step
-    const jobStep = await prisma.jobStep.findFirst({
-      where: {
-        jobPlanning: {
-          nrcJobNo: nrcJobNo
-        },
-        stepNo: parseInt(stepNo)
-      },
-      include: {
+    const jobStep = await findJobStepForOperation(
+      nrcJobNo,
+      parseInt(stepNo),
+      identifiers,
+      {
         jobPlanning: {
           include: {
             steps: {
@@ -176,11 +268,7 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
           }
         }
       }
-    });
-
-    if (!jobStep) {
-      throw new AppError('Job step not found', 404);
-    }
+    );
 
     // CRITICAL: Validate that previous steps are started before allowing this step to start
     const currentStepNo = parseInt(stepNo);
@@ -291,6 +379,7 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
         jobStepMachineId: updatedJobStepMachine.id,
         machineId: updatedJobStepMachine.machineId,
         machineCode: updatedJobStepMachine.machine.machineCode,
+        jobPlanId: jobStep.jobPlanningId,
         status: updatedJobStepMachine.status,
         startedAt: updatedJobStepMachine.startedAt,
         userId: updatedJobStepMachine.userId,
@@ -324,6 +413,7 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
   
   try {
     const { nrcJobNo, stepNo, machineId } = req.params;
+    const identifiers = parsePlanningIdentifiers(req);
     const userId = req.user?.userId;
     const { formData } = req.body;
 
@@ -367,18 +457,20 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Get the job step
-    const jobStep = await prisma.jobStep.findFirst({
-      where: {
+    const jobStep = await findJobStepForOperation(
+      nrcJobNo,
+      parseInt(stepNo),
+      identifiers,
+      {
         jobPlanning: {
-          nrcJobNo: nrcJobNo
-        },
-        stepNo: parseInt(stepNo)
+          include: {
+            steps: {
+              orderBy: { stepNo: 'asc' }
+            }
+          }
+        }
       }
-    });
-
-    if (!jobStep) {
-      throw new AppError('Job step not found', 404);
-    }
+    );
 
     // Find JobStepMachine entry
     const jobStepMachine = await (prisma as any).jobStepMachine.findFirst({
@@ -419,6 +511,7 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
     const completionCheck = await _checkStepCompletionCriteria(
       jobStep.id,
       stepNoInt,
+      jobStep.jobPlanningId,
       nrcJobNo,
       allMachines
     );
@@ -430,14 +523,8 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
       console.log(`\n🎯 [VALIDATION] Checking if previous steps are completed before allowing step completion`);
       
       // Get all steps for validation
-      const allStepsForValidation = await prisma.jobStep.findMany({
-        where: { 
-          jobPlanning: { nrcJobNo: nrcJobNo }
-        },
-        orderBy: { stepNo: 'asc' }
-      });
-      
-      const previousStepsForValidation = allStepsForValidation.filter(s => s.stepNo < stepNoInt);
+      const allStepsForValidation = jobStep.jobPlanning.steps as any[];
+      const previousStepsForValidation = allStepsForValidation.filter((s: any) => s.stepNo < stepNoInt);
       
       // For COMPLETION: All previous steps must have status = 'stop'
       const notCompletedPreviousSteps = previousStepsForValidation.filter(s => s.status !== 'stop');
@@ -493,7 +580,7 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
       });
       
       // Update individual step table with status 'accept'
-      await _updateIndividualStepWithFormData(stepNoInt, nrcJobNo, combinedFormData, allMachines, jobStep.user || undefined, jobStep.id);
+      await _updateIndividualStepWithFormData(stepNoInt, nrcJobNo, combinedFormData, jobStep.id, allMachines, jobStep.user || undefined);
       
       // Collect all unique users who completed work on machines for this step
       // A machine is considered "completed" if it has formData (work was completed)
@@ -567,6 +654,7 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
         jobStepMachineId: updatedJobStepMachine.id,
         machineId: updatedJobStepMachine.machineId,
         machineCode: updatedJobStepMachine.machine.machineCode,
+        jobPlanId: jobStep.jobPlanningId,
         status: updatedJobStepMachine.status,
         updatedAt: updatedJobStepMachine.updatedAt,
         stepCompleted: completionCheck.shouldComplete,
@@ -588,16 +676,17 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
 export const getMachineWorkStatus = async (req: Request, res: Response) => {
   try {
     const { nrcJobNo, stepNo } = req.params;
+    const identifiers = parsePlanningIdentifiers(req);
 
     // Get the job step with all machine work
-    const jobStep = await prisma.jobStep.findFirst({
-      where: {
+    const jobStep = await findJobStepForOperation(
+      nrcJobNo,
+      parseInt(stepNo),
+      identifiers,
+      {
         jobPlanning: {
-          nrcJobNo: nrcJobNo
+          select: { jobPlanId: true, nrcJobNo: true }
         },
-        stepNo: parseInt(stepNo)
-      },
-      include: {
         jobStepMachines: {
           include: {
             machine: true,
@@ -606,12 +695,8 @@ export const getMachineWorkStatus = async (req: Request, res: Response) => {
             }
           }
         }
-      } as any
-    });
-
-    if (!jobStep) {
-      throw new AppError('Job step not found', 404);
-    }
+      }
+    );
 
     const machineWork = (jobStep as any).jobStepMachines?.map((jsm: any) => ({
       id: jsm.id,
@@ -634,6 +719,7 @@ export const getMachineWorkStatus = async (req: Request, res: Response) => {
         stepId: jobStep.id,
         stepName: jobStep.stepName,
         stepNo: jobStep.stepNo,
+        jobPlanId: jobStep.jobPlanningId,
         stepStatus: jobStep.status,
         machineWork: machineWork,
         totalMachines: machineWork?.length || 0,
@@ -659,6 +745,7 @@ export const getMachineWorkStatus = async (req: Request, res: Response) => {
 export const autoAssignMachineForUrgentJob = async (req: Request, res: Response) => {
   try {
     const { nrcJobNo, stepNo } = req.params;
+    const identifiers = parsePlanningIdentifiers(req);
     const userId = req.user?.userId;
     const { formData } = req.body;
 
@@ -692,18 +779,11 @@ export const autoAssignMachineForUrgentJob = async (req: Request, res: Response)
     }
 
     // Get the job step
-    const jobStep = await prisma.jobStep.findFirst({
-      where: {
-        jobPlanning: {
-          nrcJobNo: nrcJobNo
-        },
-        stepNo: parseInt(stepNo)
-      }
-    });
-
-    if (!jobStep) {
-      throw new AppError('Job step not found', 404);
-    }
+    const jobStep = await findJobStepForOperation(
+      nrcJobNo,
+      parseInt(stepNo),
+      identifiers
+    );
 
     // Find or create JobStepMachine entry
     let jobStepMachine = await (prisma as any).jobStepMachine.findFirst({
@@ -754,6 +834,7 @@ export const autoAssignMachineForUrgentJob = async (req: Request, res: Response)
         jobStepMachineId: updatedJobStepMachine.id,
         machineId: updatedJobStepMachine.machineId,
         machineCode: updatedJobStepMachine.machine.machineCode,
+        jobPlanId: jobStep.jobPlanningId,
         status: updatedJobStepMachine.status,
         startedAt: updatedJobStepMachine.startedAt,
         userId: updatedJobStepMachine.userId,
@@ -908,6 +989,7 @@ export const majorHoldWorkOnMachine = async (req: Request, res: Response) => {
 export const holdWorkOnMachine = async (req: Request, res: Response) => {
   try {
     const { nrcJobNo, stepNo, machineId } = req.params;
+    const identifiers = parsePlanningIdentifiers(req);
     const userId = req.user?.userId;
     const { formData, holdRemark } = req.body;
 
@@ -951,18 +1033,11 @@ export const holdWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Get the job step
-    const jobStep = await prisma.jobStep.findFirst({
-      where: {
-        jobPlanning: {
-          nrcJobNo: nrcJobNo
-        },
-        stepNo: parseInt(stepNo)
-      }
-    });
-
-    if (!jobStep) {
-      throw new AppError('Job step not found', 404);
-    }
+    const jobStep = await findJobStepForOperation(
+      nrcJobNo,
+      parseInt(stepNo),
+      identifiers
+    );
 
     // Find JobStepMachine entry
     const jobStepMachine = await (prisma as any).jobStepMachine.findFirst({
@@ -1006,7 +1081,7 @@ export const holdWorkOnMachine = async (req: Request, res: Response) => {
 
     // Update individual step holdRemark as well
     if (holdRemark) {
-      await _updateIndividualStepHoldRemark(parseInt(stepNo), nrcJobNo, holdRemark);
+      await _updateIndividualStepHoldRemark(parseInt(stepNo), nrcJobNo, holdRemark, jobStep.id);
     }
 
     res.status(200).json({
@@ -1016,6 +1091,7 @@ export const holdWorkOnMachine = async (req: Request, res: Response) => {
         jobStepMachineId: updatedJobStepMachine.id,
         machineId: updatedJobStepMachine.machineId,
         machineCode: updatedJobStepMachine.machine.machineCode,
+        jobPlanId: jobStep.jobPlanningId,
         status: updatedJobStepMachine.status,
         holdRemark: updatedJobStepMachine.remarks,
         updatedAt: updatedJobStepMachine.updatedAt,
@@ -1154,6 +1230,7 @@ export const adminResumeMajorHold = async (req: Request, res: Response) => {
 export const resumeWorkOnMachine = async (req: Request, res: Response) => {
   try {
     const { nrcJobNo, stepNo, machineId } = req.params;
+    const identifiers = parsePlanningIdentifiers(req);
     const userId = req.user?.userId;
     const { formData } = req.body;
 
@@ -1197,18 +1274,11 @@ export const resumeWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Get the job step
-    const jobStep = await prisma.jobStep.findFirst({
-      where: {
-        jobPlanning: {
-          nrcJobNo: nrcJobNo
-        },
-        stepNo: parseInt(stepNo)
-      }
-    });
-
-    if (!jobStep) {
-      throw new AppError('Job step not found', 404);
-    }
+    const jobStep = await findJobStepForOperation(
+      nrcJobNo,
+      parseInt(stepNo),
+      identifiers
+    );
 
     // Find JobStepMachine entry
     const jobStepMachine = await (prisma as any).jobStepMachine.findFirst({
@@ -1244,7 +1314,7 @@ export const resumeWorkOnMachine = async (req: Request, res: Response) => {
     });
 
     // Update individual step status to 'in_progress' (unchanged from start)
-    await _updateIndividualStepStatus(parseInt(stepNo), nrcJobNo, 'in_progress');
+    await _updateIndividualStepStatus(parseInt(stepNo), jobStep.id, nrcJobNo, 'in_progress');
 
     res.status(200).json({
       success: true,
@@ -1253,6 +1323,7 @@ export const resumeWorkOnMachine = async (req: Request, res: Response) => {
         jobStepMachineId: updatedJobStepMachine.id,
         machineId: updatedJobStepMachine.machineId,
         machineCode: updatedJobStepMachine.machine.machineCode,
+        jobPlanId: jobStep.jobPlanningId,
         status: updatedJobStepMachine.status,
         updatedAt: updatedJobStepMachine.updatedAt,
         userId: updatedJobStepMachine.userId,
@@ -1717,6 +1788,7 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
   
   try {
     const { nrcJobNo, stepNo, machineId } = req.params;
+    const identifiers = parsePlanningIdentifiers(req);
     const userId = req.user?.userId;
     const { formData } = req.body;
 
@@ -1756,18 +1828,11 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Get the job step
-    const jobStep = await prisma.jobStep.findFirst({
-      where: {
-        jobPlanning: {
-          nrcJobNo: nrcJobNo
-        },
-        stepNo: parseInt(stepNo)
-      }
-    });
-
-    if (!jobStep) {
-      throw new AppError('Job step not found', 404);
-    }
+    const jobStep = await findJobStepForOperation(
+      nrcJobNo,
+      parseInt(stepNo),
+      identifiers
+    );
 
     // Find JobStepMachine entry
     const jobStepMachine = await (prisma as any).jobStepMachine.findFirst({
@@ -1830,6 +1895,7 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
         jobStepMachineId: updatedJobStepMachine.id,
         machineId: updatedJobStepMachine.machineId,
         machineCode: updatedJobStepMachine.machine.machineCode,
+        jobPlanId: jobStep.jobPlanningId,
         status: updatedJobStepMachine.status,
         completedAt: updatedJobStepMachine.completedAt,
         updatedAt: updatedJobStepMachine.updatedAt,
@@ -1849,7 +1915,7 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
 };
 
 // Helper function to update individual step status (PaperStore, Printing, etc.)
-async function _updateIndividualStepStatus(stepNo: number, nrcJobNo: string, status: string) {
+async function _updateIndividualStepStatus(stepNo: number, jobStepId: number, nrcJobNo: string, status: string) {
   try {
     const stepName = _getStepName(stepNo);
     if (!stepName) return;
@@ -1857,55 +1923,119 @@ async function _updateIndividualStepStatus(stepNo: number, nrcJobNo: string, sta
     // Update the appropriate step table based on step number
     switch (stepNo) {
       case 1: // PaperStore
-        await prisma.paperStore.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { status: status as any }
-        });
+        {
+          const result = await prisma.paperStore.updateMany({
+            where: { jobStepId },
+            data: { status: status as any }
+          });
+          if (result.count === 0) {
+            await prisma.paperStore.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { status: status as any }
+            });
+          }
+        }
         break;
       case 2: // Printing
         {
-          const printingResult = await prisma.printingDetails.updateMany({
-            where: { jobNrcJobNo: nrcJobNo },
+          const result = await prisma.printingDetails.updateMany({
+            where: { jobStepId },
             data: { status: status as any }
           });
-          console.log(`Updated ${printingResult.count} PrintingDetails records for job ${nrcJobNo}`);
+          if (result.count === 0) {
+            const fallback = await prisma.printingDetails.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { status: status as any }
+            });
+            console.log(`Updated ${fallback.count} PrintingDetails records for job ${nrcJobNo} (fallback by nrcJobNo)`);
+          } else {
+            console.log(`Updated ${result.count} PrintingDetails records for jobStepId ${jobStepId}`);
+          }
         }
         break;
       case 3: // Corrugation
-        await prisma.corrugation.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { status: status as any }
-        });
+        {
+          const result = await prisma.corrugation.updateMany({
+            where: { jobStepId },
+            data: { status: status as any }
+          });
+          if (result.count === 0) {
+            await prisma.corrugation.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { status: status as any }
+            });
+          }
+        }
         break;
       case 4: // Flute Lamination
-        await prisma.fluteLaminateBoardConversion.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { status: status as any }
-        });
+        {
+          const result = await prisma.fluteLaminateBoardConversion.updateMany({
+            where: { jobStepId },
+            data: { status: status as any }
+          });
+          if (result.count === 0) {
+            await prisma.fluteLaminateBoardConversion.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { status: status as any }
+            });
+          }
+        }
         break;
       case 5: // Punching
-        await prisma.punching.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { status: status as any }
-        });
+        {
+          const result = await prisma.punching.updateMany({
+            where: { jobStepId },
+            data: { status: status as any }
+          });
+          if (result.count === 0) {
+            await prisma.punching.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { status: status as any }
+            });
+          }
+        }
         break;
       case 6: // Flap Pasting
-        await prisma.sideFlapPasting.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { status: status as any }
-        });
+        {
+          const result = await prisma.sideFlapPasting.updateMany({
+            where: { jobStepId },
+            data: { status: status as any }
+          });
+          if (result.count === 0) {
+            await prisma.sideFlapPasting.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { status: status as any }
+            });
+          }
+        }
         break;
       case 7: // Quality Control
-        await prisma.qualityDept.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { status: status as any }
-        });
+        {
+          const result = await prisma.qualityDept.updateMany({
+            where: { jobStepId },
+            data: { status: status as any }
+          });
+          if (result.count === 0) {
+            await prisma.qualityDept.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { status: status as any }
+            });
+          }
+        }
         break;
       case 8: // Dispatch
-        await prisma.dispatchProcess.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { status: status as any }
-        });
+        {
+          const result = await prisma.dispatchProcess.updateMany({
+            where: { jobStepId },
+            data: { status: status as any }
+          });
+          if (result.count === 0) {
+            await prisma.dispatchProcess.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { status: status as any }
+            });
+          }
+        }
         break;
     }
   } catch (error) {
@@ -2231,47 +2361,95 @@ async function _clearIndividualStepMajorHoldRemark(stepNo: number, nrcJobNo: str
 }
 
 // Helper function to update individual step holdRemark
-async function _updateIndividualStepHoldRemark(stepNo: number, nrcJobNo: string, holdRemark: string) {
+async function _updateIndividualStepHoldRemark(stepNo: number, nrcJobNo: string, holdRemark: string, jobStepId?: number) {
   try {
     console.log(`🔍 [HOLD] Updating step ${stepNo} holdRemark for job ${nrcJobNo}`);
     
     // Update the appropriate step table based on step number
     switch (stepNo) {
       case 1: // PaperStore
-        await prisma.paperStore.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { holdRemark: holdRemark }
-        });
+        {
+          const result = await prisma.paperStore.updateMany({
+            where: jobStepId ? { jobStepId } : { jobNrcJobNo: nrcJobNo },
+            data: { holdRemark: holdRemark }
+          });
+          if (result.count === 0 && jobStepId) {
+            await prisma.paperStore.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { holdRemark: holdRemark }
+            });
+          }
+        }
         break;
       case 2: // Printing
-        await prisma.printingDetails.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { holdRemark: holdRemark }
-        });
+        {
+          const result = await prisma.printingDetails.updateMany({
+            where: jobStepId ? { jobStepId } : { jobNrcJobNo: nrcJobNo },
+            data: { holdRemark: holdRemark }
+          });
+          if (result.count === 0 && jobStepId) {
+            await prisma.printingDetails.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { holdRemark: holdRemark }
+            });
+          }
+        }
         break;
       case 3: // Corrugation
-        await prisma.corrugation.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { holdRemark: holdRemark }
-        });
+        {
+          const result = await prisma.corrugation.updateMany({
+            where: jobStepId ? { jobStepId } : { jobNrcJobNo: nrcJobNo },
+            data: { holdRemark: holdRemark }
+          });
+          if (result.count === 0 && jobStepId) {
+            await prisma.corrugation.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { holdRemark: holdRemark }
+            });
+          }
+        }
         break;
       case 4: // Flute Lamination
-        await prisma.fluteLaminateBoardConversion.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { holdRemark: holdRemark }
-        });
+        {
+          const result = await prisma.fluteLaminateBoardConversion.updateMany({
+            where: jobStepId ? { jobStepId } : { jobNrcJobNo: nrcJobNo },
+            data: { holdRemark: holdRemark }
+          });
+          if (result.count === 0 && jobStepId) {
+            await prisma.fluteLaminateBoardConversion.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { holdRemark: holdRemark }
+            });
+          }
+        }
         break;
       case 5: // Punching
-        await prisma.punching.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { holdRemark: holdRemark }
-        });
+        {
+          const result = await prisma.punching.updateMany({
+            where: jobStepId ? { jobStepId } : { jobNrcJobNo: nrcJobNo },
+            data: { holdRemark: holdRemark }
+          });
+          if (result.count === 0 && jobStepId) {
+            await prisma.punching.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { holdRemark: holdRemark }
+            });
+          }
+        }
         break;
       case 6: // Flap Pasting
-        await prisma.sideFlapPasting.updateMany({
-          where: { jobNrcJobNo: nrcJobNo },
-          data: { holdRemark: holdRemark }
-        });
+        {
+          const result = await prisma.sideFlapPasting.updateMany({
+            where: jobStepId ? { jobStepId } : { jobNrcJobNo: nrcJobNo },
+            data: { holdRemark: holdRemark }
+          });
+          if (result.count === 0 && jobStepId) {
+            await prisma.sideFlapPasting.updateMany({
+              where: { jobNrcJobNo: nrcJobNo },
+              data: { holdRemark: holdRemark }
+            });
+          }
+        }
         break;
     }
     console.log(`✅ Updated step ${stepNo} holdRemark successfully`);
@@ -2284,98 +2462,162 @@ async function _updateIndividualStepHoldRemark(stepNo: number, nrcJobNo: string,
 // Helper function to update individual step tables with form data
 // IMPORTANT: This should ONLY be called when ALL machines for the step are completed!
 // Helper function to get previous step's available/OK quantity
-async function _getPreviousStepQuantity(stepNo: number, nrcJobNo: string): Promise<number> {
+async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJobNo: string): Promise<number> {
   try {
-    console.log(`🔍 [GET_PREV_QTY] Getting previous step quantity for step ${stepNo}, job ${nrcJobNo}`);
-    
-    // Step 1 (PaperStore) has no previous step
+    console.log(`🔍 [GET_PREV_QTY] Getting previous step quantity for step ${stepNo}, job ${nrcJobNo}, jobPlanId ${jobPlanId}`);
+
     if (stepNo === 1) {
-      console.log(`📋 Step 1 has no previous step, returning 0`);
       return 0;
     }
-    
-    // Special handling for steps with non-sequential dependencies
-    let quantity = 0;
-    
+
+    const getStepId = async (targetStepNo: number): Promise<number | undefined> => {
+      if (targetStepNo <= 0) return undefined;
+      const step = await prisma.jobStep.findFirst({
+        where: {
+          jobPlanningId: jobPlanId,
+          stepNo: targetStepNo
+        },
+        select: { id: true }
+      });
+      return step?.id;
+    };
+
+    const getPaperStoreQuantity = async (stepId?: number) => {
+      if (stepId) {
+        const record = await prisma.paperStore.findUnique({
+          where: { jobStepId: stepId }
+        });
+        if (record) {
+          return record.available ?? record.quantity ?? 0;
+        }
+      }
+      const fallback = await prisma.paperStore.findFirst({
+        where: { jobNrcJobNo: nrcJobNo },
+        select: { available: true, quantity: true },
+        orderBy: { id: 'desc' }
+      });
+      return fallback?.available ?? fallback?.quantity ?? 0;
+    };
+
+    const getPrintingQuantity = async (stepId?: number) => {
+      if (stepId) {
+        const record = await prisma.printingDetails.findUnique({
+          where: { jobStepId: stepId }
+        });
+        if (record) {
+          const recordAny = record as any;
+          return record.quantity ?? recordAny.quantityOK ?? recordAny.okQuantity ?? 0;
+        }
+      }
+      const fallback = await prisma.printingDetails.findFirst({
+        where: { jobNrcJobNo: nrcJobNo },
+        orderBy: { id: 'desc' }
+      });
+      if (!fallback) return 0;
+      const fallbackAny = fallback as any;
+      return fallback.quantity ?? fallbackAny.quantityOK ?? fallbackAny.okQuantity ?? 0;
+    };
+
+    const getFluteQuantity = async (stepId?: number) => {
+      if (stepId) {
+        const record = await prisma.fluteLaminateBoardConversion.findUnique({
+          where: { jobStepId: stepId }
+        });
+        if (record) {
+          return record.quantity ?? 0;
+        }
+      }
+      const fallback = await prisma.fluteLaminateBoardConversion.findFirst({
+        where: { jobNrcJobNo: nrcJobNo },
+        select: { quantity: true },
+        orderBy: { id: 'desc' }
+      });
+      return fallback?.quantity ?? 0;
+    };
+
+    const getPunchingQuantity = async (stepId?: number) => {
+      if (stepId) {
+        const record = await prisma.punching.findUnique({
+          where: { jobStepId: stepId }
+        });
+        if (record) {
+          return record.quantity ?? 0;
+        }
+      }
+      const fallback = await prisma.punching.findFirst({
+        where: { jobNrcJobNo: nrcJobNo },
+        select: { quantity: true },
+        orderBy: { id: 'desc' }
+      });
+      return fallback?.quantity ?? 0;
+    };
+
+    const getFlapQuantity = async (stepId?: number) => {
+      if (stepId) {
+        const record = await prisma.sideFlapPasting.findUnique({
+          where: { jobStepId: stepId }
+        });
+        if (record) {
+          return record.quantity ?? 0;
+        }
+      }
+      const fallback = await prisma.sideFlapPasting.findFirst({
+        where: { jobNrcJobNo: nrcJobNo },
+        select: { quantity: true },
+        orderBy: { id: 'desc' }
+      });
+      return fallback?.quantity ?? 0;
+    };
+
+    const getQualityQuantity = async (stepId?: number) => {
+      if (stepId) {
+        const record = await prisma.qualityDept.findUnique({
+          where: { jobStepId: stepId }
+        });
+        if (record) {
+          return record.quantity ?? 0;
+        }
+      }
+      const fallback = await prisma.qualityDept.findFirst({
+        where: { jobNrcJobNo: nrcJobNo },
+        select: { quantity: true },
+        orderBy: { id: 'desc' }
+      });
+      return fallback?.quantity ?? 0;
+    };
+
     switch (stepNo) {
-      case 2: // Printing gets from PaperStore
-        const paperStoreForPrinting = await prisma.paperStore.findFirst({
-          where: { jobNrcJobNo: nrcJobNo },
-          select: { available: true },
-          orderBy: { id: 'desc' }
-        });
-        quantity = paperStoreForPrinting?.available || 0;
-        console.log(`📋 Step 2 (Printing) gets from PaperStore: ${quantity}`);
-        break;
-        
-      case 3: // Corrugation gets from PaperStore (parallel to Printing)
-        const paperStoreForCorrugation = await prisma.paperStore.findFirst({
-          where: { jobNrcJobNo: nrcJobNo },
-          select: { available: true },
-          orderBy: { id: 'desc' }
-        });
-        quantity = paperStoreForCorrugation?.available || 0;
-        console.log(`📋 Step 3 (Corrugation) gets from PaperStore: ${quantity}`);
-        break;
-        
-      case 4: // Flute Lamination gets from Printing
-        const printing = await prisma.printingDetails.findFirst({
-          where: { jobNrcJobNo: nrcJobNo },
-          select: { quantity: true },
-          orderBy: { id: 'desc' }
-        });
-        quantity = printing?.quantity || 0;
-        console.log(`📋 Step 4 (FluteLamination) gets from Printing: ${quantity}`);
-        break;
-        
-      case 5: // Punching gets from Flute Lamination (stepNo 4)
-        const fluteLam = await prisma.fluteLaminateBoardConversion.findFirst({
-          where: { jobNrcJobNo: nrcJobNo },
-          select: { quantity: true },
-          orderBy: { id: 'desc' }
-        });
-        quantity = fluteLam?.quantity || 0;
-        console.log(`📋 Step 5 (Punching) gets from FluteLamination (stepNo 4): ${quantity}`);
-        break;
-        
-      case 6: // Flap Pasting gets from Punching (stepNo 5) - Die Cutting NOT in job planning!
-        console.log(`🔍 [DEBUG] Querying Punching for job: ${nrcJobNo}`);
-        const punchingForFlap = await prisma.punching.findFirst({
-          where: { jobNrcJobNo: nrcJobNo },
-          select: { id: true, quantity: true, wastage: true, jobNrcJobNo: true },
-          orderBy: { id: 'desc' }
-        });
-        console.log(`🔍 [DEBUG] Query result:`, JSON.stringify(punchingForFlap));
-        quantity = punchingForFlap?.quantity || 0;
-        console.log(`📋 Step 6 (FlapPasting) gets from Punching (stepNo 5): ${quantity} (from record ID: ${punchingForFlap?.id})`);
-        break;
-        
-      case 7: // Quality gets from Flap Pasting (stepNo 6)
-        const flapPasting = await prisma.sideFlapPasting.findFirst({
-          where: { jobNrcJobNo: nrcJobNo },
-          select: { quantity: true },
-          orderBy: { id: 'desc' }
-        });
-        quantity = flapPasting?.quantity || 0;
-        console.log(`📋 Step 7 (Quality) gets from FlapPasting (stepNo 6): ${quantity}`);
-        break;
-        
-      case 8: // Dispatch gets from Quality (stepNo 7)
-        const quality = await prisma.qualityDept.findFirst({
-          where: { jobNrcJobNo: nrcJobNo },
-          select: { quantity: true },
-          orderBy: { id: 'desc' }
-        });
-        quantity = quality?.quantity || 0;
-        console.log(`📋 Step 8 (Dispatch) gets from Quality (stepNo 7): ${quantity}`);
-        break;
-        
+      case 2: {
+        const prevStepId = await getStepId(1);
+        return await getPaperStoreQuantity(prevStepId);
+      }
+      case 3: {
+        const prevStepId = await getStepId(1); // Corrugation depends on PaperStore output
+        return await getPaperStoreQuantity(prevStepId);
+      }
+      case 4: {
+        const prevStepId = await getStepId(2);
+        return await getPrintingQuantity(prevStepId);
+      }
+      case 5: {
+        const prevStepId = await getStepId(4);
+        return await getFluteQuantity(prevStepId);
+      }
+      case 6: {
+        const prevStepId = await getStepId(5);
+        return await getPunchingQuantity(prevStepId);
+      }
+      case 7: {
+        const prevStepId = await getStepId(6);
+        return await getFlapQuantity(prevStepId);
+      }
+      case 8: {
+        const prevStepId = await getStepId(7);
+        return await getQualityQuantity(prevStepId);
+      }
       default:
-        console.log(`⚠️ Unknown step ${stepNo}, returning 0`);
-        quantity = 0;
+        return 0;
     }
-    
-    return quantity;
   } catch (error) {
     console.error(`❌ Error getting previous step quantity:`, error);
     return 0;
@@ -2386,11 +2628,12 @@ async function _getPreviousStepQuantity(stepNo: number, nrcJobNo: string): Promi
 async function _checkStepCompletionCriteria(
   jobStepId: number,
   stepNo: number,
+  jobPlanId: number,
   nrcJobNo: string,
   allMachines: any[]
 ): Promise<{ shouldComplete: boolean; reason: string; totalOK: number; totalWastage: number }> {
   try {
-    console.log(`\n🎯 [COMPLETION CHECK] Checking completion criteria for step ${stepNo}, job ${nrcJobNo}`);
+    console.log(`\n🎯 [COMPLETION CHECK] Checking completion criteria for step ${stepNo}, job ${nrcJobNo}, jobPlanId ${jobPlanId}`);
     console.log(`📊 Total machines assigned: ${allMachines.length}`);
     
     // Get machines that have formData (submitted)
@@ -2435,7 +2678,7 @@ async function _checkStepCompletionCriteria(
     console.log(`📊 Total quantities - OK: ${totalOK}, Wastage: ${totalWastage}, Total: ${totalSubmitted}`);
     
     // Get previous step quantity
-    const previousStepQuantity = await _getPreviousStepQuantity(stepNo, nrcJobNo);
+    const previousStepQuantity = await _getPreviousStepQuantity(stepNo, jobPlanId, nrcJobNo);
     console.log(`📋 Previous step quantity: ${previousStepQuantity}`);
     console.log(`🔍 [DEBUG] previousStepQuantity assigned at line 1585: ${previousStepQuantity}`);
     
@@ -2509,7 +2752,7 @@ async function _checkStepCompletionCriteria(
   }
 }
 
-async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: string, formData: any, allMachines?: any[], jobStepUser?: string, jobStepId?: number) {
+async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: string, formData: any, jobStepId: number, allMachines?: any[], jobStepUser?: string) {
   console.log(`🚨 [CRITICAL DEBUG] _updateIndividualStepWithFormData FUNCTION CALLED!`);
   console.log(`🔍 [DEBUG] Step: ${stepNo}, Job: ${nrcJobNo}, JobStepId: ${jobStepId}`);
   console.log(`🔍 [DEBUG] FormData received:`, JSON.stringify(formData, null, 2));

@@ -10,6 +10,9 @@ export const validateStepTransition = async (req: Request, res: Response, next: 
   try {
     const { nrcJobNo } = req.params;
     const { status } = req.body;
+    const jobPlanIdInput = (req.body?.jobPlanId ?? req.query?.jobPlanId) as string | number | undefined;
+    const parsedJobPlanId = jobPlanIdInput !== undefined ? Number(jobPlanIdInput) : undefined;
+    const jobPlanId = parsedJobPlanId !== undefined && !Number.isNaN(parsedJobPlanId) ? parsedJobPlanId : undefined;
     
     if (!nrcJobNo || !status) {
       return next(); // Skip validation if required params are missing
@@ -19,7 +22,7 @@ export const validateStepTransition = async (req: Request, res: Response, next: 
 
     // Get current job planning steps using the same selection logic as job planning controller
     const { getJobPlanningData } = await import('../utils/jobPlanningSelector');
-    const jobPlanning = await getJobPlanningData(nrcJobNo);
+    const jobPlanning = await getJobPlanningData(nrcJobNo, jobPlanId);
 
     if (!jobPlanning) {
       throw new AppError('Job planning not found', 404);
