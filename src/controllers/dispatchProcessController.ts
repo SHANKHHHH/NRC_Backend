@@ -604,6 +604,12 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
         console.log(`✅ [updateDispatchProcess] Dispatch fully completed: ${totalToCheck} >= ${jobQuantity}, setting status to 'accept'`);
         // Also update JobStep status to 'stop' to allow job completion
         if (existingDispatchProcess.jobStepId) {
+          // Get jobPlanId from jobStep before updating
+          const jobStepForPlanId = await prisma.jobStep.findUnique({
+            where: { id: existingDispatchProcess.jobStepId },
+            select: { jobPlanningId: true }
+          });
+          
           await prisma.jobStep.update({
             where: { id: existingDispatchProcess.jobStepId },
             data: { 
@@ -613,6 +619,25 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
             }
           });
           console.log(`✅ [updateDispatchProcess] Updated JobStep ${existingDispatchProcess.jobStepId} status to 'stop'`);
+          
+          // Check if job should be auto-completed using jobPlanId (not nrcJobNo to avoid affecting other plannings)
+          if (jobStepForPlanId?.jobPlanningId) {
+            try {
+              const { autoCompleteJobIfReady } = await import('../utils/workflowValidator');
+              console.log(`🔄 [updateDispatchProcess] Checking if job planning ${jobStepForPlanId.jobPlanningId} can be auto-completed...`);
+              const completionResult = await autoCompleteJobIfReady(jobStepForPlanId.jobPlanningId, req.user?.userId);
+              if (completionResult.completed) {
+                console.log(`✅ [updateDispatchProcess] Job planning ${jobStepForPlanId.jobPlanningId} automatically completed`);
+              } else {
+                console.log(`ℹ️ [updateDispatchProcess] Job planning ${jobStepForPlanId.jobPlanningId} not ready for auto-completion: ${completionResult.reason}`);
+              }
+            } catch (error) {
+              console.error(`⚠️ [updateDispatchProcess] Error checking auto-completion:`, error);
+              // Don't fail the request if auto-completion check fails
+            }
+          } else {
+            console.log(`⚠️ [updateDispatchProcess] Could not find jobPlanningId for JobStep ${existingDispatchProcess.jobStepId}, skipping auto-completion check`);
+          }
         }
       } else {
         console.log(`📦 [updateDispatchProcess] Partial dispatch: ${totalToCheck} / ${jobQuantity}, keeping status as 'in_progress'`);

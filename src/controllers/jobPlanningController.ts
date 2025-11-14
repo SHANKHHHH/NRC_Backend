@@ -563,9 +563,10 @@ export const updateJobStepStatus = async (req: Request, res: Response) => {
   }
 
   // Check if job should be automatically completed when step is set to 'stop'
-  if (status === 'stop') {
+  if (status === 'stop' && updatedStep.jobPlanningId) {
     try {
-      const completionResult = await autoCompleteJobIfReady(decodedNrcJobNo, userId);
+      // Use jobPlanId instead of nrcJobNo to avoid affecting other plannings with same nrcJobNo
+      const completionResult = await autoCompleteJobIfReady(updatedStep.jobPlanningId, userId);
       if (completionResult.completed) {
         return res.status(200).json({
           success: true,
@@ -860,9 +861,10 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   }
 
   // Check if job should be automatically completed when step status is set to 'stop'
-  if (updateData.status === 'stop') {
+  if (updateData.status === 'stop' && updatedStep.jobPlanningId) {
     try {
-      const completionResult = await autoCompleteJobIfReady(decodedNrcJobNo, userId);
+      // Use jobPlanId instead of nrcJobNo to avoid affecting other plannings with same nrcJobNo
+      const completionResult = await autoCompleteJobIfReady(updatedStep.jobPlanningId, userId);
       if (completionResult.completed) {
         return res.status(200).json({
           success: true,
@@ -1008,9 +1010,10 @@ export const updateStepStatusByNrcJobNoAndStepNo = async (req: Request, res: Res
   }
 
   // Check if job should be automatically completed when step is set to 'stop'
-  if (status === 'stop') {
+  if (status === 'stop' && updatedStep.jobPlanningId) {
     try {
-      const completionResult = await autoCompleteJobIfReady(decodedNrcJobNo, userId);
+      // Use jobPlanId instead of nrcJobNo to avoid affecting other plannings with same nrcJobNo
+      const completionResult = await autoCompleteJobIfReady(updatedStep.jobPlanningId, userId);
       if (completionResult.completed) {
         return res.status(200).json({
           success: true,
