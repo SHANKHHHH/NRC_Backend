@@ -180,7 +180,15 @@ export const completeJob = async (req: Request, res: Response) => {
           punching: jobPlanning.steps.filter(s => s.punching).map(s => s.punching),
           sideFlapPasting: jobPlanning.steps.filter(s => s.sideFlapPasting).map(s => s.sideFlapPasting),
           qualityDept: jobPlanning.steps.filter(s => s.qualityDept).map(s => s.qualityDept),
-          dispatchProcess: jobPlanning.steps.filter(s => s.dispatchProcess).map(s => s.dispatchProcess)
+          // For dispatchProcess, use totalDispatchedQty as quantity (total dispatched) instead of just the last dispatch quantity
+          dispatchProcess: jobPlanning.steps.filter(s => s.dispatchProcess).map(s => {
+            const dp = s.dispatchProcess;
+            if (!dp) return null;
+            return {
+              ...dp,
+              quantity: dp.totalDispatchedQty || dp.quantity // Use total if available, fallback to quantity
+            };
+          }).filter(dp => dp !== null)
         },
         completedBy: userId,
         totalDuration,

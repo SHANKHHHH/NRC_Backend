@@ -349,34 +349,83 @@ export const getWorkflowStatus = async (nrcJobNo: string) => {
 /**
  * Check if a job is ready for automatic completion
  * Criteria: All EXISTING steps must have status 'stop' and dispatch process must be 'accept'
+ * Accepts jobPlanId (preferred) or nrcJobNo (fallback for backward compatibility)
+ * Uses jobPlanId when possible to avoid affecting other plannings with same nrcJobNo
  */
-export const checkJobReadyForCompletion = async (nrcJobNo: string): Promise<{
+export const checkJobReadyForCompletion = async (identifier: number | string): Promise<{
   isReady: boolean;
   reason?: string;
   jobPlanning?: any;
 }> => {
   try {
-    // Get the job planning with all steps and their details
-    const jobPlanning = await prisma.jobPlanning.findFirst({
-      where: { nrcJobNo },
-      include: {
-        steps: {
-          include: {
-            paperStore: true,
-            printingDetails: true,
-            corrugation: true,
-            flutelam: true,
-            punching: true,
-            sideFlapPasting: true,
-            qualityDept: true,
-            dispatchProcess: true
+    // Determine if identifier is jobPlanId (number or numeric string) or nrcJobNo (string like "PAG-...")
+    let jobPlanning;
+    if (typeof identifier === 'number') {
+      // Number = jobPlanId
+      jobPlanning = await prisma.jobPlanning.findUnique({
+        where: { jobPlanId: identifier },
+        include: {
+          steps: {
+            include: {
+              paperStore: true,
+              printingDetails: true,
+              corrugation: true,
+              flutelam: true,
+              punching: true,
+              sideFlapPasting: true,
+              qualityDept: true,
+              dispatchProcess: true
+            }
           }
         }
+      });
+    } else {
+      // String - check if it's numeric (jobPlanId) or contains dashes (nrcJobNo)
+      const numericId = parseInt(identifier);
+      if (!isNaN(numericId) && numericId.toString() === identifier) {
+        // Numeric string = jobPlanId
+        jobPlanning = await prisma.jobPlanning.findUnique({
+          where: { jobPlanId: numericId },
+          include: {
+            steps: {
+              include: {
+                paperStore: true,
+                printingDetails: true,
+                corrugation: true,
+                flutelam: true,
+                punching: true,
+                sideFlapPasting: true,
+                qualityDept: true,
+                dispatchProcess: true
+              }
+            }
+          }
+        });
+      } else {
+        // String with dashes = nrcJobNo (backward compatibility - find first planning)
+        console.log(`⚠️ [checkJobReadyForCompletion] Using nrcJobNo (${identifier}) - should use jobPlanId to avoid affecting other plannings`);
+        jobPlanning = await prisma.jobPlanning.findFirst({
+          where: { nrcJobNo: identifier },
+          include: {
+            steps: {
+              include: {
+                paperStore: true,
+                printingDetails: true,
+                corrugation: true,
+                flutelam: true,
+                punching: true,
+                sideFlapPasting: true,
+                qualityDept: true,
+                dispatchProcess: true
+              }
+            }
+          }
+        });
       }
-    });
+    }
 
     if (!jobPlanning) {
-      return { isReady: false, reason: 'Job planning not found' };
+      return { isReady: false, reason: `Job planning not found for identifier: ${identifier}` };
     }
 
     // Check if all EXISTING steps have status 'stop'
@@ -417,15 +466,17 @@ export const checkJobReadyForCompletion = async (nrcJobNo: string): Promise<{
 
 /**
  * Automatically complete a job if it meets all completion criteria
+ * Accepts jobPlanId (preferred) or nrcJobNo (fallback for backward compatibility)
+ * Uses jobPlanId when possible to avoid affecting other plannings with same nrcJobNo
  */
-export const autoCompleteJobIfReady = async (nrcJobNo: string, userId?: string): Promise<{
+export const autoCompleteJobIfReady = async (identifier: number | string, userId?: string): Promise<{
   completed: boolean;
   reason?: string;
   completedJob?: any;
 }> => {
   try {
-    // Check if job is ready for completion
-    const completionCheck = await checkJobReadyForCompletion(nrcJobNo);
+    // Check if job is ready for completion (by jobPlanId or nrcJobNo)
+    const completionCheck = await checkJobReadyForCompletion(identifier);
     
     if (!completionCheck.isReady) {
       return { completed: false, reason: completionCheck.reason };
@@ -433,6 +484,7 @@ export const autoCompleteJobIfReady = async (nrcJobNo: string, userId?: string):
 
     // Job is ready - proceed with completion
     const jobPlanning = completionCheck.jobPlanning;
+    const nrcJobNo = jobPlanning.nrcJobNo;
 
     // Get job details
     const job = await prisma.job.findUnique({
@@ -440,7 +492,7 @@ export const autoCompleteJobIfReady = async (nrcJobNo: string, userId?: string):
     });
 
     if (!job) {
-      return { completed: false, reason: 'Job not found' };
+      return { completed: false, reason: `Job not found for identifier: ${identifier}` };
     }
 
     // Get purchase order details - use the specific PO linked to this job planning
@@ -500,7 +552,15 @@ export const autoCompleteJobIfReady = async (nrcJobNo: string, userId?: string):
           punching: jobPlanning.steps.filter((s: any) => s.punching).map((s: any) => s.punching),
           sideFlapPasting: jobPlanning.steps.filter((s: any) => s.sideFlapPasting).map((s: any) => s.sideFlapPasting),
           qualityDept: jobPlanning.steps.filter((s: any) => s.qualityDept).map((s: any) => s.qualityDept),
-          dispatchProcess: jobPlanning.steps.filter((s: any) => s.dispatchProcess).map((s: any) => s.dispatchProcess)
+          // For dispatchProcess, use totalDispatchedQty as quantity (total dispatched) instead of just the last dispatch quantity
+          dispatchProcess: jobPlanning.steps.filter((s: any) => s.dispatchProcess).map((s: any) => {
+            const dp = s.dispatchProcess;
+            if (!dp) return null;
+            return {
+              ...dp,
+              quantity: dp.totalDispatchedQty || dp.quantity // Use total if available, fallback to quantity
+            };
+          }).filter((dp: any) => dp !== null)
         },
         completedBy: userId || 'system',
         totalDuration,
