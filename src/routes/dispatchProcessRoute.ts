@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
 import { asyncHandler, addMachineFiltering } from '../middleware';
-import { createDispatchProcess, getDispatchProcessById, getAllDispatchProcesses, updateDispatchProcess, deleteDispatchProcess, getDispatchProcessByNrcJobNo, updateDispatchProcessStatus, holdDispatchProcess, resumeDispatchProcess, startDispatchWork } from '../controllers/dispatchProcessController';
+import { createDispatchProcess, getDispatchProcessById, getDispatchProcessByJobStepId, getAllDispatchProcesses, updateDispatchProcess, deleteDispatchProcess, getDispatchProcessByNrcJobNo, updateDispatchProcessStatus, holdDispatchProcess, resumeDispatchProcess, startDispatchWork } from '../controllers/dispatchProcessController';
 
 const router = Router();
 
 router.post('/', authenticateToken, asyncHandler(createDispatchProcess));
+router.get('/by-step-id/:jobStepId', authenticateToken, asyncHandler(getDispatchProcessByJobStepId));
 router.get('/by-job/:nrcJobNo', authenticateToken, asyncHandler(getDispatchProcessByNrcJobNo));
 router.get('/', authenticateToken, addMachineFiltering, asyncHandler(getAllDispatchProcesses));
 router.get('/:id', authenticateToken, asyncHandler(getDispatchProcessById));

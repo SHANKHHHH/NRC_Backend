@@ -63,6 +63,61 @@ export const getSideFlapPastingById = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: sideFlapPasting });
 };
 
+export const getSideFlapPastingByJobStepId = async (req: Request, res: Response) => {
+  const { jobStepId } = req.params;
+  
+  try {
+    // Get job step with side flap pasting details using jobStepId as unique identifier
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: Number(jobStepId) },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true,
+            jobDemand: true
+          }
+        },
+        sideFlapPasting: true
+      }
+    });
+
+    if (!jobStep) {
+      throw new AppError(`Job step with ID ${jobStepId} not found`, 404);
+    }
+
+    if (jobStep.stepName !== 'FlapPasting' && jobStep.stepName !== 'SideFlapPasting') {
+      throw new AppError(`Job step ${jobStepId} is not a side flap pasting step`, 400);
+    }
+
+    // Format response with jobStepId as unique identifier
+    const response = {
+      jobStepId: jobStep.id,
+      stepName: jobStep.stepName,
+      status: jobStep.status,
+      user: jobStep.user,
+      startDate: jobStep.startDate,
+      endDate: jobStep.endDate,
+      createdAt: jobStep.createdAt,
+      updatedAt: jobStep.updatedAt,
+      machineDetails: jobStep.machineDetails,
+      jobPlanning: jobStep.jobPlanning,
+      sideFlapPasting: jobStep.sideFlapPasting
+    };
+
+    res.status(200).json({ 
+      success: true, 
+      data: response,
+      message: `Found side flap pasting job step using jobStepId: ${jobStepId}`
+    });
+  } catch (error) {
+    console.error(`Error fetching side flap pasting details for jobStepId ${jobStepId}:`, error);
+    if (error instanceof AppError) {
+      throw error;
+    }
+    throw new AppError('Failed to fetch side flap pasting details', 500);
+  }
+};
+
 export const getAllSideFlapPastings = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';

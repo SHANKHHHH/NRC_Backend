@@ -63,6 +63,61 @@ export const getPunchingById = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: punching });
 };
 
+export const getPunchingByJobStepId = async (req: Request, res: Response) => {
+  const { jobStepId } = req.params;
+  
+  try {
+    // Get job step with punching details using jobStepId as unique identifier
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: Number(jobStepId) },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true,
+            jobDemand: true
+          }
+        },
+        punching: true
+      }
+    });
+
+    if (!jobStep) {
+      throw new AppError(`Job step with ID ${jobStepId} not found`, 404);
+    }
+
+    if (jobStep.stepName !== 'Punching') {
+      throw new AppError(`Job step ${jobStepId} is not a punching step`, 400);
+    }
+
+    // Format response with jobStepId as unique identifier
+    const response = {
+      jobStepId: jobStep.id,
+      stepName: jobStep.stepName,
+      status: jobStep.status,
+      user: jobStep.user,
+      startDate: jobStep.startDate,
+      endDate: jobStep.endDate,
+      createdAt: jobStep.createdAt,
+      updatedAt: jobStep.updatedAt,
+      machineDetails: jobStep.machineDetails,
+      jobPlanning: jobStep.jobPlanning,
+      punching: jobStep.punching
+    };
+
+    res.status(200).json({ 
+      success: true, 
+      data: response,
+      message: `Found punching job step using jobStepId: ${jobStepId}`
+    });
+  } catch (error) {
+    console.error(`Error fetching punching details for jobStepId ${jobStepId}:`, error);
+    if (error instanceof AppError) {
+      throw error;
+    }
+    throw new AppError('Failed to fetch punching details', 500);
+  }
+};
+
 export const getAllPunchings = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';

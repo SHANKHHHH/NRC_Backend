@@ -96,6 +96,61 @@ export const getPaperStoreById = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: paperStore });
 };
 
+export const getPaperStoreByJobStepId = async (req: Request, res: Response) => {
+  const { jobStepId } = req.params;
+  
+  try {
+    // Get job step with paper store details using jobStepId as unique identifier
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: Number(jobStepId) },
+      include: {
+        jobPlanning: {
+          select: {
+            nrcJobNo: true,
+            jobDemand: true
+          }
+        },
+        paperStore: true
+      }
+    });
+
+    if (!jobStep) {
+      throw new AppError(`Job step with ID ${jobStepId} not found`, 404);
+    }
+
+    if (jobStep.stepName !== 'PaperStore') {
+      throw new AppError(`Job step ${jobStepId} is not a paper store step`, 400);
+    }
+
+    // Format response with jobStepId as unique identifier
+    const response = {
+      jobStepId: jobStep.id,
+      stepName: jobStep.stepName,
+      status: jobStep.status,
+      user: jobStep.user,
+      startDate: jobStep.startDate,
+      endDate: jobStep.endDate,
+      createdAt: jobStep.createdAt,
+      updatedAt: jobStep.updatedAt,
+      machineDetails: jobStep.machineDetails,
+      jobPlanning: jobStep.jobPlanning,
+      paperStore: jobStep.paperStore
+    };
+
+    res.status(200).json({ 
+      success: true, 
+      data: response,
+      message: `Found paper store job step using jobStepId: ${jobStepId}`
+    });
+  } catch (error) {
+    console.error(`Error fetching paper store details for jobStepId ${jobStepId}:`, error);
+    if (error instanceof AppError) {
+      throw error;
+    }
+    throw new AppError('Failed to fetch paper store details', 500);
+  }
+};
+
 export const getAllPaperStores = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';

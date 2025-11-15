@@ -2,11 +2,12 @@ import { Router } from 'express';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
 import { asyncHandler, addMachineFiltering } from '../middleware';
 import { autoCorrectStateInconsistencies, validateStepTransition } from '../middleware/stepValidation';
-import { createCorrugation, getCorrugationById, getAllCorrugations, updateCorrugation, deleteCorrugation, getCorrugationByNrcJobNo, updateCorrugationStatus } from '../controllers/corrugationController';
+import { createCorrugation, getCorrugationById, getCorrugationByJobStepId, getAllCorrugations, updateCorrugation, deleteCorrugation, getCorrugationByNrcJobNo, updateCorrugationStatus } from '../controllers/corrugationController';
 
 const router = Router();
 
 router.post('/', authenticateToken, asyncHandler(createCorrugation));
+router.get('/by-step-id/:jobStepId', authenticateToken, asyncHandler(getCorrugationByJobStepId));
 router.get('/by-job/:nrcJobNo', authenticateToken, asyncHandler(getCorrugationByNrcJobNo));
 router.get('/:id', authenticateToken, asyncHandler(getCorrugationById));
 router.get('/', authenticateToken, addMachineFiltering, asyncHandler(getAllCorrugations));
