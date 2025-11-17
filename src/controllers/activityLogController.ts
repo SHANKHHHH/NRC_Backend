@@ -44,6 +44,30 @@ const sanitizeString = (str: any): string => {
 };
 
 /**
+ * Extract jobPlanId from activity log details JSON payload
+ */
+const extractJobPlanIdFromDetails = (details?: string | null): string | null => {
+  if (!details) return null;
+
+  try {
+    const jsonPart = details.includes('|') ? details.split('|')[0].trim() : details.trim();
+    const parsed = JSON.parse(jsonPart);
+
+    if (parsed?.jobPlanId !== undefined && parsed?.jobPlanId !== null) {
+      return parsed.jobPlanId.toString();
+    }
+
+    if (parsed?.jobPlanning?.jobPlanId !== undefined && parsed?.jobPlanning?.jobPlanId !== null) {
+      return parsed.jobPlanning.jobPlanId.toString();
+    }
+  } catch (error) {
+    // Ignore parse errors – we'll fall back to frontend extraction strategies.
+  }
+
+  return null;
+};
+
+/**
  * Get all activity logs with pagination and filtering
  */
 export const getActivityLogs = async (req: Request, res: Response) => {
@@ -104,8 +128,13 @@ export const getActivityLogs = async (req: Request, res: Response) => {
     prisma.activityLog.count({ where })
   ]);
 
+  const logsWithPlan = logs.map((log: any) => ({
+    ...log,
+    jobPlanId: log.jobPlanId ?? extractJobPlanIdFromDetails(log.details),
+  }));
+
   // Sanitize data to ensure it's UTF-8 compatible and remove replacement characters
-  const sanitizedLogs = logs.map(log => ({
+  const sanitizedLogs = logsWithPlan.map(log => ({
     ...log,
     details: log.details ? sanitizeString(log.details) : null,
     action: log.action ? sanitizeString(log.action) : log.action,
@@ -141,7 +170,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
   const skip = (page - 1) * limit;
 
   // Get activity logs
-  const [activityLogs, activityLogsTotal] = await Promise.all([
+  const [rawActivityLogs, activityLogsTotal] = await Promise.all([
     prisma.activityLog.findMany({
       where: { userId },
       include: {
@@ -278,6 +307,11 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     },
     take: 1000
   });
+
+  const activityLogs = rawActivityLogs.map((log: any) => ({
+    ...log,
+    jobPlanId: log.jobPlanId ?? extractJobPlanIdFromDetails(log.details),
+  }));
 
   // Convert started JobStepMachine entries to activity log format
   const startedActivityLogs = startedMachines.map((machine: any) => {

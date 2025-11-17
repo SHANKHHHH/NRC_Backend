@@ -626,6 +626,7 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
             JSON.stringify({
               message: `Step ${stepNoInt} (${jobStep.stepName}) completed`,
               nrcJobNo: nrcJobNo,
+              jobPlanId: jobStep.jobPlanning?.jobPlanId,
               stepNo: stepNoInt,
               stepName: jobStep.stepName,
               totalOK: completionCheck.totalOK,

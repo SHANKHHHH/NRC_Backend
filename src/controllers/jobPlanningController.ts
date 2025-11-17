@@ -1904,6 +1904,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           JSON.stringify({
             message: `Step ${stepNo} (${stepName}) completed`,
             nrcJobNo: nrcJobNo,
+            jobPlanId: jobStep.jobPlanning?.jobPlanId,
             stepNo: stepNo,
             stepName: stepName,
             quantity: quantity,
