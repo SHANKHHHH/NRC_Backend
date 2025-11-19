@@ -853,6 +853,362 @@ export const autoAssignMachineForUrgentJob = async (req: Request, res: Response)
   }
 };
 
+async function _getJobPlanDetails(jobPlanId: number) {
+  const jobPlan = await prisma.jobPlanning.findFirst({
+    where: { jobPlanId },
+    select: {
+      jobPlanId: true,
+      nrcJobNo: true
+    }
+  });
+
+  if (!jobPlan) {
+    throw new AppError('Job plan not found', 404);
+  }
+
+  return jobPlan;
+}
+
+async function _getJobStepIdsForJobPlan(jobPlanId: number) {
+  const jobSteps = await prisma.jobStep.findMany({
+    where: { jobPlanningId: jobPlanId },
+    select: { id: true }
+  });
+
+  if (!jobSteps.length) {
+    throw new AppError('No job steps found for this job plan', 404);
+  }
+
+  return jobSteps.map((step) => step.id);
+}
+
+// Simple major hold for entire job (no machine/step required)
+export const majorHoldJob = async (req: Request, res: Response) => {
+  try {
+    const { nrcJobNo } = req.params;
+    const userId = req.user?.userId;
+    const { majorHoldRemark } = req.body;
+
+    if (!userId) {
+      throw new AppError('User not authenticated', 401);
+    }
+
+    const totalMachinesAffected = await _performMajorHold({
+      nrcJobNo,
+      majorHoldRemark,
+      jobStepIds: undefined
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Entire job major held - all machines and steps affected',
+      data: {
+        jobNrcJobNo: nrcJobNo,
+        majorHoldRemark: majorHoldRemark || 'Job major held',
+        totalMachinesAffected
+      }
+    });
+
+  } catch (error) {
+    console.error('Error major holding job:', error);
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ success: false, message: error.message });
+    } else {
+      res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  }
+};
+
+// Simple major hold for a specific job plan (no machine/step required)
+export const majorHoldJobPlan = async (req: Request, res: Response) => {
+  try {
+    const { jobPlanId } = req.params;
+    const userId = req.user?.userId;
+    const { majorHoldRemark } = req.body;
+
+    if (!userId) {
+      throw new AppError('User not authenticated', 401);
+    }
+
+    const parsedJobPlanId = parseInt(jobPlanId);
+    if (isNaN(parsedJobPlanId)) {
+      throw new AppError('Invalid jobPlanId provided', 400);
+    }
+
+    const jobPlan = await _getJobPlanDetails(parsedJobPlanId);
+    const jobStepIds = await _getJobStepIdsForJobPlan(parsedJobPlanId);
+
+    console.log(`🔴 [MAJOR HOLD] Holding job plan ${jobPlanId} (${jobPlan.nrcJobNo}) - updating linked machines and steps`);
+
+    const totalMachinesAffected = await _performMajorHold({
+      jobPlanId: parsedJobPlanId,
+      jobStepIds,
+      nrcJobNo: jobPlan.nrcJobNo,
+      majorHoldRemark
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Job plan major held - linked machines and steps affected',
+      data: {
+        jobPlanId: parsedJobPlanId,
+        jobNrcJobNo: jobPlan.nrcJobNo,
+        totalStepsAffected: jobStepIds.length,
+        totalMachinesAffected,
+        majorHoldRemark: majorHoldRemark || 'Job plan major held'
+      }
+    });
+
+  } catch (error) {
+    console.error('Error major holding job plan:', error);
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ success: false, message: error.message });
+    } else {
+      res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  }
+};
+
+type MajorHoldOptions = {
+  nrcJobNo: string;
+  jobPlanId?: number;
+  jobStepIds?: number[];
+  majorHoldRemark?: string;
+};
+
+async function _performMajorHold(options: MajorHoldOptions): Promise<number> {
+  const { nrcJobNo, jobPlanId, jobStepIds, majorHoldRemark } = options;
+
+  const activeStatuses = ['in_progress', 'busy', 'start', 'hold'];
+
+  console.log(`🔴 [MAJOR HOLD] Holding scope ${jobPlanId ? `jobPlanId=${jobPlanId}` : `job=${nrcJobNo}`} - updating machines and steps`);
+  
+  // 1. First, fetch relevant JobStepMachine entries to store their previous status
+  let jobStepMachinesToUpdate;
+  try {
+    jobStepMachinesToUpdate = await (prisma as any).jobStepMachine.findMany({
+      where: jobPlanId
+        ? {
+            jobStep: { jobPlanningId: jobPlanId },
+            status: { in: activeStatuses }
+          }
+        : {
+            nrcJobNo: nrcJobNo,
+            status: { in: activeStatuses }
+          }
+    });
+
+    console.log(`🔍 [MAJOR HOLD] Found ${jobStepMachinesToUpdate.length} JobStepMachine entries to update`);
+  } catch (fetchError) {
+    console.error(`❌ [MAJOR HOLD ERROR] Failed to fetch JobStepMachine entries:`, fetchError);
+    throw new AppError(`Failed to fetch machine statuses: ${(fetchError as Error).message}`, 500);
+  }
+
+  // 2. Update JobStepMachine entries to major_hold, storing previous status in remarks
+  try {
+    const updatePromises = jobStepMachinesToUpdate.map((machine: any) => {
+      const previousStatus = machine.status;
+      const remarksWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark || 'Job major held'}`;
+      return (prisma as any).jobStepMachine.update({
+        where: { id: machine.id },
+        data: {
+          status: 'major_hold',
+          remarks: remarksWithPrevStatus,
+          updatedAt: new Date()
+        }
+      });
+    });
+
+    await Promise.all(updatePromises);
+    console.log(`✅ [MAJOR HOLD] Updated ${jobStepMachinesToUpdate.length} JobStepMachine entries to major_hold with previous status stored`);
+  } catch (updateError) {
+    console.error(`❌ [MAJOR HOLD ERROR] Failed to update JobStepMachine entries:`, updateError);
+    throw new AppError(`Failed to update machine statuses: ${(updateError as Error).message}`, 500);
+  }
+
+  // 3. Update step tables
+  try {
+    await _updateAllJobStepsToMajorHold(nrcJobNo, majorHoldRemark || 'Job major held', jobStepIds);
+    console.log(`✅ [MAJOR HOLD] Updated step tables to major_hold status`);
+  } catch (stepError) {
+    console.error(`❌ [MAJOR HOLD ERROR] Failed to update step tables:`, stepError);
+  }
+
+  return jobStepMachinesToUpdate.length;
+}
+
+// Simple resume major hold for entire job (no machine/step required)
+export const resumeMajorHoldJob = async (req: Request, res: Response) => {
+  try {
+    const { nrcJobNo } = req.params;
+    const userId = req.user?.userId;
+    const userRole = req.user?.role;
+    const { resumeRemark } = req.body;
+
+    if (!userId) {
+      throw new AppError('User not authenticated', 401);
+    }
+
+    // Check if user has admin or planner role
+    if (!userRole || (userRole !== 'admin' && userRole !== 'planner')) {
+      throw new AppError('Only admin or planner can resume major holds', 403);
+    }
+
+    const totalMachinesAffected = await _performMajorHoldResume({
+      nrcJobNo,
+      resumeRemark,
+      jobStepIds: undefined
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Entire job resumed by admin/planner - all machines and steps affected',
+      data: {
+        resumedBy: userId,
+        resumedByRole: userRole,
+        resumeRemark: resumeRemark || 'Job resumed by admin/planner',
+        totalMachinesAffected,
+        jobNrcJobNo: nrcJobNo
+      }
+    });
+
+  } catch (error) {
+    console.error('Error resuming major hold job:', error);
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ success: false, message: error.message });
+    } else {
+      res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  }
+};
+
+// Simple resume major hold for a specific job plan (no machine/step required)
+export const resumeMajorHoldJobPlan = async (req: Request, res: Response) => {
+  try {
+    const { jobPlanId } = req.params;
+    const userId = req.user?.userId;
+    const userRole = req.user?.role;
+    const { resumeRemark } = req.body;
+
+    if (!userId) {
+      throw new AppError('User not authenticated', 401);
+    }
+
+    if (!userRole || (userRole !== 'admin' && userRole !== 'planner')) {
+      throw new AppError('Only admin or planner can resume major holds', 403);
+    }
+
+    const parsedJobPlanId = parseInt(jobPlanId);
+    if (isNaN(parsedJobPlanId)) {
+      throw new AppError('Invalid jobPlanId provided', 400);
+    }
+
+    const jobPlan = await _getJobPlanDetails(parsedJobPlanId);
+    const jobStepIds = await _getJobStepIdsForJobPlan(parsedJobPlanId);
+
+    const totalMachinesAffected = await _performMajorHoldResume({
+      nrcJobNo: jobPlan.nrcJobNo,
+      jobPlanId: parsedJobPlanId,
+      jobStepIds,
+      resumeRemark
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Job plan resumed by admin/planner - linked machines and steps affected',
+      data: {
+        jobPlanId: parsedJobPlanId,
+        resumedBy: userId,
+        resumedByRole: userRole,
+        resumeRemark: resumeRemark || 'Job plan resumed by admin/planner',
+        totalMachinesAffected
+      }
+    });
+
+  } catch (error) {
+    console.error('Error resuming major hold job plan:', error);
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ success: false, message: error.message });
+    } else {
+      res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  }
+};
+
+type ResumeOptions = {
+  nrcJobNo: string;
+  jobPlanId?: number;
+  jobStepIds?: number[];
+  resumeRemark?: string;
+};
+
+async function _performMajorHoldResume(options: ResumeOptions): Promise<number> {
+  const { nrcJobNo, jobPlanId, jobStepIds, resumeRemark } = options;
+
+  console.log(`🟢 [ADMIN RESUME] Resuming scope ${jobPlanId ? `jobPlanId=${jobPlanId}` : `job=${nrcJobNo}`} - updating machines and steps`);
+  
+  // 1. Fetch JobStepMachine entries to restore their previous status
+  let jobStepMachinesToResume;
+  try {
+    jobStepMachinesToResume = await (prisma as any).jobStepMachine.findMany({
+      where: jobPlanId
+        ? {
+            jobStep: { jobPlanningId: jobPlanId },
+            status: 'major_hold'
+          }
+        : {
+            nrcJobNo: nrcJobNo,
+            status: 'major_hold'
+          }
+    });
+    console.log(`🔍 [ADMIN RESUME] Found ${jobStepMachinesToResume.length} JobStepMachine entries to resume`);
+  } catch (fetchError) {
+    console.error(`❌ [ADMIN RESUME ERROR] Failed to fetch JobStepMachine entries:`, fetchError);
+    throw new AppError(`Failed to fetch machine statuses: ${(fetchError as Error).message}`, 500);
+  }
+
+  // 2. Update each machine individually, restoring previous status from remarks
+  try {
+    const updatePromises = jobStepMachinesToResume.map((machine: any) => {
+      let previousStatus = 'in_progress'; // Default fallback
+      let remarks = resumeRemark || 'Job resumed by admin/planner';
+      
+      if (machine.remarks && machine.remarks.includes('PREV_STATUS:')) {
+        const match = machine.remarks.match(/PREV_STATUS:([^|]+)/);
+        if (match && match[1]) {
+          previousStatus = match[1].trim();
+          console.log(`🔍 [ADMIN RESUME] Restoring machine ${machine.id} to previous status: ${previousStatus}`);
+        }
+      }
+      
+      return (prisma as any).jobStepMachine.update({
+        where: { id: machine.id },
+        data: {
+          status: previousStatus,
+          remarks: remarks,
+          updatedAt: new Date()
+        }
+      });
+    });
+    
+    await Promise.all(updatePromises);
+    console.log(`✅ [ADMIN RESUME] Updated ${jobStepMachinesToResume.length} JobStepMachine entries to their previous status`);
+  } catch (updateError) {
+    console.error(`❌ [ADMIN RESUME ERROR] Failed to update JobStepMachine entries:`, updateError);
+    throw new AppError(`Failed to update machine statuses: ${(updateError as Error).message}`, 500);
+  }
+
+  // 3. Update ALL step tables back to previous status
+  try {
+    await _resumeAllJobStepsFromMajorHold(nrcJobNo, jobStepIds);
+    console.log(`✅ [ADMIN RESUME] Updated step tables to their previous status`);
+  } catch (stepError) {
+    console.error(`❌ [ADMIN RESUME ERROR] Failed to update step tables:`, stepError);
+  }
+
+  return jobStepMachinesToResume.length;
+}
+
 // Major hold work on a specific machine (only resumable by admin/planner)
 export const majorHoldWorkOnMachine = async (req: Request, res: Response) => {
   try {
@@ -910,23 +1266,43 @@ export const majorHoldWorkOnMachine = async (req: Request, res: Response) => {
     // MAJOR HOLD: Update ALL machines and steps for the entire job
     console.log(`🔴 [MAJOR HOLD] Holding entire job ${nrcJobNo} - updating all machines and steps`);
     
-    // 1. Update ALL JobStepMachine entries for this job to major_hold
-    let updatedJobStepMachines;
+    // 1. First, fetch all JobStepMachine entries to store their previous status
+    let jobStepMachinesToUpdate;
     try {
-      updatedJobStepMachines = await (prisma as any).jobStepMachine.updateMany({
+      jobStepMachinesToUpdate = await (prisma as any).jobStepMachine.findMany({
         where: {
           nrcJobNo: nrcJobNo,
           status: {
             in: ['in_progress', 'busy', 'start'] // Hold all active machines
           }
-        },
-        data: {
-          status: 'major_hold',
-          remarks: majorHoldRemark || 'Job major held',
-          updatedAt: new Date()
         }
       });
-      console.log(`✅ [MAJOR HOLD] Updated ${updatedJobStepMachines.count} JobStepMachine entries to major_hold`);
+      console.log(`🔍 [MAJOR HOLD] Found ${jobStepMachinesToUpdate.length} JobStepMachine entries to update`);
+    } catch (fetchError) {
+      console.error(`❌ [MAJOR HOLD ERROR] Failed to fetch JobStepMachine entries:`, fetchError);
+      throw new AppError(`Failed to fetch machine statuses: ${(fetchError as Error).message}`, 500);
+    }
+
+    // 2. Update ALL JobStepMachine entries to major_hold, storing previous status in remarks
+    let updatedJobStepMachines;
+    try {
+      // Update each machine individually to preserve previous status
+      const updatePromises = jobStepMachinesToUpdate.map((machine: any) => {
+        const previousStatus = machine.status;
+        const remarksWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark || 'Job major held'}`;
+        return (prisma as any).jobStepMachine.update({
+          where: { id: machine.id },
+          data: {
+            status: 'major_hold',
+            remarks: remarksWithPrevStatus,
+            updatedAt: new Date()
+          }
+        });
+      });
+      
+      await Promise.all(updatePromises);
+      updatedJobStepMachines = { count: jobStepMachinesToUpdate.length };
+      console.log(`✅ [MAJOR HOLD] Updated ${updatedJobStepMachines.count} JobStepMachine entries to major_hold with previous status stored`);
     } catch (updateError) {
       console.error(`❌ [MAJOR HOLD ERROR] Failed to update JobStepMachine entries:`, updateError);
       throw new AppError(`Failed to update machine statuses: ${(updateError as Error).message}`, 500);
@@ -1151,30 +1527,59 @@ export const adminResumeMajorHold = async (req: Request, res: Response) => {
     // ADMIN RESUME: Resume ALL machines and steps for the entire job
     console.log(`🟢 [ADMIN RESUME] Resuming entire job ${nrcJobNo} - updating all machines and steps`);
     
-    // 1. Update ALL JobStepMachine entries for this job back to in_progress
-    let updatedJobStepMachines;
+    // 1. First, fetch all JobStepMachine entries to restore their previous status
+    let jobStepMachinesToResume;
     try {
-      updatedJobStepMachines = await (prisma as any).jobStepMachine.updateMany({
+      jobStepMachinesToResume = await (prisma as any).jobStepMachine.findMany({
         where: {
           nrcJobNo: nrcJobNo,
           status: 'major_hold'
-        },
-        data: {
-          status: 'in_progress',
-          remarks: resumeRemark || 'Job resumed by admin/planner',
-          updatedAt: new Date()
         }
       });
-      console.log(`✅ [ADMIN RESUME] Updated ${updatedJobStepMachines.count} JobStepMachine entries to in_progress`);
+      console.log(`🔍 [ADMIN RESUME] Found ${jobStepMachinesToResume.length} JobStepMachine entries to resume`);
+    } catch (fetchError) {
+      console.error(`❌ [ADMIN RESUME ERROR] Failed to fetch JobStepMachine entries:`, fetchError);
+      throw new AppError(`Failed to fetch machine statuses: ${(fetchError as Error).message}`, 500);
+    }
+
+    // 2. Update each machine individually, restoring previous status from remarks
+    let updatedJobStepMachines;
+    try {
+      const updatePromises = jobStepMachinesToResume.map((machine: any) => {
+        let previousStatus = 'in_progress'; // Default fallback
+        let remarks = resumeRemark || 'Job resumed by admin/planner';
+        
+        // Extract previous status from remarks if stored
+        if (machine.remarks && machine.remarks.includes('PREV_STATUS:')) {
+          const match = machine.remarks.match(/PREV_STATUS:([^|]+)/);
+          if (match && match[1]) {
+            previousStatus = match[1].trim();
+            console.log(`🔍 [ADMIN RESUME] Restoring machine ${machine.id} to previous status: ${previousStatus}`);
+          }
+        }
+        
+        return (prisma as any).jobStepMachine.update({
+          where: { id: machine.id },
+          data: {
+            status: previousStatus,
+            remarks: remarks,
+            updatedAt: new Date()
+          }
+        });
+      });
+      
+      await Promise.all(updatePromises);
+      updatedJobStepMachines = { count: jobStepMachinesToResume.length };
+      console.log(`✅ [ADMIN RESUME] Updated ${updatedJobStepMachines.count} JobStepMachine entries to their previous status`);
     } catch (updateError) {
       console.error(`❌ [ADMIN RESUME ERROR] Failed to update JobStepMachine entries:`, updateError);
       throw new AppError(`Failed to update machine statuses: ${(updateError as Error).message}`, 500);
     }
 
-    // 2. Update ALL step tables for this job back to in_progress status
+    // 2. Update ALL step tables for this job back to their previous status
     try {
       await _resumeAllJobStepsFromMajorHold(nrcJobNo);
-      console.log(`✅ [ADMIN RESUME] Updated all step tables to in_progress status`);
+      console.log(`✅ [ADMIN RESUME] Updated all step tables to their previous status`);
     } catch (stepError) {
       console.error(`❌ [ADMIN RESUME ERROR] Failed to update step tables:`, stepError);
       // Don't throw error to avoid breaking the main flow, but log it
@@ -2062,84 +2467,159 @@ function _getStepName(stepNo: number): string | null {
 }
 
 // Helper function to update ALL job steps to major_hold status
-async function _updateAllJobStepsToMajorHold(nrcJobNo: string, majorHoldRemark: string) {
+async function _updateAllJobStepsToMajorHold(nrcJobNo: string, majorHoldRemark: string, jobStepIds?: number[]) {
   try {
     console.log(`🔍 [MAJOR HOLD] Updating ALL steps to major_hold for job ${nrcJobNo}`);
     
-    // Update all step tables for this job
-    const updatePromises = [
-      // PaperStore
-      (prisma.paperStore.updateMany as any)({
-        where: { jobNrcJobNo: nrcJobNo },
-        data: { 
-          status: 'major_hold',
-          majorHoldRemark: majorHoldRemark
-        }
-      }),
-      // PrintingDetails
-      (prisma.printingDetails.updateMany as any)({
-        where: { jobNrcJobNo: nrcJobNo },
-        data: { 
-          status: 'major_hold',
-          majorHoldRemark: majorHoldRemark
-        }
-      }),
-      // Corrugation
-      (prisma.corrugation.updateMany as any)({
-        where: { jobNrcJobNo: nrcJobNo },
-        data: { 
-          status: 'major_hold',
-          majorHoldRemark: majorHoldRemark
-        }
-      }),
-      // FluteLaminateBoardConversion
-      (prisma.fluteLaminateBoardConversion.updateMany as any)({
-        where: { jobNrcJobNo: nrcJobNo },
-        data: { 
-          status: 'major_hold',
-          majorHoldRemark: majorHoldRemark
-        }
-      }),
-      // Punching
-      (prisma.punching.updateMany as any)({
-        where: { jobNrcJobNo: nrcJobNo },
-        data: { 
-          status: 'major_hold',
-          majorHoldRemark: majorHoldRemark
-        }
-      }),
-      // SideFlapPasting
-      (prisma.sideFlapPasting.updateMany as any)({
-        where: { jobNrcJobNo: nrcJobNo },
-        data: { 
-          status: 'major_hold',
-          majorHoldRemark: majorHoldRemark
-        }
-      }),
-      // QualityDept
-      (prisma.qualityDept.updateMany as any)({
-        where: { jobNrcJobNo: nrcJobNo },
-        data: { 
-          status: 'major_hold',
-          majorHoldRemark: majorHoldRemark
-        }
-      }),
-      // DispatchProcess
-      (prisma.dispatchProcess.updateMany as any)({
-        where: { jobNrcJobNo: nrcJobNo },
-        data: { 
-          status: 'major_hold',
-          majorHoldRemark: majorHoldRemark
-        }
-      })
+    // First, fetch all step records to store their previous status
+    const fetchPromises = [
+      (prisma.paperStore.findMany as any)({ where: { jobNrcJobNo: nrcJobNo } }),
+      (prisma.printingDetails.findMany as any)({ where: { jobNrcJobNo: nrcJobNo } }),
+      (prisma.corrugation.findMany as any)({ where: { jobNrcJobNo: nrcJobNo } }),
+      (prisma.fluteLaminateBoardConversion.findMany as any)({ where: { jobNrcJobNo: nrcJobNo } }),
+      (prisma.punching.findMany as any)({ where: { jobNrcJobNo: nrcJobNo } }),
+      (prisma.sideFlapPasting.findMany as any)({ where: { jobNrcJobNo: nrcJobNo } }),
+      (prisma.qualityDept.findMany as any)({ where: { jobNrcJobNo: nrcJobNo } }),
+      (prisma.dispatchProcess.findMany as any)({ where: { jobNrcJobNo: nrcJobNo } })
     ];
+    
+    const [paperStoreRecords, printingRecords, corrugationRecords, fluteRecords, punchingRecords, flapRecords, qualityRecords, dispatchRecords] = await Promise.all(fetchPromises);
+    
+    const filterRecords = (records: any[]) => {
+      if (!jobStepIds || jobStepIds.length === 0) {
+        return records;
+      }
+      return records.filter((record: any) => record.jobStepId && jobStepIds.includes(record.jobStepId));
+    };
+    
+    // Update each record individually, storing previous status in majorHoldRemark
+    const updatePromises: Promise<any>[] = [];
+    
+    // PaperStore
+    filterRecords(paperStoreRecords).forEach((record: any) => {
+      const previousStatus = record.status;
+      const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
+      updatePromises.push(
+        (prisma.paperStore.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: 'major_hold',
+            majorHoldRemark: remarkWithPrevStatus
+          }
+        })
+      );
+    });
+    
+    // PrintingDetails
+    filterRecords(printingRecords).forEach((record: any) => {
+      const previousStatus = record.status;
+      const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
+      updatePromises.push(
+        (prisma.printingDetails.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: 'major_hold',
+            majorHoldRemark: remarkWithPrevStatus
+          }
+        })
+      );
+    });
+    
+    // Corrugation
+    filterRecords(corrugationRecords).forEach((record: any) => {
+      const previousStatus = record.status;
+      const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
+      updatePromises.push(
+        (prisma.corrugation.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: 'major_hold',
+            majorHoldRemark: remarkWithPrevStatus
+          }
+        })
+      );
+    });
+    
+    // FluteLaminateBoardConversion
+    filterRecords(fluteRecords).forEach((record: any) => {
+      const previousStatus = record.status;
+      const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
+      updatePromises.push(
+        (prisma.fluteLaminateBoardConversion.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: 'major_hold',
+            majorHoldRemark: remarkWithPrevStatus
+          }
+        })
+      );
+    });
+    
+    // Punching
+    filterRecords(punchingRecords).forEach((record: any) => {
+      const previousStatus = record.status;
+      const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
+      updatePromises.push(
+        (prisma.punching.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: 'major_hold',
+            majorHoldRemark: remarkWithPrevStatus
+          }
+        })
+      );
+    });
+    
+    // SideFlapPasting
+    filterRecords(flapRecords).forEach((record: any) => {
+      const previousStatus = record.status;
+      const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
+      updatePromises.push(
+        (prisma.sideFlapPasting.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: 'major_hold',
+            majorHoldRemark: remarkWithPrevStatus
+          }
+        })
+      );
+    });
+    
+    // QualityDept
+    filterRecords(qualityRecords).forEach((record: any) => {
+      const previousStatus = record.status;
+      const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
+      updatePromises.push(
+        (prisma.qualityDept.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: 'major_hold',
+            majorHoldRemark: remarkWithPrevStatus
+          }
+        })
+      );
+    });
+    
+    // DispatchProcess
+    filterRecords(dispatchRecords).forEach((record: any) => {
+      const previousStatus = record.status;
+      const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
+      updatePromises.push(
+        (prisma.dispatchProcess.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: 'major_hold',
+            majorHoldRemark: remarkWithPrevStatus
+          }
+        })
+      );
+    });
 
     // Execute all updates in parallel
     const results = await Promise.all(updatePromises);
     
     // Log the results
-    const totalUpdated = results.reduce((sum, result) => sum + result.count, 0);
-    console.log(`✅ [MAJOR HOLD] Updated ${totalUpdated} step records across all step tables`);
+    console.log(`✅ [MAJOR HOLD] Updated ${results.length} step records across all step tables with previous status stored`);
     
     return results;
   } catch (error) {
@@ -2200,108 +2680,199 @@ async function _updateIndividualStepMajorHoldRemark(stepNo: number, nrcJobNo: st
 }
 
 // Helper function to resume ALL job steps from major_hold status
-async function _resumeAllJobStepsFromMajorHold(nrcJobNo: string) {
+async function _resumeAllJobStepsFromMajorHold(nrcJobNo: string, jobStepIds?: number[]) {
   try {
     console.log(`🔍 [ADMIN RESUME] Resuming ALL steps from major_hold for job ${nrcJobNo}`);
     
-    // Update all step tables for this job back to in_progress
-    const updatePromises = [
-      // PaperStore
-      (prisma.paperStore.updateMany as any)({
-        where: { 
-          jobNrcJobNo: nrcJobNo,
-          status: 'major_hold'
-        },
-        data: { 
-          status: 'in_progress',
-          majorHoldRemark: null // Clear the major hold remark
-        }
-      }),
-      // PrintingDetails
-      (prisma.printingDetails.updateMany as any)({
-        where: { 
-          jobNrcJobNo: nrcJobNo,
-          status: 'major_hold'
-        },
-        data: { 
-          status: 'in_progress',
-          majorHoldRemark: null
-        }
-      }),
-      // Corrugation
-      (prisma.corrugation.updateMany as any)({
-        where: { 
-          jobNrcJobNo: nrcJobNo,
-          status: 'major_hold'
-        },
-        data: { 
-          status: 'in_progress',
-          majorHoldRemark: null
-        }
-      }),
-      // FluteLaminateBoardConversion
-      (prisma.fluteLaminateBoardConversion.updateMany as any)({
-        where: { 
-          jobNrcJobNo: nrcJobNo,
-          status: 'major_hold'
-        },
-        data: { 
-          status: 'in_progress',
-          majorHoldRemark: null
-        }
-      }),
-      // Punching
-      (prisma.punching.updateMany as any)({
-        where: { 
-          jobNrcJobNo: nrcJobNo,
-          status: 'major_hold'
-        },
-        data: { 
-          status: 'in_progress',
-          majorHoldRemark: null
-        }
-      }),
-      // SideFlapPasting
-      (prisma.sideFlapPasting.updateMany as any)({
-        where: { 
-          jobNrcJobNo: nrcJobNo,
-          status: 'major_hold'
-        },
-        data: { 
-          status: 'in_progress',
-          majorHoldRemark: null
-        }
-      }),
-      // QualityDept
-      (prisma.qualityDept.updateMany as any)({
-        where: { 
-          jobNrcJobNo: nrcJobNo,
-          status: 'major_hold'
-        },
-        data: { 
-          status: 'in_progress',
-          majorHoldRemark: null
-        }
-      }),
-      // DispatchProcess
-      (prisma.dispatchProcess.updateMany as any)({
-        where: { 
-          jobNrcJobNo: nrcJobNo,
-          status: 'major_hold'
-        },
-        data: { 
-          status: 'in_progress',
-          majorHoldRemark: null
-        }
-      })
+    // First, fetch all step records with major_hold status to restore their previous status
+    const fetchPromises = [
+      (prisma.paperStore.findMany as any)({ where: { jobNrcJobNo: nrcJobNo, status: 'major_hold' } }),
+      (prisma.printingDetails.findMany as any)({ where: { jobNrcJobNo: nrcJobNo, status: 'major_hold' } }),
+      (prisma.corrugation.findMany as any)({ where: { jobNrcJobNo: nrcJobNo, status: 'major_hold' } }),
+      (prisma.fluteLaminateBoardConversion.findMany as any)({ where: { jobNrcJobNo: nrcJobNo, status: 'major_hold' } }),
+      (prisma.punching.findMany as any)({ where: { jobNrcJobNo: nrcJobNo, status: 'major_hold' } }),
+      (prisma.sideFlapPasting.findMany as any)({ where: { jobNrcJobNo: nrcJobNo, status: 'major_hold' } }),
+      (prisma.qualityDept.findMany as any)({ where: { jobNrcJobNo: nrcJobNo, status: 'major_hold' } }),
+      (prisma.dispatchProcess.findMany as any)({ where: { jobNrcJobNo: nrcJobNo, status: 'major_hold' } })
     ];
+    
+    const [paperStoreRecords, printingRecords, corrugationRecords, fluteRecords, punchingRecords, flapRecords, qualityRecords, dispatchRecords] = await Promise.all(fetchPromises);
+    
+    const filterRecords = (records: any[]) => {
+      if (!jobStepIds || jobStepIds.length === 0) {
+        return records;
+      }
+      return records.filter((record: any) => record.jobStepId && jobStepIds.includes(record.jobStepId));
+    };
+    
+    // Update each record individually, restoring previous status from majorHoldRemark
+    const updatePromises: Promise<any>[] = [];
+    
+    // PaperStore
+    filterRecords(paperStoreRecords).forEach((record: any) => {
+      let previousStatus = 'in_progress'; // Default fallback
+      if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
+        const match = record.majorHoldRemark.match(/PREV_STATUS:([^|]+)/);
+        if (match && match[1]) {
+          previousStatus = match[1].trim();
+        }
+      }
+      updatePromises.push(
+        (prisma.paperStore.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: previousStatus,
+            majorHoldRemark: null // Clear the major hold remark
+          }
+        })
+      );
+    });
+    
+    // PrintingDetails
+    filterRecords(printingRecords).forEach((record: any) => {
+      let previousStatus = 'in_progress'; // Default fallback
+      if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
+        const match = record.majorHoldRemark.match(/PREV_STATUS:([^|]+)/);
+        if (match && match[1]) {
+          previousStatus = match[1].trim();
+        }
+      }
+      updatePromises.push(
+        (prisma.printingDetails.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: previousStatus,
+            majorHoldRemark: null
+          }
+        })
+      );
+    });
+    
+    // Corrugation
+    filterRecords(corrugationRecords).forEach((record: any) => {
+      let previousStatus = 'in_progress'; // Default fallback
+      if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
+        const match = record.majorHoldRemark.match(/PREV_STATUS:([^|]+)/);
+        if (match && match[1]) {
+          previousStatus = match[1].trim();
+        }
+      }
+      updatePromises.push(
+        (prisma.corrugation.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: previousStatus,
+            majorHoldRemark: null
+          }
+        })
+      );
+    });
+    
+    // FluteLaminateBoardConversion
+    filterRecords(fluteRecords).forEach((record: any) => {
+      let previousStatus = 'in_progress'; // Default fallback
+      if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
+        const match = record.majorHoldRemark.match(/PREV_STATUS:([^|]+)/);
+        if (match && match[1]) {
+          previousStatus = match[1].trim();
+        }
+      }
+      updatePromises.push(
+        (prisma.fluteLaminateBoardConversion.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: previousStatus,
+            majorHoldRemark: null
+          }
+        })
+      );
+    });
+    
+    // Punching
+    filterRecords(punchingRecords).forEach((record: any) => {
+      let previousStatus = 'in_progress'; // Default fallback
+      if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
+        const match = record.majorHoldRemark.match(/PREV_STATUS:([^|]+)/);
+        if (match && match[1]) {
+          previousStatus = match[1].trim();
+        }
+      }
+      updatePromises.push(
+        (prisma.punching.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: previousStatus,
+            majorHoldRemark: null
+          }
+        })
+      );
+    });
+    
+    // SideFlapPasting
+    filterRecords(flapRecords).forEach((record: any) => {
+      let previousStatus = 'in_progress'; // Default fallback
+      if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
+        const match = record.majorHoldRemark.match(/PREV_STATUS:([^|]+)/);
+        if (match && match[1]) {
+          previousStatus = match[1].trim();
+        }
+      }
+      updatePromises.push(
+        (prisma.sideFlapPasting.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: previousStatus,
+            majorHoldRemark: null
+          }
+        })
+      );
+    });
+    
+    // QualityDept
+    filterRecords(qualityRecords).forEach((record: any) => {
+      let previousStatus = 'in_progress'; // Default fallback
+      if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
+        const match = record.majorHoldRemark.match(/PREV_STATUS:([^|]+)/);
+        if (match && match[1]) {
+          previousStatus = match[1].trim();
+        }
+      }
+      updatePromises.push(
+        (prisma.qualityDept.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: previousStatus,
+            majorHoldRemark: null
+          }
+        })
+      );
+    });
+    
+    // DispatchProcess
+    filterRecords(dispatchRecords).forEach((record: any) => {
+      let previousStatus = 'in_progress'; // Default fallback
+      if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
+        const match = record.majorHoldRemark.match(/PREV_STATUS:([^|]+)/);
+        if (match && match[1]) {
+          previousStatus = match[1].trim();
+        }
+      }
+      updatePromises.push(
+        (prisma.dispatchProcess.update as any)({
+          where: { id: record.id },
+          data: { 
+            status: previousStatus,
+            majorHoldRemark: null
+          }
+        })
+      );
+    });
 
     // Execute all updates in parallel
     const results = await Promise.all(updatePromises);
     
     // Log the results
-    const totalUpdated = results.reduce((sum, result) => sum + result.count, 0);
-    console.log(`✅ [ADMIN RESUME] Resumed ${totalUpdated} step records across all step tables`);
+    console.log(`✅ [ADMIN RESUME] Resumed ${results.length} step records across all step tables to their previous status`);
     
     return results;
   } catch (error) {
