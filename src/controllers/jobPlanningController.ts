@@ -1843,13 +1843,40 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
         // Calculate excess quantity (if user tried to dispatch more than allowed)
         const excessQuantity = Math.max(0, quantity - actualDispatchQty);
         
-        // Calculate how much finished goods were used in this dispatch
-        // If dispatch > QC quantity, the difference is from finished goods
-        const finishedGoodsUsed = Math.max(0, actualDispatchQty - qcQuantity);
-        
         // Calculate new total (only up to PO quantity)
         const newTotal = currentTotal + actualDispatchQty;
         totalDispatchedQty = newTotal;
+        
+        // 🔥 NEW LOGIC: Calculate finished goods consumption based on CUMULATIVE totalDispatchedQty
+        // Check if totalDispatchedQty (cumulative) > qcQuantity
+        const totalFinishedGoodsNeeded = Math.max(0, totalDispatchedQty - qcQuantity);
+        
+        // Calculate already consumed finished goods from previous dispatches
+        // We need to track this by looking at dispatch history or calculating from previous totalDispatchedQty
+        let alreadyConsumedFinishedGoods = 0;
+        
+        // If there was a previous dispatch, calculate how much was already consumed
+        if (existingDispatch?.totalDispatchedQty && existingDispatch.totalDispatchedQty > 0) {
+          // Previous total finished goods needed
+          const previousTotalFinishedGoodsNeeded = Math.max(0, existingDispatch.totalDispatchedQty - qcQuantity);
+          alreadyConsumedFinishedGoods = previousTotalFinishedGoodsNeeded;
+        }
+        
+        // Calculate additional finished goods needed for this dispatch
+        const additionalFinishedGoodsNeeded = Math.max(0, totalFinishedGoodsNeeded - alreadyConsumedFinishedGoods);
+        
+        // This is what we need to consume in this dispatch
+        const finishedGoodsUsed = additionalFinishedGoodsNeeded;
+        
+        console.log(`📊 [storeStepFormData] Finished Goods Calculation (Cumulative):`, {
+          totalDispatchedQty,
+          qcQuantity,
+          totalFinishedGoodsNeeded,
+          previousTotalDispatchedQty: existingDispatch?.totalDispatchedQty || 0,
+          alreadyConsumedFinishedGoods,
+          additionalFinishedGoodsNeeded,
+          finishedGoodsUsed
+        });
         
         // Update dispatch history with actual dispatched quantity
         dispatchHistory = existingDispatch?.dispatchHistory 
