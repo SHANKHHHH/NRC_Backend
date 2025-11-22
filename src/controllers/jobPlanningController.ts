@@ -19,6 +19,13 @@ export const createJobPlanning = async (req: Request, res: Response) => {
   if (finishedGoodsQuantity < 0) {
     throw new AppError('Finished goods quantity cannot be negative', 400);
   }
+  
+  // Log finished goods quantity for debugging
+  console.log('📦 [createJobPlanning] Finished goods quantity received:', {
+    finishedGoodsQty,
+    finishedGoodsQuantity,
+    type: typeof finishedGoodsQty
+  });
 
   // Debug: Log the incoming data
   console.log('Creating job planning with steps:', JSON.stringify(steps, null, 2));
@@ -64,6 +71,14 @@ export const createJobPlanning = async (req: Request, res: Response) => {
         steps: true
       },
     });
+    
+    // Log the created job planning to verify finishedGoodsQty was saved
+    console.log('✅ [createJobPlanning] Job planning created:', {
+      jobPlanId: jobPlanning.jobPlanId,
+      nrcJobNo: jobPlanning.nrcJobNo,
+      finishedGoodsQty: jobPlanning.finishedGoodsQty,
+      purchaseOrderId: jobPlanning.purchaseOrderId
+    });
 
     // Immediately update the job's machine details flag based on initial steps
     try {
@@ -83,9 +98,17 @@ export const createJobPlanning = async (req: Request, res: Response) => {
       );
     }
 
+    // Ensure finishedGoodsQty is explicitly included in response
+    const responseData = {
+      ...jobPlanning,
+      finishedGoodsQty: jobPlanning.finishedGoodsQty ?? finishedGoodsQuantity
+    };
+    
+    console.log('📤 [createJobPlanning] Sending response with finishedGoodsQty:', responseData.finishedGoodsQty);
+    
     res.status(201).json({
       success: true,
-      data: jobPlanning,
+      data: responseData,
       message: 'Job planning created successfully',
     });
   } catch (error) {
