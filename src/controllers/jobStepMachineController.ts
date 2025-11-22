@@ -1292,12 +1292,12 @@ export const majorHoldWorkOnMachine = async (req: Request, res: Response) => {
         const remarksWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark || 'Job major held'}`;
         return (prisma as any).jobStepMachine.update({
           where: { id: machine.id },
-          data: {
-            status: 'major_hold',
+        data: {
+          status: 'major_hold',
             remarks: remarksWithPrevStatus,
-            updatedAt: new Date()
-          }
-        });
+          updatedAt: new Date()
+        }
+      });
       });
       
       await Promise.all(updatePromises);
@@ -1560,12 +1560,12 @@ export const adminResumeMajorHold = async (req: Request, res: Response) => {
         
         return (prisma as any).jobStepMachine.update({
           where: { id: machine.id },
-          data: {
+        data: {
             status: previousStatus,
             remarks: remarks,
-            updatedAt: new Date()
-          }
-        });
+          updatedAt: new Date()
+        }
+      });
       });
       
       await Promise.all(updatePromises);
@@ -2495,123 +2495,123 @@ async function _updateAllJobStepsToMajorHold(nrcJobNo: string, majorHoldRemark: 
     // Update each record individually, storing previous status in majorHoldRemark
     const updatePromises: Promise<any>[] = [];
     
-    // PaperStore
+      // PaperStore
     filterRecords(paperStoreRecords).forEach((record: any) => {
       const previousStatus = record.status;
       const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
       updatePromises.push(
         (prisma.paperStore.update as any)({
           where: { id: record.id },
-          data: { 
-            status: 'major_hold',
+        data: { 
+          status: 'major_hold',
             majorHoldRemark: remarkWithPrevStatus
-          }
+        }
         })
       );
     });
     
-    // PrintingDetails
+      // PrintingDetails
     filterRecords(printingRecords).forEach((record: any) => {
       const previousStatus = record.status;
       const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
       updatePromises.push(
         (prisma.printingDetails.update as any)({
           where: { id: record.id },
-          data: { 
-            status: 'major_hold',
+        data: { 
+          status: 'major_hold',
             majorHoldRemark: remarkWithPrevStatus
-          }
+        }
         })
       );
     });
     
-    // Corrugation
+      // Corrugation
     filterRecords(corrugationRecords).forEach((record: any) => {
       const previousStatus = record.status;
       const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
       updatePromises.push(
         (prisma.corrugation.update as any)({
           where: { id: record.id },
-          data: { 
-            status: 'major_hold',
+        data: { 
+          status: 'major_hold',
             majorHoldRemark: remarkWithPrevStatus
-          }
+        }
         })
       );
     });
     
-    // FluteLaminateBoardConversion
+      // FluteLaminateBoardConversion
     filterRecords(fluteRecords).forEach((record: any) => {
       const previousStatus = record.status;
       const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
       updatePromises.push(
         (prisma.fluteLaminateBoardConversion.update as any)({
           where: { id: record.id },
-          data: { 
-            status: 'major_hold',
+        data: { 
+          status: 'major_hold',
             majorHoldRemark: remarkWithPrevStatus
-          }
+        }
         })
       );
     });
     
-    // Punching
+      // Punching
     filterRecords(punchingRecords).forEach((record: any) => {
       const previousStatus = record.status;
       const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
       updatePromises.push(
         (prisma.punching.update as any)({
           where: { id: record.id },
-          data: { 
-            status: 'major_hold',
+        data: { 
+          status: 'major_hold',
             majorHoldRemark: remarkWithPrevStatus
-          }
+        }
         })
       );
     });
     
-    // SideFlapPasting
+      // SideFlapPasting
     filterRecords(flapRecords).forEach((record: any) => {
       const previousStatus = record.status;
       const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
       updatePromises.push(
         (prisma.sideFlapPasting.update as any)({
           where: { id: record.id },
-          data: { 
-            status: 'major_hold',
+        data: { 
+          status: 'major_hold',
             majorHoldRemark: remarkWithPrevStatus
-          }
+        }
         })
       );
     });
     
-    // QualityDept
+      // QualityDept
     filterRecords(qualityRecords).forEach((record: any) => {
       const previousStatus = record.status;
       const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
       updatePromises.push(
         (prisma.qualityDept.update as any)({
           where: { id: record.id },
-          data: { 
-            status: 'major_hold',
+        data: { 
+          status: 'major_hold',
             majorHoldRemark: remarkWithPrevStatus
-          }
+        }
         })
       );
     });
     
-    // DispatchProcess
+      // DispatchProcess
     filterRecords(dispatchRecords).forEach((record: any) => {
       const previousStatus = record.status;
       const remarkWithPrevStatus = `PREV_STATUS:${previousStatus}|${majorHoldRemark}`;
       updatePromises.push(
         (prisma.dispatchProcess.update as any)({
           where: { id: record.id },
-          data: { 
-            status: 'major_hold',
+        data: { 
+          status: 'major_hold',
             majorHoldRemark: remarkWithPrevStatus
-          }
-        })
+        }
+      })
       );
     });
 
@@ -2708,7 +2708,7 @@ async function _resumeAllJobStepsFromMajorHold(nrcJobNo: string, jobStepIds?: nu
     // Update each record individually, restoring previous status from majorHoldRemark
     const updatePromises: Promise<any>[] = [];
     
-    // PaperStore
+      // PaperStore
     filterRecords(paperStoreRecords).forEach((record: any) => {
       let previousStatus = 'in_progress'; // Default fallback
       if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
@@ -2720,15 +2720,15 @@ async function _resumeAllJobStepsFromMajorHold(nrcJobNo: string, jobStepIds?: nu
       updatePromises.push(
         (prisma.paperStore.update as any)({
           where: { id: record.id },
-          data: { 
+        data: { 
             status: previousStatus,
-            majorHoldRemark: null // Clear the major hold remark
-          }
+          majorHoldRemark: null // Clear the major hold remark
+        }
         })
       );
     });
     
-    // PrintingDetails
+      // PrintingDetails
     filterRecords(printingRecords).forEach((record: any) => {
       let previousStatus = 'in_progress'; // Default fallback
       if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
@@ -2740,15 +2740,15 @@ async function _resumeAllJobStepsFromMajorHold(nrcJobNo: string, jobStepIds?: nu
       updatePromises.push(
         (prisma.printingDetails.update as any)({
           where: { id: record.id },
-          data: { 
+        data: { 
             status: previousStatus,
-            majorHoldRemark: null
-          }
+          majorHoldRemark: null
+        }
         })
       );
     });
     
-    // Corrugation
+      // Corrugation
     filterRecords(corrugationRecords).forEach((record: any) => {
       let previousStatus = 'in_progress'; // Default fallback
       if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
@@ -2760,15 +2760,15 @@ async function _resumeAllJobStepsFromMajorHold(nrcJobNo: string, jobStepIds?: nu
       updatePromises.push(
         (prisma.corrugation.update as any)({
           where: { id: record.id },
-          data: { 
+        data: { 
             status: previousStatus,
-            majorHoldRemark: null
-          }
+          majorHoldRemark: null
+        }
         })
       );
     });
     
-    // FluteLaminateBoardConversion
+      // FluteLaminateBoardConversion
     filterRecords(fluteRecords).forEach((record: any) => {
       let previousStatus = 'in_progress'; // Default fallback
       if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
@@ -2780,15 +2780,15 @@ async function _resumeAllJobStepsFromMajorHold(nrcJobNo: string, jobStepIds?: nu
       updatePromises.push(
         (prisma.fluteLaminateBoardConversion.update as any)({
           where: { id: record.id },
-          data: { 
+        data: { 
             status: previousStatus,
-            majorHoldRemark: null
-          }
+          majorHoldRemark: null
+        }
         })
       );
     });
     
-    // Punching
+      // Punching
     filterRecords(punchingRecords).forEach((record: any) => {
       let previousStatus = 'in_progress'; // Default fallback
       if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
@@ -2800,15 +2800,15 @@ async function _resumeAllJobStepsFromMajorHold(nrcJobNo: string, jobStepIds?: nu
       updatePromises.push(
         (prisma.punching.update as any)({
           where: { id: record.id },
-          data: { 
+        data: { 
             status: previousStatus,
-            majorHoldRemark: null
-          }
+          majorHoldRemark: null
+        }
         })
       );
     });
     
-    // SideFlapPasting
+      // SideFlapPasting
     filterRecords(flapRecords).forEach((record: any) => {
       let previousStatus = 'in_progress'; // Default fallback
       if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
@@ -2820,15 +2820,15 @@ async function _resumeAllJobStepsFromMajorHold(nrcJobNo: string, jobStepIds?: nu
       updatePromises.push(
         (prisma.sideFlapPasting.update as any)({
           where: { id: record.id },
-          data: { 
+        data: { 
             status: previousStatus,
-            majorHoldRemark: null
-          }
+          majorHoldRemark: null
+        }
         })
       );
     });
     
-    // QualityDept
+      // QualityDept
     filterRecords(qualityRecords).forEach((record: any) => {
       let previousStatus = 'in_progress'; // Default fallback
       if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
@@ -2840,15 +2840,15 @@ async function _resumeAllJobStepsFromMajorHold(nrcJobNo: string, jobStepIds?: nu
       updatePromises.push(
         (prisma.qualityDept.update as any)({
           where: { id: record.id },
-          data: { 
+        data: { 
             status: previousStatus,
-            majorHoldRemark: null
-          }
+          majorHoldRemark: null
+        }
         })
       );
     });
     
-    // DispatchProcess
+      // DispatchProcess
     filterRecords(dispatchRecords).forEach((record: any) => {
       let previousStatus = 'in_progress'; // Default fallback
       if (record.majorHoldRemark && record.majorHoldRemark.includes('PREV_STATUS:')) {
@@ -2860,11 +2860,11 @@ async function _resumeAllJobStepsFromMajorHold(nrcJobNo: string, jobStepIds?: nu
       updatePromises.push(
         (prisma.dispatchProcess.update as any)({
           where: { id: record.id },
-          data: { 
+        data: { 
             status: previousStatus,
-            majorHoldRemark: null
-          }
-        })
+          majorHoldRemark: null
+        }
+      })
       );
     });
 

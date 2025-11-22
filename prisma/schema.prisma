@@ -454,6 +454,7 @@ model DispatchProcess {
   balanceQty          Int?
   qcCheckSignBy       String?
   qcCheckAt           DateTime?
+  finishedGoodsQty    Int                  @default(0) // Finished goods quantity used in dispatch (mandatory, can be 0)
   jobStepId           Int?                 @unique
   job                 Job                  @relation("JobToDispatchProcess", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
@@ -474,6 +475,7 @@ model JobPlanning {
   nrcJobNo         String
   purchaseOrderId  Int?      // Link to specific Purchase Order
   jobDemand        JobDemand
+  finishedGoodsQty Int?      @default(0) // Finished goods quantity selected for this job plan (can be 0)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   steps            JobStep[]

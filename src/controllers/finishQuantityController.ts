@@ -159,3 +159,29 @@ export const getFinishQuantitiesByJob = async (req: Request, res: Response) => {
     throw new AppError('Failed to fetch finish quantities', 500);
   }
 };
+
+/**
+ * Get available finished goods quantity for a job (for UI display)
+ */
+export const getAvailableFinishedGoodsQty = async (req: Request, res: Response) => {
+  const { nrcJobNo } = req.params;
+
+  try {
+    const finishQuantities = await prisma.finishQuantity.findMany({
+      where: {
+        jobNrcJobNo: nrcJobNo,
+        status: 'available'
+      }
+    });
+
+    const totalAvailable = finishQuantities.reduce((sum, fq) => sum + fq.overDispatchedQuantity, 0);
+
+    res.status(200).json({
+      success: true,
+      availableQty: totalAvailable
+    });
+  } catch (error) {
+    console.error('Error fetching available finished goods quantity:', error);
+    throw new AppError('Failed to fetch available finished goods quantity', 500);
+  }
+};
