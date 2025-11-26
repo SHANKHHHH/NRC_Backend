@@ -3,6 +3,18 @@ type UserRole = 'admin' | 'planner' | 'production_head' | 'dispatch_executive' |
 
 // Role utility functions for handling multiple roles stored as JSON strings
 export class RoleManager {
+  private static SINGLE_ROLE_AS_PLAIN: Set<UserRole> = new Set(['admin', 'planner']);
+
+  private static serializeRolesArrayInternal(roles: UserRole[]): string {
+    if (roles.length === 1 && this.SINGLE_ROLE_AS_PLAIN.has(roles[0])) {
+      return roles[0];
+    }
+    return JSON.stringify(roles);
+  }
+
+  static serializeRoles(roles: UserRole[]): string {
+    return this.serializeRolesArrayInternal(roles);
+  }
   /**
    * Check if a user has a specific role
    */
@@ -65,45 +77,29 @@ export class RoleManager {
    * Add a role to a user
    */
   static addRole(userRole: string, newRole: UserRole): string {
-    try {
-      const roles = JSON.parse(userRole);
-      if (Array.isArray(roles)) {
-        if (!roles.includes(newRole)) {
-          roles.push(newRole);
-        }
-        return JSON.stringify(roles);
-      }
-    } catch {
-      // Convert single role to array
-      return JSON.stringify([userRole, newRole]);
+    const roles = this.getUserRoles(userRole);
+    if (!roles.includes(newRole)) {
+      roles.push(newRole);
     }
-    return JSON.stringify([newRole]);
+    return this.serializeRolesArrayInternal(roles);
   }
 
   /**
    * Remove a role from a user
    */
   static removeRole(userRole: string, roleToRemove: UserRole): string {
-    try {
-      const roles = JSON.parse(userRole);
-      if (Array.isArray(roles)) {
-        const filteredRoles = roles.filter(role => role !== roleToRemove);
-        return filteredRoles.length > 0 ? JSON.stringify(filteredRoles) : JSON.stringify(['user']);
-      }
-    } catch {
-      // If single role matches, return default role
-      if (userRole === roleToRemove) {
-        return JSON.stringify(['user']);
-      }
+    const roles = this.getUserRoles(userRole).filter(role => role !== roleToRemove);
+    if (roles.length === 0) {
+      return JSON.stringify(['user']);
     }
-    return userRole;
+    return this.serializeRolesArrayInternal(roles);
   }
 
   /**
    * Set multiple roles for a user
    */
   static setRoles(roles: UserRole[]): string {
-    return JSON.stringify(roles);
+    return this.serializeRolesArrayInternal(roles);
   }
 
   /**

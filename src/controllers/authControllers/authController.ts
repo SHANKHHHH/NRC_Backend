@@ -9,6 +9,7 @@ import { generateAccessToken } from '../../utils/jwtService';
 import { PhoneNumber } from 'libphonenumber-js';
 import { error } from 'console';
 import { logUserAction, logUserActionWithResource, ActionTypes } from '../../lib/logger';
+import { RoleManager } from '../../utils/roleUtils';
 
 const VALID_ROLES = ['admin', 'planner', 'production_head', 'dispatch_executive', 'qc_manager','printer', 'corrugator','flutelaminator','pasting_operator','punching_operator', 'paperstore','flyingsquad'];
 
@@ -244,14 +245,14 @@ export const addMember = async (req: Request, res: Response) => {
   const hashedPassword = await bcrypt.hash(password, 12);
 
   // Store roles as JSON string
-  const rolesJson = JSON.stringify(userRoles);
+  const rolesJson = RoleManager.serializeRoles(userRoles as any);
 
   const user = await prisma.user.create({
     data: {
       id: customId,
       email,
       password: hashedPassword,
-      role: rolesJson, // Store as JSON string
+      role: rolesJson, // Store as JSON string (or plain for admin/planner)
       isActive: true,
       name: `${firstName} ${lastName}`,
     }
@@ -360,7 +361,16 @@ export const getUserById = async (req: Request, res: Response) => {
 
 export const updateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { email, role, roles, firstName, lastName, isActive } = req.body;
+  const { email, role, roles, firstName, lastName, isActive, password } = req.body;
+
+  console.log(`🔍 [updateUser] Request body received:`, {
+    email,
+    firstName,
+    lastName,
+    roles,
+    password: password ? `***${password.length} chars***` : 'not provided',
+    isActive
+  });
 
   // Handle both single role and multiple roles
   let rolesToUpdate: string;
@@ -376,13 +386,13 @@ export const updateUser = async (req: Request, res: Response) => {
         throw new AppError(`Invalid role: ${roleItem}. Must be one of: ${VALID_ROLES.join(', ')}`, 400);
       }
     }
-    rolesToUpdate = JSON.stringify(roles);
+    rolesToUpdate = RoleManager.serializeRoles(roles as any);
   } else if (role) {
     // Single role provided (backward compatibility)
     if (!VALID_ROLES.includes(role)) {
       throw new AppError(`Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`, 400);
     }
-    rolesToUpdate = JSON.stringify([role]);
+    rolesToUpdate = RoleManager.serializeRoles([role] as any);
   } else {
     throw new AppError('Role or roles are required', 400);
   }
@@ -395,15 +405,49 @@ export const updateUser = async (req: Request, res: Response) => {
     }
   }
 
+  // Build update data object, only including fields that are provided
+  const updateData: any = {
+    role: rolesToUpdate,
+  };
+
+  // Only update email if provided
+  if (email !== undefined) {
+    updateData.email = email;
+  }
+
+  // Only update name if both firstName and lastName are provided
+  if (firstName && lastName) {
+    updateData.name = `${firstName} ${lastName}`;
+  }
+
+  // Only update isActive if provided
+  if (isActive !== undefined) {
+    updateData.isActive = isActive;
+  }
+
+  // Handle password update
+  if (password && typeof password === 'string' && password.trim().length > 0) {
+    const trimmedPassword = password.trim();
+    if (trimmedPassword.length < 6) {
+      throw new AppError('Password must be at least 6 characters long', 400);
+    }
+    const hashedPassword = await bcrypt.hash(trimmedPassword, 12);
+    updateData.password = hashedPassword;
+    console.log(`🔐 [updateUser] Password update requested for user ${id}`);
+    console.log(`🔐 [updateUser] Password length: ${trimmedPassword.length}, hash generated: ${hashedPassword.substring(0, 20)}...`);
+  } else {
+    console.log(`⚠️ [updateUser] Password not provided or invalid. password value:`, password, `type:`, typeof password);
+  }
+
+  console.log(`📝 [updateUser] Updating user ${id} with data keys:`, Object.keys(updateData));
+  console.log(`📝 [updateUser] Will update password: ${!!updateData.password}`);
+
   const updatedUser = await prisma.user.update({
     where: { id },
-    data: {
-      email,
-      role: rolesToUpdate,
-      name: firstName && lastName ? `${firstName} ${lastName}` : undefined,
-      isActive
-    }
+    data: updateData
   });
+
+  console.log(`✅ [updateUser] User ${id} updated successfully. Password updated: ${!!password}`);
 
   // Parse roles for response
   let userRoles: string[];

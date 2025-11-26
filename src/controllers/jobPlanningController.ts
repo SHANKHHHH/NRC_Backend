@@ -19,7 +19,7 @@ export const createJobPlanning = async (req: Request, res: Response) => {
   if (finishedGoodsQuantity < 0) {
     throw new AppError('Finished goods quantity cannot be negative', 400);
   }
-  
+
   // Log finished goods quantity for debugging
   console.log('📦 [createJobPlanning] Finished goods quantity received:', {
     finishedGoodsQty,
@@ -105,7 +105,7 @@ export const createJobPlanning = async (req: Request, res: Response) => {
     };
     
     console.log('📤 [createJobPlanning] Sending response with finishedGoodsQty:', responseData.finishedGoodsQty);
-    
+
     res.status(201).json({
       success: true,
       data: responseData,
