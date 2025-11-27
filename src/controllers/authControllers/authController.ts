@@ -361,16 +361,7 @@ export const getUserById = async (req: Request, res: Response) => {
 
 export const updateUser = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { email, role, roles, firstName, lastName, isActive, password } = req.body;
-
-  console.log(`🔍 [updateUser] Request body received:`, {
-    email,
-    firstName,
-    lastName,
-    roles,
-    password: password ? `***${password.length} chars***` : 'not provided',
-    isActive
-  });
+  const { email, role, roles, firstName, lastName, isActive } = req.body;
 
   // Handle both single role and multiple roles
   let rolesToUpdate: string;
@@ -405,49 +396,15 @@ export const updateUser = async (req: Request, res: Response) => {
     }
   }
 
-  // Build update data object, only including fields that are provided
-  const updateData: any = {
-    role: rolesToUpdate,
-  };
-
-  // Only update email if provided
-  if (email !== undefined) {
-    updateData.email = email;
-  }
-
-  // Only update name if both firstName and lastName are provided
-  if (firstName && lastName) {
-    updateData.name = `${firstName} ${lastName}`;
-  }
-
-  // Only update isActive if provided
-  if (isActive !== undefined) {
-    updateData.isActive = isActive;
-  }
-
-  // Handle password update
-  if (password && typeof password === 'string' && password.trim().length > 0) {
-    const trimmedPassword = password.trim();
-    if (trimmedPassword.length < 6) {
-      throw new AppError('Password must be at least 6 characters long', 400);
-    }
-    const hashedPassword = await bcrypt.hash(trimmedPassword, 12);
-    updateData.password = hashedPassword;
-    console.log(`🔐 [updateUser] Password update requested for user ${id}`);
-    console.log(`🔐 [updateUser] Password length: ${trimmedPassword.length}, hash generated: ${hashedPassword.substring(0, 20)}...`);
-  } else {
-    console.log(`⚠️ [updateUser] Password not provided or invalid. password value:`, password, `type:`, typeof password);
-  }
-
-  console.log(`📝 [updateUser] Updating user ${id} with data keys:`, Object.keys(updateData));
-  console.log(`📝 [updateUser] Will update password: ${!!updateData.password}`);
-
   const updatedUser = await prisma.user.update({
     where: { id },
-    data: updateData
+    data: {
+      email,
+      role: rolesToUpdate,
+      name: firstName && lastName ? `${firstName} ${lastName}` : undefined,
+      isActive
+    }
   });
-
-  console.log(`✅ [updateUser] User ${id} updated successfully. Password updated: ${!!password}`);
 
   // Parse roles for response
   let userRoles: string[];
