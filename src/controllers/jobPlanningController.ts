@@ -147,6 +147,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     bypassDeduplicationRoles.some(role => userRole.includes(role));
   
   if (shouldBypassDeduplication) {
+    const userId = req.user?.userId;
     const queryOptions: any = {
       include: {
         steps: {
@@ -155,6 +156,13 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
               select: {
                 id: true,
                 status: true,
+              }
+            },
+            qualityDept: {
+              select: {
+                id: true,
+                startedBy: true,
+                status: true
               }
             }
           },
@@ -172,10 +180,32 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     
     const allPlanningsUnfiltered = await prisma.jobPlanning.findMany(queryOptions) as any[];
     
+    // Filter QC jobs for QC executives: Remove entire job plannings if QC is started by another user
+    const isQCRole = userRole && (userRole.toLowerCase().includes('qc') || userRole.toLowerCase().includes('quality'));
+    let filteredPlannings = allPlanningsUnfiltered;
+    
+    if (userId && isQCRole) {
+      filteredPlannings = allPlanningsUnfiltered.filter((planning: any) => {
+        if (planning.steps && Array.isArray(planning.steps)) {
+          // Find QC step
+          const qcStep = planning.steps.find((step: any) => step.stepName === 'QualityDept');
+          if (qcStep && qcStep.qualityDept) {
+            const startedBy = qcStep.qualityDept.startedBy;
+            // Show job if QC is not started (null) or started by current user
+            return startedBy === null || startedBy === userId;
+          }
+          // If no QC step found, show the job (might be in progress)
+          return true;
+        }
+        return true;
+      });
+    }
+    
     // Enrich PaperStore steps with PaperStore table status
     // For PaperStore steps, use the PaperStore.status instead of JobStep.status
-    for (const planning of allPlanningsUnfiltered) {
+    for (const planning of filteredPlannings) {
       if (planning.steps && Array.isArray(planning.steps)) {
+        // Enrich PaperStore status
         for (const step of planning.steps) {
           if (step.stepName === 'PaperStore' && step.paperStore) {
             // Use PaperStore.status if available (e.g., 'accept'), otherwise use JobStep.status
@@ -188,8 +218,8 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     // Build response
     const response: any = {
       success: true,
-      count: allPlanningsUnfiltered.length,
-      data: allPlanningsUnfiltered
+      count: filteredPlannings.length,
+      data: filteredPlannings
     };
     
     // Only include pagination metadata if pagination was requested
@@ -217,6 +247,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
   
   // Get ALL job plannings for accessible jobs (NO deduplication)
   // Production roles with machines should see ALL accessible plannings, not just the latest
+  const userId = req.user?.userId;
   const jobPlannings = await prisma.jobPlanning.findMany({
     where: { nrcJobNo: { in: jobNumbersToFetch } },
     include: {
@@ -227,6 +258,13 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
               id: true,
               status: true,
             }
+          },
+          qualityDept: {
+            select: {
+              id: true,
+              startedBy: true,
+              status: true
+            }
           }
         },
         orderBy: { stepNo: 'asc' }
@@ -234,10 +272,32 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     },
     orderBy: { jobPlanId: 'desc' },
   });
+  
+  // Filter QC jobs for QC executives: Remove entire job plannings if QC is started by another user
+  // Only show jobs where QC is either not started (startedBy is null) or started by current user
+  const isQCRole = userRole && (userRole.toLowerCase().includes('qc') || userRole.toLowerCase().includes('quality'));
+  let filteredJobPlannings = jobPlannings;
+  
+  if (userId && isQCRole) {
+    filteredJobPlannings = jobPlannings.filter((planning: any) => {
+      if (planning.steps && Array.isArray(planning.steps)) {
+        // Find QC step
+        const qcStep = planning.steps.find((step: any) => step.stepName === 'QualityDept');
+        if (qcStep && qcStep.qualityDept) {
+          const startedBy = qcStep.qualityDept.startedBy;
+          // Show job if QC is not started (null) or started by current user
+          return startedBy === null || startedBy === userId;
+        }
+        // If no QC step found, show the job (might be in progress or QC step not created yet)
+        return true;
+      }
+      return true;
+    });
+  }
 
   // Extract machine IDs more efficiently
   const machineIds = new Set<string>();
-  jobPlannings.forEach(planning => {
+  filteredJobPlannings.forEach(planning => {
     planning.steps.forEach((step: any) => {
       if (Array.isArray(step.machineDetails)) {
         step.machineDetails.forEach((md: any) => {
@@ -268,7 +328,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
   // 4. Replace machineId in each step's machineDetails with the full machine object (serialized)
   // Also enrich PaperStore steps with PaperStore table status
   // ALSO filter machines to only show machines the user has access to
-  for (const planning of jobPlannings) {
+  for (const planning of filteredJobPlannings) {
     for (const step of planning.steps) {
       // Enrich PaperStore steps with PaperStore table status
       if (step.stepName === 'PaperStore' && (step as any).paperStore) {
@@ -304,8 +364,8 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
   // Build response
   const response: any = {
     success: true,
-    count: jobPlannings.length,
-    data: jobPlannings
+    count: filteredJobPlannings.length,
+    data: filteredJobPlannings
   };
   
   // Only include pagination metadata if pagination was requested

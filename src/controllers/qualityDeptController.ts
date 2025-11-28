@@ -27,7 +27,14 @@ export const createQualityDept = async (req: Request, res: Response) => {
   if (!workflowValidation.canProceed) {
     throw new AppError(workflowValidation.message || 'Workflow validation failed', 400);
   }
-  const qualityDept = await prisma.qualityDept.create({ data: { ...data, jobStepId } });
+  // Set startedBy if user is creating the record (they become the owner)
+  const qualityDept = await prisma.qualityDept.create({ 
+    data: { 
+      ...data, 
+      jobStepId,
+      startedBy: userId || null
+    } 
+  });
   await prisma.jobStep.update({ where: { id: jobStepId }, data: { qualityDept: { connect: { id: qualityDept.id } } } });
 
   // Log QualityDept step creation
@@ -121,14 +128,26 @@ export const getQualityDeptByJobStepId = async (req: Request, res: Response) => 
 export const getAllQualityDepts = async (req: Request, res: Response) => {
   const userMachineIds = req.userMachineIds; // From middleware
   const userRole = req.user?.role || '';
+  const userId = req.user?.userId;
   
   // Get accessible job numbers based on user's machine access
   const { getFilteredJobNumbers } = await import('../middleware/machineAccess');
   const accessibleJobNumbers = await getFilteredJobNumbers(userMachineIds || null, userRole);
   
-  // Get all QualityDept records for accessible jobs
+  // Filter logic: Show jobs that are either:
+  // 1. Not started by anyone (startedBy is null) - available to all QC executives
+  // 2. Started by the current user (startedBy === userId) - only visible to that user
+  const whereClause: any = {
+    jobNrcJobNo: { in: accessibleJobNumbers },
+    OR: [
+      { startedBy: null },           // Not started - available to all
+      { startedBy: userId }           // Started by current user
+    ]
+  };
+  
+  // Get all QualityDept records for accessible jobs with filtering
   const qualityDepts = await prisma.qualityDept.findMany({
-    where: { jobNrcJobNo: { in: accessibleJobNumbers } },
+    where: whereClause,
     include: {
       job: {
         select: {
@@ -211,20 +230,30 @@ export const getQualityDeptByNrcJobNo = async (req: Request, res: Response) => {
   const { jobPlanId } = req.query;
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const jobPlanIdNumber = jobPlanId !== undefined ? Number(jobPlanId) : undefined;
+  const userId = req.user?.userId;
+
+  // Filter logic: Show jobs that are either:
+  // 1. Not started by anyone (startedBy is null) - available to all QC executives
+  // 2. Started by the current user (startedBy === userId) - only visible to that user
+  const whereClause: any = {
+    jobNrcJobNo: decodedNrcJobNo,
+    OR: [
+      { startedBy: null },           // Not started - available to all
+      { startedBy: userId }           // Started by current user
+    ],
+    ...(jobPlanIdNumber !== undefined && !Number.isNaN(jobPlanIdNumber)
+      ? {
+          jobStep: {
+            is: {
+              jobPlanningId: jobPlanIdNumber,
+            },
+          },
+        }
+      : {}),
+  };
 
   const qualityDepts = await prisma.qualityDept.findMany({
-    where: {
-      jobNrcJobNo: decodedNrcJobNo,
-      ...(jobPlanIdNumber !== undefined && !Number.isNaN(jobPlanIdNumber)
-        ? {
-            jobStep: {
-              is: {
-                jobPlanningId: jobPlanIdNumber,
-              },
-            },
-          }
-        : {}),
-    },
+    where: whereClause,
     include: {
       jobStep: {
         select: {
@@ -299,25 +328,40 @@ export const startQualityWork = async (req: Request, res: Response) => {
       
     }
 
+    // Get current user ID
+    const userId = req.user?.userId;
+    if (!userId) {
+      throw new AppError('User ID not found', 401);
+    }
+
     // Find or create QualityDept record
     let qualityDept = await prisma.qualityDept.findFirst({
       where: { jobNrcJobNo: decodedNrcJobNo }
     });
 
     if (!qualityDept) {
-      // Create new QualityDept record
+      // Create new QualityDept record and mark as started by this user
       qualityDept = await prisma.qualityDept.create({
         data: {
           jobNrcJobNo: decodedNrcJobNo,
           jobStepId: jobStep.id,
-          status: 'in_progress'
+          status: 'in_progress',
+          startedBy: userId
         }
       });
-    } else if (qualityDept.status !== 'in_progress') {
-      // Update existing record to in_progress
+    } else {
+      // If already started by someone else, don't allow another user to take it
+      if (qualityDept.startedBy && qualityDept.startedBy !== userId) {
+        throw new AppError('This QC job is already being handled by another QC executive', 403);
+      }
+      
+      // Update existing record to in_progress and set startedBy if not set
       qualityDept = await prisma.qualityDept.update({
         where: { id: qualityDept.id },
-        data: { status: 'in_progress' }
+        data: { 
+          status: 'in_progress',
+          startedBy: qualityDept.startedBy || userId
+        }
       });
     }
 

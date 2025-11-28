@@ -434,10 +434,13 @@ model QualityDept {
   remarks             String?
   qcCheckSignBy       String?
   qcCheckAt           DateTime?
+  startedBy           String?              // QC executive who started this job
   jobStepId           Int?                 @unique
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToQualityDept")
   job                 Job                  @relation("JobToQualityDept", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
+  
+  @@index([startedBy])
 }
 
 model DispatchProcess {
@@ -635,6 +638,7 @@ enum JobStatus {
 enum PurchaseOrderStatus {
   created
   approved
+  dispatched
 }
 
 enum StepStatus {

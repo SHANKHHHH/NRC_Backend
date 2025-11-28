@@ -113,6 +113,13 @@ export const completeJob = async (req: Request, res: Response) => {
       throw new AppError('No step with status "stop" and dispatch process accepted', 400);
     }
     const dispatchProcess = jobStep.dispatchProcess;
+    console.log(`🔍 [completeJob] Found dispatchProcess for job ${nrcJobNo}:`, {
+      dispatchDate: dispatchProcess?.dispatchDate,
+      date: dispatchProcess?.date,
+      totalDispatchedQty: dispatchProcess?.totalDispatchedQty,
+      quantity: dispatchProcess?.quantity,
+      status: dispatchProcess?.status
+    });
 
     // Get job details
     const job = await prisma.job.findUnique({
@@ -131,16 +138,21 @@ export const completeJob = async (req: Request, res: Response) => {
       });
       if (purchaseOrder) {
         console.log(`✅ [completeJob] Using specific PO ID ${jobPlanning.purchaseOrderId} for job planning ${jobPlanning.jobPlanId}`);
+      } else {
+        console.log(`⚠️ [completeJob] PO ID ${jobPlanning.purchaseOrderId} not found, trying fallback`);
       }
     }
     
     // Fallback to first PO if specific PO not found
     if (!purchaseOrder) {
       purchaseOrder = await prisma.purchaseOrder.findFirst({
-        where: { jobNrcJobNo: nrcJobNo }
+        where: { jobNrcJobNo: nrcJobNo },
+        orderBy: { createdAt: 'desc' } // Get most recent PO if multiple exist
       });
       if (purchaseOrder) {
-        console.log(`⚠️ [completeJob] Using first PO (fallback) for job ${nrcJobNo}`);
+        console.log(`✅ [completeJob] Using first PO (fallback) for job ${nrcJobNo}, PO ID: ${purchaseOrder.id}`);
+      } else {
+        console.log(`❌ [completeJob] No PO found for job ${nrcJobNo}`);
       }
     }
 
@@ -196,6 +208,43 @@ export const completeJob = async (req: Request, res: Response) => {
         finalStatus: 'completed'
       }
     });
+
+    // Update Purchase Order with dispatch information
+    console.log(`🔍 [completeJob] Checking PO update for job ${nrcJobNo}:`, {
+      purchaseOrderFound: !!purchaseOrder,
+      purchaseOrderId: purchaseOrder?.id,
+      dispatchProcessFound: !!dispatchProcess,
+      dispatchProcessId: dispatchProcess?.id
+    });
+    
+    if (purchaseOrder && dispatchProcess) {
+      try {
+        const dispatchDate = dispatchProcess.dispatchDate || dispatchProcess.date || new Date();
+        const dispatchQuantity = dispatchProcess.totalDispatchedQty || dispatchProcess.quantity || 0;
+        
+        console.log(`🔍 [completeJob] Updating PO ${purchaseOrder.id} with:`, {
+          status: 'dispatched',
+          dispatchDate: dispatchDate,
+          dispatchQuantity: dispatchQuantity
+        });
+        
+        await prisma.purchaseOrder.update({
+          where: { id: purchaseOrder.id },
+          data: {
+            status: 'dispatched',
+            dispatchDate: dispatchDate,
+            dispatchQuantity: dispatchQuantity
+          }
+        });
+        
+        console.log(`✅ [completeJob] Successfully updated PO ${purchaseOrder.id} with status=dispatched, dispatchDate=${dispatchDate}, dispatchQuantity=${dispatchQuantity}`);
+      } catch (error) {
+        console.error(`❌ [completeJob] Failed to update PO ${purchaseOrder.id}:`, error);
+        // Don't throw - job completion should still succeed even if PO update fails
+      }
+    } else {
+      console.warn(`⚠️ [completeJob] PO not updated - purchaseOrder: ${purchaseOrder ? `found (ID: ${purchaseOrder.id})` : 'not found'}, dispatchProcess: ${dispatchProcess ? `found (ID: ${dispatchProcess.id})` : 'not found'}`);
+    }
 
     // Delete all JobStep records for this job planning
     await prisma.jobStep.deleteMany({ where: { jobPlanningId: jobPlanning.jobPlanId } });

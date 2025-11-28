@@ -535,6 +535,20 @@ export const autoCompleteJobIfReady = async (identifier: number | string, userId
       ? Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) // days
       : null;
 
+    // Find dispatch process from steps
+    const dispatchStep = jobPlanning.steps.find(
+      (step: any) => step.status === 'stop' && step.dispatchProcess && step.dispatchProcess.status === 'accept'
+    );
+    const dispatchProcess = dispatchStep?.dispatchProcess;
+    
+    console.log(`🔍 [autoCompleteJobIfReady] Found dispatchProcess for job ${nrcJobNo}:`, {
+      dispatchDate: dispatchProcess?.dispatchDate,
+      date: dispatchProcess?.date,
+      totalDispatchedQty: dispatchProcess?.totalDispatchedQty,
+      quantity: dispatchProcess?.quantity,
+      status: dispatchProcess?.status
+    });
+
     // Create completed job record
     const completedJob = await prisma.completedJob.create({
       data: {
@@ -568,6 +582,43 @@ export const autoCompleteJobIfReady = async (identifier: number | string, userId
         finalStatus: 'completed'
       }
     });
+
+    // Update Purchase Order with dispatch information
+    console.log(`🔍 [autoCompleteJobIfReady] Checking PO update for job ${nrcJobNo}:`, {
+      purchaseOrderFound: !!purchaseOrder,
+      purchaseOrderId: purchaseOrder?.id,
+      dispatchProcessFound: !!dispatchProcess,
+      dispatchProcessId: dispatchProcess?.id
+    });
+    
+    if (purchaseOrder && dispatchProcess) {
+      try {
+        const dispatchDate = dispatchProcess.dispatchDate || dispatchProcess.date || new Date();
+        const dispatchQuantity = dispatchProcess.totalDispatchedQty || dispatchProcess.quantity || 0;
+        
+        console.log(`🔍 [autoCompleteJobIfReady] Updating PO ${purchaseOrder.id} with:`, {
+          status: 'dispatched',
+          dispatchDate: dispatchDate,
+          dispatchQuantity: dispatchQuantity
+        });
+        
+        await prisma.purchaseOrder.update({
+          where: { id: purchaseOrder.id },
+          data: {
+            status: 'dispatched',
+            dispatchDate: dispatchDate,
+            dispatchQuantity: dispatchQuantity
+          }
+        });
+        
+        console.log(`✅ [autoCompleteJobIfReady] Successfully updated PO ${purchaseOrder.id} with status=dispatched, dispatchDate=${dispatchDate}, dispatchQuantity=${dispatchQuantity}`);
+      } catch (error) {
+        console.error(`❌ [autoCompleteJobIfReady] Failed to update PO ${purchaseOrder.id}:`, error);
+        // Don't throw - job completion should still succeed even if PO update fails
+      }
+    } else {
+      console.warn(`⚠️ [autoCompleteJobIfReady] PO not updated - purchaseOrder: ${purchaseOrder ? `found (ID: ${purchaseOrder.id})` : 'not found'}, dispatchProcess: ${dispatchProcess ? `found (ID: ${dispatchProcess.id})` : 'not found'}`);
+    }
 
     // CRITICAL: Clean up all step-specific data BEFORE deleting JobSteps
     // JobStepMachine is automatically deleted via CASCADE on JobStep deletion
