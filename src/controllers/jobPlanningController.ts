@@ -189,10 +189,16 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
         if (planning.steps && Array.isArray(planning.steps)) {
           // Find QC step
           const qcStep = planning.steps.find((step: any) => step.stepName === 'QualityDept');
-          if (qcStep && qcStep.qualityDept) {
-            const startedBy = qcStep.qualityDept.startedBy;
+          if (qcStep) {
+            // Check if QC is started by looking at qualityDept.startedBy first, then fallback to JobStep.user
+            const startedBy = qcStep.qualityDept?.startedBy || (qcStep.status === 'start' ? qcStep.user : null);
             // Show job if QC is not started (null) or started by current user
-            return startedBy === null || startedBy === userId;
+            if (startedBy !== null && startedBy !== userId) {
+              // QC is started by another user - hide this job
+              return false;
+            }
+            // Show job if QC is not started or started by current user
+            return true;
           }
           // If no QC step found, show the job (might be in progress)
           return true;
@@ -273,6 +279,9 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     orderBy: { jobPlanId: 'desc' },
   });
   
+  console.log(`🔍 [getAllJobPlannings] Fetched ${jobPlannings.length} job plannings from DB. Accessible job numbers: ${jobNumbersToFetch.length}`);
+  console.log(`🔍 [getAllJobPlannings] Urgent jobs in fetched plannings: ${jobPlannings.filter((p: any) => p.jobDemand === 'high').map((p: any) => p.nrcJobNo).join(', ')}`);
+  
   // Filter QC jobs for QC executives: Remove entire job plannings if QC is started by another user
   // Only show jobs where QC is either not started (startedBy is null) or started by current user
   const isQCRole = userRole && (userRole.toLowerCase().includes('qc') || userRole.toLowerCase().includes('quality'));
@@ -283,10 +292,16 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
       if (planning.steps && Array.isArray(planning.steps)) {
         // Find QC step
         const qcStep = planning.steps.find((step: any) => step.stepName === 'QualityDept');
-        if (qcStep && qcStep.qualityDept) {
-          const startedBy = qcStep.qualityDept.startedBy;
+        if (qcStep) {
+          // Check if QC is started by looking at qualityDept.startedBy first, then fallback to JobStep.user
+          const startedBy = qcStep.qualityDept?.startedBy || (qcStep.status === 'start' ? qcStep.user : null);
           // Show job if QC is not started (null) or started by current user
-          return startedBy === null || startedBy === userId;
+          if (startedBy !== null && startedBy !== userId) {
+            // QC is started by another user - hide this job
+            return false;
+          }
+          // Show job if QC is not started or started by current user
+          return true;
         }
         // If no QC step found, show the job (might be in progress or QC step not created yet)
         return true;
@@ -319,16 +334,140 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
         id: true,
         description: true,
         status: true,
-        capacity: true
+        capacity: true,
+        machineCode: true,
+        machineType: true,
+        unit: true
       }
     });
   }
   const machineMap = Object.fromEntries(machines.map(m => [m.id, m]));
+  
+  // For urgent jobs: ALWAYS fetch all machines to populate machineDetails for all steps (except PaperStore)
+  // This ensures urgent jobs are visible to all machines of the appropriate type
+  let allMachines: any[] = [];
+  const hasUrgentJobs = filteredJobPlannings.some(p => p.jobDemand === 'high');
+  if (hasUrgentJobs) {
+    console.log(`🔍 [Urgent Job] Found urgent jobs, fetching all machines...`);
+    allMachines = await prisma.machine.findMany({
+      select: {
+        id: true,
+        machineCode: true,
+        machineType: true,
+        unit: true,
+        description: true,
+        status: true,
+        capacity: true
+      }
+    });
+    console.log(`🔍 [Urgent Job] Fetched ${allMachines.length} machines for urgent jobs`);
+    // Add all machines to machineMap if not already there
+    for (const m of allMachines) {
+      if (!machineMap[m.id]) {
+        machineMap[m.id] = m;
+      }
+    }
+    console.log(`🔍 [Urgent Job] machineMap now has ${Object.keys(machineMap).length} machines. Machine types: ${[...new Set(allMachines.map(m => m.machineType))].join(', ')}`);
+  }
 
   // 4. Replace machineId in each step's machineDetails with the full machine object (serialized)
   // Also enrich PaperStore steps with PaperStore table status
   // ALSO filter machines to only show machines the user has access to
+  // For urgent jobs: filter based on startedByMachineId (exclusive to starting machine once started)
+  
+  // Fetch JobStepMachine records for urgent job steps to check startedByMachineId
+  const urgentJobStepIds = new Set<number>();
   for (const planning of filteredJobPlannings) {
+    if (planning.jobDemand === 'high') {
+      for (const step of planning.steps) {
+        if (step.stepNo !== 1) { // Exclude PaperStore (step 1)
+          urgentJobStepIds.add(step.id);
+        }
+      }
+    }
+  }
+  
+  // Fetch JobStepMachine records for urgent steps
+  // IMPORTANT: For urgent jobs, startedByMachineId should equal machineId (the machine that started owns this record)
+  const urgentJobStepMachinesRaw = urgentJobStepIds.size > 0 
+    ? await (prisma as any).jobStepMachine.findMany({
+        where: {
+          jobStepId: { in: Array.from(urgentJobStepIds) },
+          startedByMachineId: { not: null }
+        },
+        select: {
+          jobStepId: true,
+          startedByMachineId: true,
+          machineId: true,
+          status: true
+        },
+        orderBy: [
+          { status: 'asc' }, // in_progress comes before stop (alphabetically)
+          { startedAt: 'desc' } // Most recent first
+        ]
+      })
+    : [];
+  
+  // CRITICAL: Filter to only include records where startedByMachineId equals machineId
+  // This ensures we're using the correct JobStepMachine record (the machine that owns the record is the one that started)
+  // This prevents issues where stale records might have startedByMachineId set incorrectly
+  const urgentJobStepMachines = urgentJobStepMachinesRaw.filter((jsm: any) => {
+    const isValid = jsm.startedByMachineId === jsm.machineId;
+    if (!isValid) {
+      console.log(`🔍 [Urgent Job Map] ⚠️ Filtering out invalid record: Step ${jsm.jobStepId}, machineId: ${jsm.machineId}, startedByMachineId: ${jsm.startedByMachineId} (mismatch!)`);
+    }
+    return isValid;
+  });
+  
+  if (urgentJobStepMachinesRaw.length > urgentJobStepMachines.length) {
+    console.log(`🔍 [Urgent Job Map] Filtered out ${urgentJobStepMachinesRaw.length - urgentJobStepMachines.length} invalid records where startedByMachineId != machineId`);
+  }
+  
+  // Create a map: jobStepId -> startedByMachineId
+  // If multiple records exist for the same step, prioritize the one with status 'in_progress'
+  const urgentStepMachineMap = new Map<number, string>();
+  const stepMachineRecords = new Map<number, any>(); // Track full records for prioritization
+  
+  for (const jsm of urgentJobStepMachines) {
+    const existing = stepMachineRecords.get(jsm.jobStepId);
+    
+    // Priority: in_progress > stop > others
+    if (!existing) {
+      stepMachineRecords.set(jsm.jobStepId, jsm);
+    } else {
+      const existingPriority = existing.status === 'in_progress' ? 2 : (existing.status === 'stop' ? 1 : 0);
+      const currentPriority = jsm.status === 'in_progress' ? 2 : (jsm.status === 'stop' ? 1 : 0);
+      
+      if (currentPriority > existingPriority) {
+        stepMachineRecords.set(jsm.jobStepId, jsm);
+      }
+    }
+  }
+  
+  // Build the final map from prioritized records
+  // IMPORTANT: Use machineId (not startedByMachineId) because startedByMachineId should equal machineId for the record that started
+  for (const [stepId, jsm] of stepMachineRecords) {
+    // Use machineId as the source of truth (the machine that owns this JobStepMachine record)
+    // startedByMachineId should equal machineId, but machineId is more reliable
+    const machineIdToUse = jsm.machineId || jsm.startedByMachineId;
+    urgentStepMachineMap.set(stepId, machineIdToUse);
+    console.log(`🔍 [Urgent Job Map] Step ${stepId} -> Machine ${machineIdToUse} (machineId: ${jsm.machineId}, startedByMachineId: ${jsm.startedByMachineId}, status: ${jsm.status})`);
+    
+    // Validate that startedByMachineId matches machineId (they should be the same)
+    if (jsm.startedByMachineId && jsm.machineId && jsm.startedByMachineId !== jsm.machineId) {
+      console.log(`🔍 [Urgent Job Map] ⚠️ WARNING: Step ${stepId} - startedByMachineId (${jsm.startedByMachineId}) != machineId (${jsm.machineId})`);
+    }
+  }
+  if (urgentJobStepIds.size > 0 && urgentJobStepMachines.length === 0) {
+    console.log(`🔍 [Urgent Job Map] WARNING: Found ${urgentJobStepIds.size} urgent steps but NO startedByMachineId records!`);
+    console.log(`🔍 [Urgent Job Map] Urgent step IDs: ${Array.from(urgentJobStepIds).join(', ')}`);
+  }
+  console.log(`🔍 [Urgent Job Map] Total urgent steps: ${urgentJobStepIds.size}, Steps with startedByMachineId: ${urgentJobStepMachines.length}`);
+  
+  for (const planning of filteredJobPlannings) {
+    const isUrgentJob = planning.jobDemand === 'high';
+    console.log(`🔍 [getAllJobPlannings] Job ${planning.nrcJobNo}: jobDemand=${planning.jobDemand}, isUrgentJob=${isUrgentJob}, steps count=${planning.steps?.length || 0}`);
+    
     for (const step of planning.steps) {
       // Enrich PaperStore steps with PaperStore table status
       if (step.stepName === 'PaperStore' && (step as any).paperStore) {
@@ -336,7 +475,87 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
         (step as any).status = (step as any).paperStore.status || step.status;
       }
       
+      // For urgent jobs: populate machineDetails based on whether step has been started
+      if (isUrgentJob && step.stepNo !== 1) {
+        // Check if this step has been started by a specific machine
+        const startedByMachineId = urgentStepMachineMap.get(step.id);
+        const originalMachineDetailsCount = Array.isArray(step.machineDetails) ? step.machineDetails.length : 0;
+        console.log(`🔍 [Urgent Job Populate] Step ${step.stepName} (${step.id}), startedByMachineId: ${startedByMachineId || 'null'}, original machineDetails count: ${originalMachineDetailsCount}`);
+        
+        if (startedByMachineId) {
+          // Step has been started - only show the starting machine
+          const startingMachine = allMachines.find(m => m.id === startedByMachineId);
+          if (startingMachine) {
+            step.machineDetails = [{
+              id: startingMachine.id,
+              machineId: startingMachine.id,
+              machineCode: startingMachine.machineCode,
+              machineType: startingMachine.machineType,
+              unit: startingMachine.unit,
+              machine: startingMachine
+            }];
+            console.log(`🔍 [Urgent Job] Step ${step.stepName} (${step.id}) - already started by machine ${startingMachine.machineCode} (${startingMachine.id}), showing only that machine. machineDetails count: ${step.machineDetails.length}`);
+          } else {
+            console.log(`🔍 [Urgent Job] ⚠️ Step ${step.stepName} (${step.id}) - startedByMachineId ${startedByMachineId} not found in allMachines!`);
+          }
+        } else {
+          // Step not started yet - show all machines of that step type
+          const stepToMachineType: Record<string, string> = {
+            'PrintingDetails': 'Printing',
+            'Corrugation': 'Corrugatic',
+            'FluteLaminateBoardConversion': 'Flute Lam',
+            'Punching': 'Auto Pund', // Will be handled specially to include both Auto Pund and Manual Pu
+            'SideFlapPasting': 'Auto Flap',
+            'QualityDept': '', // No specific machine type
+            'DispatchProcess': '' // No specific machine type
+          };
+          
+          const requiredMachineType = stepToMachineType[step.stepName] || '';
+          console.log(`🔍 [Urgent Job] Step ${step.stepName} (${step.id}) - not started yet, allMachines.length=${allMachines.length}, requiredMachineType="${requiredMachineType}"`);
+          
+          // Special handling for Punching step: include both Auto Pund and Manual Pu machines
+          // Special handling for SideFlapPasting step: include both Auto Flap and Manual FI machines
+          let machinesToAdd: any[] = [];
+          if (step.stepName === 'Punching') {
+            machinesToAdd = allMachines.filter(m => 
+              m.machineType === 'Auto Pund' || m.machineType === 'Manual Pu'
+            );
+            console.log(`🔍 [Urgent Job] Step ${step.stepName} (${step.id}) - filtering for Punching: found ${machinesToAdd.length} machines (Auto Pund + Manual Pu)`);
+          } else if (step.stepName === 'SideFlapPasting') {
+            machinesToAdd = allMachines.filter(m => 
+              m.machineType === 'Auto Flap' || m.machineType === 'Manual FI'
+            );
+            console.log(`🔍 [Urgent Job] Step ${step.stepName} (${step.id}) - filtering for SideFlapPasting: found ${machinesToAdd.length} machines (Auto Flap + Manual FI)`);
+          } else if (requiredMachineType) {
+            machinesToAdd = allMachines.filter(m => m.machineType === requiredMachineType);
+          } else {
+            machinesToAdd = allMachines; // For steps without specific machine type, show all machines
+          }
+          
+          console.log(`🔍 [Urgent Job] Step ${step.stepName} (${step.id}) - filtered machines: ${machinesToAdd.length} machines found`);
+          if (machinesToAdd.length > 0) {
+            console.log(`🔍 [Urgent Job] Step ${step.stepName} - machine codes: ${machinesToAdd.map(m => m.machineCode).join(', ')}`);
+          }
+          
+          // Populate with filtered machines for urgent jobs not yet started
+          step.machineDetails = machinesToAdd.map(m => ({
+            id: m.id,
+            machineId: m.id,
+            machineCode: m.machineCode,
+            machineType: m.machineType,
+            unit: m.unit,
+            machine: m
+          }));
+          console.log(`🔍 [Urgent Job] Step ${step.stepName} (${step.id}) - not started yet, populated with ${machinesToAdd.length} machines (type: ${requiredMachineType || 'all'})`);
+        }
+      }
+      
       if (Array.isArray(step.machineDetails)) {
+        // Check if this urgent step has been started by a specific machine
+        const startedByMachineId = isUrgentJob && step.stepNo !== 1 
+          ? urgentStepMachineMap.get(step.id) 
+          : null;
+        
         // Filter machines to only show machines the user has access to
         step.machineDetails = step.machineDetails
           .map((md: any) => {
@@ -348,15 +567,40 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
             return md;
           })
           .filter((md: any) => {
-            // For users with machine access, only show machines they have access to
+            const machineId = md.id || md.machineId;
+            
+            // For urgent jobs (excluding PaperStore):
+            if (isUrgentJob && step.stepNo !== 1) {
+              // If step has been started by a machine, only show that machine
+              if (startedByMachineId) {
+                const isStartingMachine = machineId === startedByMachineId;
+                console.log(`🔍 [Urgent Job Filter] Step ${step.stepName} (${step.id}), Machine ${machineId}, Started by: ${startedByMachineId}, Show: ${isStartingMachine}`);
+                return isStartingMachine;
+              }
+              // If not started yet, show ALL machines (visible to all)
+              console.log(`🔍 [Urgent Job Filter] Step ${step.stepName} (${step.id}), Machine ${machineId}, Not started yet - showing to all machines`);
+              return true; // Show all machines for urgent jobs not yet started
+            }
+            
+            // For regular jobs: filter by user machine access
             if (userMachineIds && userMachineIds.length > 0) {
-              const machineId = md.id || md.machineId;
               console.log(`🔍 [Machine Filter] Step ${step.stepName}, Machine ${machineId}, User has access: ${machineId && userMachineIds.includes(machineId)}`);
               return machineId && userMachineIds.includes(machineId);
             }
             // For bypass users (admin, planner, etc.), show all machines
             return true;
           });
+          
+          // Debug: Log final machineDetails count for urgent job steps
+          if (isUrgentJob && step.stepNo !== 1) {
+            console.log(`🔍 [Final Check] Step ${step.stepName} (${step.id}) - Final machineDetails count: ${step.machineDetails?.length || 0}`);
+            if (step.machineDetails && step.machineDetails.length > 0) {
+              const machineCodes = step.machineDetails.map((md: any) => md.machineCode || md.id).join(', ');
+              console.log(`🔍 [Final Check] Step ${step.stepName} - Final machine codes: ${machineCodes}`);
+            } else {
+              console.log(`🔍 [Final Check] ⚠️ Step ${step.stepName} (${step.id}) - machineDetails is EMPTY after filtering!`);
+            }
+          }
       }
     }
   }
@@ -1782,6 +2026,30 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
       // Use user input for quantity, fallback to null if not provided
       // Frontend sends 'passQuantity' from 'Pass Quantity' field
       const quantity = (formData.passQuantity || formData['Pass Quantity']) ? parseInt(formData.passQuantity || formData['Pass Quantity']) || null : null;
+      
+      // Parse individual rejection reason quantities
+      const parseRejectionQty = (value: any): number => {
+        if (!value) return 0;
+        const parsed = parseInt(value.toString());
+        return isNaN(parsed) ? 0 : parsed;
+      };
+      
+      const rejectionReasonAQty = parseRejectionQty(formData.rejectionReasonAQty || formData['Rejection Reason A Qty']);
+      const rejectionReasonBQty = parseRejectionQty(formData.rejectionReasonBQty || formData['Rejection Reason B Qty']);
+      const rejectionReasonCQty = parseRejectionQty(formData.rejectionReasonCQty || formData['Rejection Reason C Qty']);
+      const rejectionReasonDQty = parseRejectionQty(formData.rejectionReasonDQty || formData['Rejection Reason D Qty']);
+      const rejectionReasonEQty = parseRejectionQty(formData.rejectionReasonEQty || formData['Rejection Reason E Qty']);
+      const rejectionReasonFQty = parseRejectionQty(formData.rejectionReasonFQty || formData['Rejection Reason F Qty']);
+      const rejectionReasonOthersQty = parseRejectionQty(formData.rejectionReasonOthersQty || formData['Rejection Reason Others Qty']);
+      
+      // Calculate total rejectedQty as sum of all reason quantities
+      const calculatedRejectedQty = rejectionReasonAQty + rejectionReasonBQty + rejectionReasonCQty + 
+                                     rejectionReasonDQty + rejectionReasonEQty + rejectionReasonFQty + rejectionReasonOthersQty;
+      
+      // Use calculated total, but fallback to manual entry if provided (for backward compatibility)
+      const rejectedQty = calculatedRejectedQty > 0 ? calculatedRejectedQty : 
+                         ((formData.rejectedQty || formData['Reject Quantity']) ? parseInt(formData.rejectedQty || formData['Reject Quantity']) || null : null);
+      
       await prisma.qualityDept.upsert({
         where: { jobStepId },
         update: {
@@ -1791,9 +2059,16 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           date: formData.date ? new Date(formData.date) : undefined,
           shift: formData.shift || null,
           operatorName: operatorName, // Use JobStep user instead of form data
-          rejectedQty: (formData.rejectedQty || formData['Reject Quantity']) ? parseInt(formData.rejectedQty || formData['Reject Quantity']) || null : null,
+          rejectedQty: rejectedQty,
           reasonForRejection: formData.reasonForRejection || formData['Reason for Rejection'] || null,
           remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          rejectionReasonAQty: rejectionReasonAQty > 0 ? rejectionReasonAQty : null,
+          rejectionReasonBQty: rejectionReasonBQty > 0 ? rejectionReasonBQty : null,
+          rejectionReasonCQty: rejectionReasonCQty > 0 ? rejectionReasonCQty : null,
+          rejectionReasonDQty: rejectionReasonDQty > 0 ? rejectionReasonDQty : null,
+          rejectionReasonEQty: rejectionReasonEQty > 0 ? rejectionReasonEQty : null,
+          rejectionReasonFQty: rejectionReasonFQty > 0 ? rejectionReasonFQty : null,
+          rejectionReasonOthersQty: rejectionReasonOthersQty > 0 ? rejectionReasonOthersQty : null,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
         create: {
@@ -1805,9 +2080,16 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           date: formData.date ? new Date(formData.date) : new Date(),
           shift: formData.shift || null,
           operatorName: operatorName, // Use JobStep user instead of form data
-          rejectedQty: (formData.rejectedQty || formData['Reject Quantity']) ? parseInt(formData.rejectedQty || formData['Reject Quantity']) || null : null,
+          rejectedQty: rejectedQty,
           reasonForRejection: formData.reasonForRejection || formData['Reason for Rejection'] || null,
           remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          rejectionReasonAQty: rejectionReasonAQty > 0 ? rejectionReasonAQty : null,
+          rejectionReasonBQty: rejectionReasonBQty > 0 ? rejectionReasonBQty : null,
+          rejectionReasonCQty: rejectionReasonCQty > 0 ? rejectionReasonCQty : null,
+          rejectionReasonDQty: rejectionReasonDQty > 0 ? rejectionReasonDQty : null,
+          rejectionReasonEQty: rejectionReasonEQty > 0 ? rejectionReasonEQty : null,
+          rejectionReasonFQty: rejectionReasonFQty > 0 ? rejectionReasonFQty : null,
+          rejectionReasonOthersQty: rejectionReasonOthersQty > 0 ? rejectionReasonOthersQty : null,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
       });

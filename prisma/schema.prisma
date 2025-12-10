@@ -435,6 +435,13 @@ model QualityDept {
   qcCheckSignBy       String?
   qcCheckAt           DateTime?
   startedBy           String?              // QC executive who started this job
+  rejectionReasonAQty Int?                 // Rejection reason A quantity
+  rejectionReasonBQty Int?                 // Rejection reason B quantity
+  rejectionReasonCQty Int?                 // Rejection reason C quantity
+  rejectionReasonDQty Int?                 // Rejection reason D quantity
+  rejectionReasonEQty Int?                 // Rejection reason E quantity
+  rejectionReasonFQty Int?                 // Rejection reason F quantity
+  rejectionReasonOthersQty Int?            // Rejection reason Others quantity
   jobStepId           Int?                 @unique
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToQualityDept")
   job                 Job                  @relation("JobToQualityDept", fields: [jobNrcJobNo], references: [nrcJobNo])
@@ -520,6 +527,7 @@ model JobStepMachine {
   startedAt   DateTime?
   completedAt DateTime?
   userId      String?
+  startedByMachineId String? // For urgent jobs: tracks which machine started this step (makes it exclusive to that machine)
   
   // Individual form fields for each step type
   // Common fields

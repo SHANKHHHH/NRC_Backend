@@ -27,6 +27,33 @@ export const createQualityDept = async (req: Request, res: Response) => {
   if (!workflowValidation.canProceed) {
     throw new AppError(workflowValidation.message || 'Workflow validation failed', 400);
   }
+  
+  // Parse individual rejection reason quantities if provided
+  const rejectionReasonAQty = data.rejectionReasonAQty || data['Rejection Reason A Qty'] ? parseInt(data.rejectionReasonAQty || data['Rejection Reason A Qty'] || '0') || 0 : null;
+  const rejectionReasonBQty = data.rejectionReasonBQty || data['Rejection Reason B Qty'] ? parseInt(data.rejectionReasonBQty || data['Rejection Reason B Qty'] || '0') || 0 : null;
+  const rejectionReasonCQty = data.rejectionReasonCQty || data['Rejection Reason C Qty'] ? parseInt(data.rejectionReasonCQty || data['Rejection Reason C Qty'] || '0') || 0 : null;
+  const rejectionReasonDQty = data.rejectionReasonDQty || data['Rejection Reason D Qty'] ? parseInt(data.rejectionReasonDQty || data['Rejection Reason D Qty'] || '0') || 0 : null;
+  const rejectionReasonEQty = data.rejectionReasonEQty || data['Rejection Reason E Qty'] ? parseInt(data.rejectionReasonEQty || data['Rejection Reason E Qty'] || '0') || 0 : null;
+  const rejectionReasonFQty = data.rejectionReasonFQty || data['Rejection Reason F Qty'] ? parseInt(data.rejectionReasonFQty || data['Rejection Reason F Qty'] || '0') || 0 : null;
+  const rejectionReasonOthersQty = data.rejectionReasonOthersQty || data['Rejection Reason Others Qty'] ? parseInt(data.rejectionReasonOthersQty || data['Rejection Reason Others Qty'] || '0') || 0 : null;
+  
+  // Calculate total rejectedQty as sum of all reason quantities if any are provided
+  const hasReasonQuantities = rejectionReasonAQty !== null || rejectionReasonBQty !== null || rejectionReasonCQty !== null || 
+                               rejectionReasonDQty !== null || rejectionReasonEQty !== null || rejectionReasonFQty !== null || rejectionReasonOthersQty !== null;
+  
+  if (hasReasonQuantities) {
+    const calculatedRejectedQty = (rejectionReasonAQty || 0) + (rejectionReasonBQty || 0) + (rejectionReasonCQty || 0) + 
+                                   (rejectionReasonDQty || 0) + (rejectionReasonEQty || 0) + (rejectionReasonFQty || 0) + (rejectionReasonOthersQty || 0);
+    data.rejectedQty = calculatedRejectedQty > 0 ? calculatedRejectedQty : data.rejectedQty;
+    data.rejectionReasonAQty = rejectionReasonAQty !== null && rejectionReasonAQty > 0 ? rejectionReasonAQty : null;
+    data.rejectionReasonBQty = rejectionReasonBQty !== null && rejectionReasonBQty > 0 ? rejectionReasonBQty : null;
+    data.rejectionReasonCQty = rejectionReasonCQty !== null && rejectionReasonCQty > 0 ? rejectionReasonCQty : null;
+    data.rejectionReasonDQty = rejectionReasonDQty !== null && rejectionReasonDQty > 0 ? rejectionReasonDQty : null;
+    data.rejectionReasonEQty = rejectionReasonEQty !== null && rejectionReasonEQty > 0 ? rejectionReasonEQty : null;
+    data.rejectionReasonFQty = rejectionReasonFQty !== null && rejectionReasonFQty > 0 ? rejectionReasonFQty : null;
+    data.rejectionReasonOthersQty = rejectionReasonOthersQty !== null && rejectionReasonOthersQty > 0 ? rejectionReasonOthersQty : null;
+  }
+  
   // Set startedBy if user is creating the record (they become the owner)
   const qualityDept = await prisma.qualityDept.create({ 
     data: { 
@@ -498,6 +525,15 @@ export const updateQualityDept = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const userRole = req.user?.role;
+  
+  // Debug: Log incoming rejection reason data
+  console.log('🔍 [updateQualityDept] req.body rejection reason fields:', {
+    rejectionReasonAQty: req.body.rejectionReasonAQty,
+    'Rejection Reason A Qty': req.body['Rejection Reason A Qty'],
+    rejectionReasonBQty: req.body.rejectionReasonBQty,
+    'Rejection Reason B Qty': req.body['Rejection Reason B Qty'],
+    allKeys: Object.keys(req.body).filter(k => k.toLowerCase().includes('rejection') || k.toLowerCase().includes('reason'))
+  });
   // Check if Flying Squad is trying to update non-QC fields
   if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
     const allowedFields = ['qcCheckSignBy', 'qcCheckAt', 'remarks'];
@@ -549,9 +585,84 @@ export const updateQualityDept = async (req: Request, res: Response) => {
       }
     }
 
+    // Parse individual rejection reason quantities BEFORE filtering (always allow these to be updated)
+    // Simple parsing: if value exists and is a valid number, use it (including 0)
+    const parseRejectionQty = (value: any): number | null => {
+      if (value === null || value === undefined) return null;
+      const strValue = value.toString().trim();
+      if (strValue === '') return null;
+      const parsed = parseInt(strValue, 10);
+      return isNaN(parsed) ? null : parsed;
+    };
+    
+    const rawA = req.body.rejectionReasonAQty || req.body['Rejection Reason A Qty'];
+    const rawB = req.body.rejectionReasonBQty || req.body['Rejection Reason B Qty'];
+    const rawC = req.body.rejectionReasonCQty || req.body['Rejection Reason C Qty'];
+    const rawD = req.body.rejectionReasonDQty || req.body['Rejection Reason D Qty'];
+    const rawE = req.body.rejectionReasonEQty || req.body['Rejection Reason E Qty'];
+    const rawF = req.body.rejectionReasonFQty || req.body['Rejection Reason F Qty'];
+    const rawOthers = req.body.rejectionReasonOthersQty || req.body['Rejection Reason Others Qty'];
+    
+    console.log('🔍 [updateQualityDept] Raw rejection reason values from req.body:', { 
+      rawA, rawB, rawC, rawD, rawE, rawF, rawOthers,
+      allRejectionKeys: Object.keys(req.body).filter(k => k.toLowerCase().includes('rejection') || k.toLowerCase().includes('reason'))
+    });
+    
+    const rejectionReasonAQty = parseRejectionQty(rawA);
+    const rejectionReasonBQty = parseRejectionQty(rawB);
+    const rejectionReasonCQty = parseRejectionQty(rawC);
+    const rejectionReasonDQty = parseRejectionQty(rawD);
+    const rejectionReasonEQty = parseRejectionQty(rawE);
+    const rejectionReasonFQty = parseRejectionQty(rawF);
+    const rejectionReasonOthersQty = parseRejectionQty(rawOthers);
+    
+    console.log('🔍 [updateQualityDept] Parsed rejection reason values:', { 
+      rejectionReasonAQty, rejectionReasonBQty, rejectionReasonCQty, 
+      rejectionReasonDQty, rejectionReasonEQty, rejectionReasonFQty, rejectionReasonOthersQty 
+    });
+    
+    // Calculate total rejectedQty as sum of all reason quantities
+    const sum = (rejectionReasonAQty ?? 0) + (rejectionReasonBQty ?? 0) + (rejectionReasonCQty ?? 0) + 
+                (rejectionReasonDQty ?? 0) + (rejectionReasonEQty ?? 0) + (rejectionReasonFQty ?? 0) + (rejectionReasonOthersQty ?? 0);
+    
+    // Always set rejection reason fields if any are provided (even if sum is 0)
+    const hasAnyRejectionReason = rejectionReasonAQty !== null || rejectionReasonBQty !== null || rejectionReasonCQty !== null || 
+                                   rejectionReasonDQty !== null || rejectionReasonEQty !== null || rejectionReasonFQty !== null || rejectionReasonOthersQty !== null;
+    
+    if (hasAnyRejectionReason) {
+      // Update rejectedQty only if sum > 0, otherwise keep existing or use provided value
+      if (sum > 0) {
+        req.body.rejectedQty = sum;
+      }
+      // Always set rejection reason fields (even if null or 0)
+      req.body.rejectionReasonAQty = rejectionReasonAQty;
+      req.body.rejectionReasonBQty = rejectionReasonBQty;
+      req.body.rejectionReasonCQty = rejectionReasonCQty;
+      req.body.rejectionReasonDQty = rejectionReasonDQty;
+      req.body.rejectionReasonEQty = rejectionReasonEQty;
+      req.body.rejectionReasonFQty = rejectionReasonFQty;
+      req.body.rejectionReasonOthersQty = rejectionReasonOthersQty;
+      
+      console.log('🔍 [updateQualityDept] Setting req.body with rejection reason fields:', {
+        rejectedQty: req.body.rejectedQty,
+        rejectionReasonAQty: req.body.rejectionReasonAQty,
+        rejectionReasonBQty: req.body.rejectionReasonBQty,
+        rejectionReasonCQty: req.body.rejectionReasonCQty,
+        rejectionReasonDQty: req.body.rejectionReasonDQty,
+        rejectionReasonEQty: req.body.rejectionReasonEQty,
+        rejectionReasonFQty: req.body.rejectionReasonFQty,
+        rejectionReasonOthersQty: req.body.rejectionReasonOthersQty,
+      });
+    }
+
     // Filter out non-editable fields (fields that already have data)
+    // Always allow rejection reason fields to be editable
     const { filterEditableFields } = await import('../utils/fieldEditability');
-    const editableData = filterEditableFields(existingQualityDept, req.body);
+    const editableData = filterEditableFields(
+      existingQualityDept, 
+      req.body,
+      ['status', 'remarks', 'qcCheckSignBy', 'qcCheckAt', 'rejectionReasonAQty', 'rejectionReasonBQty', 'rejectionReasonCQty', 'rejectionReasonDQty', 'rejectionReasonEQty', 'rejectionReasonFQty', 'rejectionReasonOthersQty', 'rejectedQty']
+    );
 
     // Auto-populate common step fields (date, shift, operator)
     const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');

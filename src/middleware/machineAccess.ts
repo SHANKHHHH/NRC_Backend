@@ -704,7 +704,15 @@ export const getFilteredJobNumbers = async (
         nrcJobNo: true, 
         jobDemand: true, 
         steps: { 
-          select: { machineDetails: true, stepNo: true, stepName: true, status: true },
+          select: { 
+            machineDetails: true, 
+            stepNo: true, 
+            stepName: true, 
+            status: true,
+            paperStore: {
+              select: { status: true }
+            }
+          },
           orderBy: { stepNo: 'asc' }
         } 
       }
@@ -717,18 +725,38 @@ export const getFilteredJobNumbers = async (
 
   const planningLevelAccessible = jobPlannings
     .filter(p => {
+      // Check if this is an urgent job (high demand)
+      // Check Job table first, but also check JobPlanning.jobDemand as the source of truth
+      const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
+      const jobExists = jobs.some(j => j.nrcJobNo === p.nrcJobNo);
+      // Urgent if Job.jobDemand is high OR JobPlanning.jobDemand is high (JobPlanning is source of truth)
+      const isUrgentJob = highDemandJob || p.jobDemand === 'high';
+      
+      console.log(`🔍 [MachineAccess] Job ${p.nrcJobNo}: jobDemand=${p.jobDemand}, highDemandJob=${highDemandJob}, jobExists=${jobExists}, isUrgentJob=${isUrgentJob}`);
+      
+      // For urgent jobs: bypass role and step dependency checks - show to all machines
+      // Only check that PaperStore is started or stopped if it exists
+      if (isUrgentJob) {
+        const paperStoreStep = p.steps.find(s => s.stepName === 'PaperStore');
+        console.log(`🔍 [MachineAccess] Urgent job ${p.nrcJobNo}: PaperStore step found=${!!paperStoreStep}, status=${paperStoreStep?.status}`);
+        // If PaperStore exists, it must be started (status = 'start') or stopped (status = 'stop') for urgent jobs to be visible
+        if (paperStoreStep) {
+          const jobStepStatus = paperStoreStep.status;
+          // PaperStore must be started (status = 'start') or stopped (status = 'stop') for urgent jobs to be visible
+          const isPaperStoreStartedOrStopped = jobStepStatus === 'start' || jobStepStatus === 'stop';
+          if (!isPaperStoreStartedOrStopped) {
+            console.log(`🔍 [MachineAccess] Urgent job ${p.nrcJobNo} blocked - PaperStore not started/stopped yet (JobStep.status: ${jobStepStatus})`);
+            return false;
+          }
+        }
+        // Urgent job with PaperStore started/stopped (or no PaperStore) - visible to all machines
+        console.log(`🔍 [MachineAccess] ✅ Urgent job ${p.nrcJobNo} - visible to all machines`);
+        return true;
+      }
+      
+      // For regular jobs: check role and machine access
       // First check if any step matches user's role and machine access
       const hasAccessibleStep = p.steps.some(s => {
-        // High-demand grants role-based visibility regardless of machine
-        // Check job.jobDemand first (existing functionality - UNCHANGED)
-        const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
-        if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
-        
-        // Fallback: If no Job record, check jobPlanning.jobDemand
-        // This only adds support for jobPlanning-only records without affecting existing jobs
-        const jobExists = jobs.some(j => j.nrcJobNo === p.nrcJobNo);
-        if (!jobExists && p.jobDemand === 'high' && isStepForUserRole(s.stepName, userRole)) return true;
-        
         // Role-based visibility: If step matches user role AND has machine assignment, require machine match
         if (isStepForUserRole(s.stepName, userRole)) {
           const stepMachineIds = parseMachineDetails(s.machineDetails);
@@ -753,7 +781,7 @@ export const getFilteredJobNumbers = async (
         return false;
       }
 
-      // 🎯 NEW: Step dependency filtering
+      // 🎯 NEW: Step dependency filtering (only for regular jobs)
       // Check if the user's relevant steps have their previous steps completed
       const userRelevantSteps = p.steps.filter(s => isStepForUserRole(s.stepName, userRole));
       
@@ -815,16 +843,26 @@ export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null
 
   const planningLevelAccessible = jobPlannings
     .filter(p => {
+      // Check if this is an urgent job (high demand) - check BOTH Job and JobPlanning
+      const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
+      const isUrgentJob = highDemandJob || p.jobDemand === 'high'; // JobPlanning.jobDemand is source of truth
+      
+      // For urgent jobs: bypass role and step dependency checks - show to all machines
+      if (isUrgentJob) {
+        const paperStoreStep = p.steps.find(s => s.stepName === 'PaperStore');
+        if (paperStoreStep) {
+          const jobStepStatus = paperStoreStep.status;
+          const isPaperStoreStartedOrStopped = jobStepStatus === 'start' || jobStepStatus === 'stop';
+          if (!isPaperStoreStartedOrStopped) {
+            return false;
+          }
+        }
+        return true;
+      }
+      
+      // For regular jobs: check role and machine access
       // First check if any step matches user's role and machine access
       const hasAccessibleStep = p.steps.some(s => {
-        // High-demand grants role-based visibility regardless of machine
-        const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
-        if (highDemandJob && isStepForUserRole(s.stepName, userRole)) return true;
-        
-        // Fallback: If no Job record, check jobPlanning.jobDemand
-        const jobExists = jobs.some(j => j.nrcJobNo === p.nrcJobNo);
-        if (!jobExists && p.jobDemand === 'high' && isStepForUserRole(s.stepName, userRole)) return true;
-        
         // Role-based visibility: If step matches user role AND has machine assignment, require machine match
         if (isStepForUserRole(s.stepName, userRole)) {
           const stepMachineIds = parseMachineDetails(s.machineDetails);
@@ -849,7 +887,7 @@ export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null
         return false;
       }
 
-      // 🎯 NEW: Step dependency filtering
+      // 🎯 NEW: Step dependency filtering (only for regular jobs)
       // Check if the user's relevant steps have their previous steps completed
       const userRelevantSteps = p.steps.filter(s => isStepForUserRole(s.stepName, userRole));
       

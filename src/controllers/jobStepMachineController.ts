@@ -228,15 +228,17 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
 
     let isUrgentJob = job?.jobDemand === 'high';
     
-    // Fallback: If no Job record, check jobPlanning.jobDemand
-    // This only adds support for jobPlanning-only records without affecting existing jobs
-    if (!job) {
+    // Fallback: If no Job record OR jobDemand is not 'high', check jobPlanning.jobDemand
+    // This ensures we check JobPlanning.jobDemand as the source of truth
+    if (!job || !isUrgentJob) {
       const jobPlanning = await prisma.jobPlanning.findFirst({
         where: { nrcJobNo: nrcJobNo },
         select: { jobDemand: true }
       });
       isUrgentJob = jobPlanning?.jobDemand === 'high';
     }
+    
+    console.log(`🔍 [StartWork] Job ${nrcJobNo}, Step ${stepNo}, Machine ${machineId}, isUrgentJob: ${isUrgentJob}, jobDemand: ${job?.jobDemand || 'N/A'}`);
 
     // For urgent jobs, skip machine access verification
     // For regular jobs, verify user has access to this machine
@@ -341,14 +343,59 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
     }
 
     // Update machine status to in_progress and assign to user
+    // For urgent jobs (excluding PaperStore), set startedByMachineId to make step exclusive to this machine
+    const updateData: any = {
+      status: 'in_progress',
+      userId: userId,
+      startedAt: new Date(),
+      formData: formData || null
+    };
+    
+    // For urgent jobs (excluding PaperStore), set startedByMachineId to make step exclusive
+    let jobStepUpdateData: any = {};
+    const stepNoInt = parseInt(stepNo);
+    if (isUrgentJob && stepNoInt !== 1) { // Step 1 is PaperStore
+      console.log(`🔍 [StartWork] Urgent job detected! Setting startedByMachineId=${machineId} for step ${stepNoInt} (${jobStep.stepName})`);
+      console.log(`🔍 [StartWork] JobStepMachine ID: ${jobStepMachine.id}, Current machineId: ${jobStepMachine.machineId}, Requested machineId: ${machineId}`);
+      updateData.startedByMachineId = machineId;
+      
+      // Get the machine details to update JobStep.machineDetails
+      const machine = await prisma.machine.findUnique({
+        where: { id: machineId },
+        select: {
+          id: true,
+          machineCode: true,
+          machineType: true,
+          unit: true,
+          description: true,
+          status: true,
+          capacity: true
+        }
+      });
+      
+      if (machine) {
+        // Update JobStep.machineDetails to only include this machine
+        const updatedMachineDetails = [{
+          id: machine.id,
+          machineId: machine.id,
+          machineCode: machine.machineCode,
+          machineType: machine.machineType,
+          unit: machine.unit,
+          machine: machine
+        }];
+        
+        jobStepUpdateData.machineDetails = updatedMachineDetails as any;
+        console.log(`🔍 [Urgent Job] Will update JobStep ${jobStep.id} machineDetails to only include machine ${machine.machineCode} (${machineId})`);
+      } else {
+        console.log(`🔍 [Urgent Job] ERROR: Machine ${machineId} not found!`);
+      }
+    } else {
+      console.log(`🔍 [StartWork] NOT setting startedByMachineId - isUrgentJob: ${isUrgentJob}, stepNo: ${stepNoInt}`);
+    }
+    
     const updatedJobStepMachine = await (prisma as any).jobStepMachine.update({
       where: { id: jobStepMachine.id },
-      data: {
-        status: 'in_progress',
-        userId: userId,
-        startedAt: new Date(),
-        formData: formData || null
-      },
+      data: updateData,
       include: {
         machine: true,
         user: {
@@ -357,15 +404,21 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
       }
     });
 
-    // Update the main job step status to started if not already
-    if (jobStep.status === 'planned') {
+    // Update the main job step status to started if not already, and machineDetails for urgent jobs
+    if (jobStep.status === 'planned' || Object.keys(jobStepUpdateData).length > 0) {
+      const finalJobStepUpdate: any = {};
+      if (jobStep.status === 'planned') {
+        finalJobStepUpdate.status = 'start';
+        finalJobStepUpdate.user = userId;
+        finalJobStepUpdate.startDate = new Date();
+      }
+      if (Object.keys(jobStepUpdateData).length > 0) {
+        Object.assign(finalJobStepUpdate, jobStepUpdateData);
+      }
+      
       await prisma.jobStep.update({
         where: { id: jobStep.id },
-        data: {
-          status: 'start',
-          user: userId,
-          startDate: new Date()
-        }
+        data: finalJobStepUpdate
       });
     }
 
@@ -1383,15 +1436,17 @@ export const holdWorkOnMachine = async (req: Request, res: Response) => {
 
     let isUrgentJob = job?.jobDemand === 'high';
     
-    // Fallback: If no Job record, check jobPlanning.jobDemand
-    // This only adds support for jobPlanning-only records without affecting existing jobs
-    if (!job) {
+    // Fallback: If no Job record OR jobDemand is not 'high', check jobPlanning.jobDemand
+    // This ensures we check JobPlanning.jobDemand as the source of truth
+    if (!job || !isUrgentJob) {
       const jobPlanning = await prisma.jobPlanning.findFirst({
         where: { nrcJobNo: nrcJobNo },
         select: { jobDemand: true }
       });
       isUrgentJob = jobPlanning?.jobDemand === 'high';
     }
+    
+    console.log(`🔍 [StartWork] Job ${nrcJobNo}, Step ${stepNo}, Machine ${machineId}, isUrgentJob: ${isUrgentJob}, jobDemand: ${job?.jobDemand || 'N/A'}`);
 
     // For urgent jobs, skip machine access verification
     // For regular jobs, verify user has access to this machine
@@ -1653,15 +1708,17 @@ export const resumeWorkOnMachine = async (req: Request, res: Response) => {
 
     let isUrgentJob = job?.jobDemand === 'high';
     
-    // Fallback: If no Job record, check jobPlanning.jobDemand
-    // This only adds support for jobPlanning-only records without affecting existing jobs
-    if (!job) {
+    // Fallback: If no Job record OR jobDemand is not 'high', check jobPlanning.jobDemand
+    // This ensures we check JobPlanning.jobDemand as the source of truth
+    if (!job || !isUrgentJob) {
       const jobPlanning = await prisma.jobPlanning.findFirst({
         where: { nrcJobNo: nrcJobNo },
         select: { jobDemand: true }
       });
       isUrgentJob = jobPlanning?.jobDemand === 'high';
     }
+    
+    console.log(`🔍 [StartWork] Job ${nrcJobNo}, Step ${stepNo}, Machine ${machineId}, isUrgentJob: ${isUrgentJob}, jobDemand: ${job?.jobDemand || 'N/A'}`);
 
     // For urgent jobs, skip machine access verification
     // For regular jobs, verify user has access to this machine
@@ -3683,21 +3740,58 @@ async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: strin
         break;
       case 7: // Quality Control
         console.log(`🔧 [QualityDept] Upserting with jobStepId: ${jobStepId}`);
+        
+        // Parse individual rejection reason quantities
+        const parseRejectionQty = (value: any): number => {
+          if (!value) return 0;
+          const parsed = parseInt(value.toString());
+          return isNaN(parsed) ? 0 : parsed;
+        };
+        
+        const rejectionReasonAQty = parseRejectionQty(formData.rejectionReasonAQty || formData['Rejection Reason A Qty']);
+        const rejectionReasonBQty = parseRejectionQty(formData.rejectionReasonBQty || formData['Rejection Reason B Qty']);
+        const rejectionReasonCQty = parseRejectionQty(formData.rejectionReasonCQty || formData['Rejection Reason C Qty']);
+        const rejectionReasonDQty = parseRejectionQty(formData.rejectionReasonDQty || formData['Rejection Reason D Qty']);
+        const rejectionReasonEQty = parseRejectionQty(formData.rejectionReasonEQty || formData['Rejection Reason E Qty']);
+        const rejectionReasonFQty = parseRejectionQty(formData.rejectionReasonFQty || formData['Rejection Reason F Qty']);
+        const rejectionReasonOthersQty = parseRejectionQty(formData.rejectionReasonOthersQty || formData['Rejection Reason Others Qty']);
+        
+        // Calculate total rejectedQty as sum of all reason quantities
+        const calculatedRejectedQty = rejectionReasonAQty + rejectionReasonBQty + rejectionReasonCQty + 
+                                       rejectionReasonDQty + rejectionReasonEQty + rejectionReasonFQty + rejectionReasonOthersQty;
+        
+        // Use calculated total, but fallback to manual entry if provided (for backward compatibility)
+        const rejectedQty = calculatedRejectedQty > 0 ? calculatedRejectedQty : (formData.rejectedQty || 0);
+        
         await prisma.qualityDept.upsert({
           where: { jobStepId: jobStepId },
           update: {
             quantity: formData.quantity,
-            rejectedQty: formData.rejectedQty,
+            rejectedQty: rejectedQty,
             remarks: formData.remarks,
-            status: formData.status || 'accept'
+            status: formData.status || 'accept',
+            rejectionReasonAQty: rejectionReasonAQty > 0 ? rejectionReasonAQty : null,
+            rejectionReasonBQty: rejectionReasonBQty > 0 ? rejectionReasonBQty : null,
+            rejectionReasonCQty: rejectionReasonCQty > 0 ? rejectionReasonCQty : null,
+            rejectionReasonDQty: rejectionReasonDQty > 0 ? rejectionReasonDQty : null,
+            rejectionReasonEQty: rejectionReasonEQty > 0 ? rejectionReasonEQty : null,
+            rejectionReasonFQty: rejectionReasonFQty > 0 ? rejectionReasonFQty : null,
+            rejectionReasonOthersQty: rejectionReasonOthersQty > 0 ? rejectionReasonOthersQty : null,
           },
           create: {
             jobNrcJobNo: nrcJobNo,
             jobStepId: jobStepId,
             quantity: formData.quantity,
-            rejectedQty: formData.rejectedQty,
+            rejectedQty: rejectedQty,
             remarks: formData.remarks,
-            status: formData.status || 'accept'
+            status: formData.status || 'accept',
+            rejectionReasonAQty: rejectionReasonAQty > 0 ? rejectionReasonAQty : null,
+            rejectionReasonBQty: rejectionReasonBQty > 0 ? rejectionReasonBQty : null,
+            rejectionReasonCQty: rejectionReasonCQty > 0 ? rejectionReasonCQty : null,
+            rejectionReasonDQty: rejectionReasonDQty > 0 ? rejectionReasonDQty : null,
+            rejectionReasonEQty: rejectionReasonEQty > 0 ? rejectionReasonEQty : null,
+            rejectionReasonFQty: rejectionReasonFQty > 0 ? rejectionReasonFQty : null,
+            rejectionReasonOthersQty: rejectionReasonOthersQty > 0 ? rejectionReasonOthersQty : null,
           }
         });
         console.log(`✅ [QualityDept] Record upserted successfully`);
