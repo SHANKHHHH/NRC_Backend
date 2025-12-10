@@ -567,7 +567,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
             return md;
           })
           .filter((md: any) => {
-            const machineId = md.id || md.machineId;
+              const machineId = md.id || md.machineId;
             
             // For urgent jobs (excluding PaperStore):
             if (isUrgentJob && step.stepNo !== 1) {
@@ -1120,7 +1120,7 @@ export const upsertStepByNrcJobNoAndStepNo = async (req: Request, res: Response)
   }
 
   // Handle form data fields for step completion - store in appropriate step-specific models
-  const formDataFields = ['quantity', 'oprName', 'size', 'passQuantity', 'checkedBy', 'noOfBoxes', 'dispatchNo', 'remarks', 'available', 'completeRemark', 'mill', 'gsm', 'quality', 'extraMargin', 'sheetSize'];
+  const formDataFields = ['quantity', 'oprName', 'size', 'passQuantity', 'checkedBy', 'noOfBoxes', 'dispatchNo', 'remarks', 'available', 'completeRemark', 'holdRemark', 'majorHoldRemark', 'mill', 'gsm', 'quality', 'extraMargin', 'sheetSize'];
   const hasFormData = formDataFields.some(field => req.body[field] !== undefined);
   
   // Call storeStepFormData if there's form data or status change
@@ -1813,12 +1813,101 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
   console.log(`🔍 [storeStepFormData] JobStep status: ${formData.status} → Step status: ${stepStatus}`);
   console.log(`🔍 [storeStepFormData] Step name: ${stepName}, Step name lower: ${stepNameLower}`);
   
+  // Helper function to extract remark fields from formData
+  // Only update fields if they're provided in formData, otherwise preserve existing values
+  const getRemarkFields = async (stepNameLower: string, jobStepId: number) => {
+    // Get existing remark values from database to preserve them if not provided in formData
+    let existingRemarks: any = {};
+    
+    try {
+      if (stepNameLower.includes('paperstore')) {
+        const existing = await prisma.paperStore.findUnique({ where: { jobStepId } });
+        if (existing) {
+          existingRemarks = {
+            remarks: existing.remarks,
+            completeRemark: existing.completeRemark,
+            holdRemark: existing.holdRemark,
+            majorHoldRemark: existing.majorHoldRemark,
+          };
+        }
+      } else if (stepNameLower.includes('printing')) {
+        const existing = await prisma.printingDetails.findUnique({ where: { jobStepId } });
+        if (existing) {
+          existingRemarks = {
+            remarks: existing.remarks,
+            completeRemark: existing.completeRemark,
+            holdRemark: existing.holdRemark,
+            majorHoldRemark: existing.majorHoldRemark,
+          };
+        }
+      } else if (stepNameLower.includes('corrugation')) {
+        const existing = await prisma.corrugation.findUnique({ where: { jobStepId } });
+        if (existing) {
+          existingRemarks = {
+            completeRemark: existing.completeRemark,
+            holdRemark: existing.holdRemark,
+            majorHoldRemark: existing.majorHoldRemark,
+          };
+        }
+      } else if (stepNameLower.includes('flute')) {
+        const existing = await prisma.fluteLaminateBoardConversion.findUnique({ where: { jobStepId } });
+        if (existing) {
+          existingRemarks = {
+            remarks: existing.remarks,
+            completeRemark: existing.completeRemark,
+            holdRemark: existing.holdRemark,
+            majorHoldRemark: existing.majorHoldRemark,
+          };
+        }
+      } else if (stepNameLower.includes('punching') || stepNameLower.includes('die cutting')) {
+        const existing = await prisma.punching.findUnique({ where: { jobStepId } });
+        if (existing) {
+          existingRemarks = {
+            completeRemark: existing.completeRemark,
+            holdRemark: existing.holdRemark,
+            majorHoldRemark: existing.majorHoldRemark,
+          };
+        }
+      } else if (stepNameLower.includes('flap')) {
+        const existing = await prisma.sideFlapPasting.findUnique({ where: { jobStepId } });
+        if (existing) {
+          existingRemarks = {
+            completeRemark: existing.completeRemark,
+            holdRemark: existing.holdRemark,
+            majorHoldRemark: existing.majorHoldRemark,
+          };
+        }
+      } else if (stepNameLower.includes('quality')) {
+        const existing = await prisma.qualityDept.findUnique({ where: { jobStepId } });
+        if (existing) {
+          existingRemarks = { remarks: existing.remarks };
+        }
+      } else if (stepNameLower.includes('dispatch')) {
+        const existing = await prisma.dispatchProcess.findUnique({ where: { jobStepId } });
+        if (existing) {
+          existingRemarks = { remarks: existing.remarks };
+        }
+      }
+    } catch (error) {
+      console.log(`⚠️ [getRemarkFields] Error fetching existing remarks: ${error}`);
+    }
+    
+    return {
+      remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || existingRemarks.remarks || null,
+      completeRemark: formData.completeRemark || formData['Complete Remark'] || formData['completeRemark'] || existingRemarks.completeRemark || null,
+      holdRemark: formData.holdRemark || formData['Hold Remark'] || formData['holdRemark'] || existingRemarks.holdRemark || null,
+      majorHoldRemark: formData.majorHoldRemark || formData['Major Hold Remark'] || formData['majorHoldRemark'] || existingRemarks.majorHoldRemark || null,
+    };
+  };
+  
+  // Get remark fields (preserves existing values if not provided in formData)
+  const remarkFields = await getRemarkFields(stepNameLower, jobStepId);
+  
   try {
     if (stepNameLower.includes('paperstore')) {
       // Use user input for quantity and available, fallback to null if not provided
       const quantity = formData.quantity ? parseInt(formData.quantity) || null : null;
       const available = formData.available ? parseInt(formData.available) || null : null;
-      
       await prisma.paperStore.upsert({
         where: { jobStepId },
         update: {
@@ -1831,7 +1920,10 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           quality: formData.quality,
           extraMargin: formData.extraMargin,
           issuedDate: formData.issuedDate ? new Date(formData.issuedDate) : undefined,
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          remarks: remarkFields.remarks,
+          completeRemark: remarkFields.completeRemark,
+          holdRemark: remarkFields.holdRemark,
+          majorHoldRemark: remarkFields.majorHoldRemark,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
         create: {
@@ -1846,7 +1938,10 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           quality: formData.quality,
           extraMargin: formData.extraMargin,
           issuedDate: formData.issuedDate ? new Date(formData.issuedDate) : new Date(),
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          remarks: remarkFields.remarks,
+          completeRemark: remarkFields.completeRemark,
+          holdRemark: remarkFields.holdRemark,
+          majorHoldRemark: remarkFields.majorHoldRemark,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
       });
@@ -1868,7 +1963,10 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           separateSheets: formData.separateSheets ? parseInt(formData.separateSheets) || null : null,
           extraSheets: formData.extraSheets ? parseInt(formData.extraSheets) || null : null,
           machine: machineCode, // Use JobStep machine instead of form data
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          remarks: remarkFields.remarks,
+          completeRemark: remarkFields.completeRemark,
+          holdRemark: remarkFields.holdRemark,
+          majorHoldRemark: remarkFields.majorHoldRemark,
         },
         create: {
           jobNrcJobNo: nrcJobNo,
@@ -1885,7 +1983,10 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           separateSheets: formData.separateSheets ? parseInt(formData.separateSheets) || null : null,
           extraSheets: formData.extraSheets ? parseInt(formData.extraSheets) || null : null,
           machine: machineCode, // Use JobStep machine instead of form data
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          remarks: remarkFields.remarks,
+          completeRemark: remarkFields.completeRemark,
+          holdRemark: remarkFields.holdRemark,
+          majorHoldRemark: remarkFields.majorHoldRemark,
         },
       });
     } else if (stepNameLower.includes('corrugation')) {
@@ -1904,7 +2005,9 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           gsm1: formData.gsm1 || formData['GSM1'],
           gsm2: formData.gsm2 || formData['GSM2'],
           flute: formData.flute || formData['Flute Type'],
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          completeRemark: remarkFields.completeRemark,
+          holdRemark: remarkFields.holdRemark,
+          majorHoldRemark: remarkFields.majorHoldRemark,
         },
         create: {
           jobNrcJobNo: nrcJobNo,
@@ -1919,7 +2022,9 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           gsm1: formData.gsm1 || formData['GSM1'],
           gsm2: formData.gsm2 || formData['GSM2'],
           flute: formData.flute || formData['Flute Type'],
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          completeRemark: remarkFields.completeRemark,
+          holdRemark: remarkFields.holdRemark,
+          majorHoldRemark: remarkFields.majorHoldRemark,
         },
       });
       } else if (stepNameLower.includes('flute')) {
@@ -1936,7 +2041,10 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
             film: formData.film || formData['Film Type'],
             adhesive: formData.adhesive || formData['Adhesive'],
             wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
-            remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+            remarks: remarkFields.remarks,
+            completeRemark: remarkFields.completeRemark,
+            holdRemark: remarkFields.holdRemark,
+            majorHoldRemark: remarkFields.majorHoldRemark,
             // QC fields are only updated by Flying Squad, not by regular operators
           },
           create: {
@@ -1950,7 +2058,10 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
             film: formData.film || formData['Film Type'],
             adhesive: formData.adhesive || formData['Adhesive'],
             wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
-            remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+            remarks: remarkFields.remarks,
+            completeRemark: remarkFields.completeRemark,
+            holdRemark: remarkFields.holdRemark,
+            majorHoldRemark: remarkFields.majorHoldRemark,
             // QC fields are only updated by Flying Squad, not by regular operators
           },
         });
@@ -1968,7 +2079,9 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           machine: machineCode, // Use JobStep machine instead of form data
           die: formData.die || formData['Die Used'],
           wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          completeRemark: remarkFields.completeRemark,
+          holdRemark: remarkFields.holdRemark,
+          majorHoldRemark: remarkFields.majorHoldRemark,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
         create: {
@@ -1982,7 +2095,9 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           machine: machineCode, // Use JobStep machine instead of form data
           die: formData.die || formData['Die Used'],
           wastage: (formData.wastage || formData['Wastage']) ? parseInt(formData.wastage || formData['Wastage']) || null : null,
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          completeRemark: remarkFields.completeRemark,
+          holdRemark: remarkFields.holdRemark,
+          majorHoldRemark: remarkFields.majorHoldRemark,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
       });
@@ -2003,7 +2118,9 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           adhesive: formData.adhesive || null,
           wastage: formData.Wastage ? parseInt(formData.Wastage) || null : 
                   formData.wastage ? parseInt(formData.wastage) || null : null,
-          remarks: formData.Remarks || formData.remarks || formData['Complete Remark'] || null,
+          completeRemark: remarkFields.completeRemark,
+          holdRemark: remarkFields.holdRemark,
+          majorHoldRemark: remarkFields.majorHoldRemark,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
         create: {
@@ -2018,7 +2135,9 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           adhesive: formData.adhesive || null,
           wastage: formData.Wastage ? parseInt(formData.Wastage) || null : 
                   formData.wastage ? parseInt(formData.wastage) || null : null,
-          remarks: formData.Remarks || formData.remarks || formData['Complete Remark'] || null,
+          completeRemark: remarkFields.completeRemark,
+          holdRemark: remarkFields.holdRemark,
+          majorHoldRemark: remarkFields.majorHoldRemark,
           // QC fields are only updated by Flying Squad, not by regular operators
         },
       });
@@ -2049,7 +2168,6 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
       // Use calculated total, but fallback to manual entry if provided (for backward compatibility)
       const rejectedQty = calculatedRejectedQty > 0 ? calculatedRejectedQty : 
                          ((formData.rejectedQty || formData['Reject Quantity']) ? parseInt(formData.rejectedQty || formData['Reject Quantity']) || null : null);
-      
       await prisma.qualityDept.upsert({
         where: { jobStepId },
         update: {
@@ -2061,7 +2179,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           operatorName: operatorName, // Use JobStep user instead of form data
           rejectedQty: rejectedQty,
           reasonForRejection: formData.reasonForRejection || formData['Reason for Rejection'] || null,
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          remarks: remarkFields.remarks,
           rejectionReasonAQty: rejectionReasonAQty > 0 ? rejectionReasonAQty : null,
           rejectionReasonBQty: rejectionReasonBQty > 0 ? rejectionReasonBQty : null,
           rejectionReasonCQty: rejectionReasonCQty > 0 ? rejectionReasonCQty : null,
@@ -2082,7 +2200,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           operatorName: operatorName, // Use JobStep user instead of form data
           rejectedQty: rejectedQty,
           reasonForRejection: formData.reasonForRejection || formData['Reason for Rejection'] || null,
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          remarks: remarkFields.remarks,
           rejectionReasonAQty: rejectionReasonAQty > 0 ? rejectionReasonAQty : null,
           rejectionReasonBQty: rejectionReasonBQty > 0 ? rejectionReasonBQty : null,
           rejectionReasonCQty: rejectionReasonCQty > 0 ? rejectionReasonCQty : null,
@@ -2240,15 +2358,15 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           : 0;
         
         // Get purchaseOrderId if not already set
-        if (!purchaseOrderId) {
-          const job = await prisma.job.findUnique({
-            where: { nrcJobNo },
-            include: { purchaseOrders: true }
-          });
-          const firstPO = job?.purchaseOrders?.[0];
-          purchaseOrderId = firstPO?.id || null;
-        }
-        
+          if (!purchaseOrderId) {
+            const job = await prisma.job.findUnique({
+              where: { nrcJobNo },
+              include: { purchaseOrders: true }
+            });
+            const firstPO = job?.purchaseOrders?.[0];
+            purchaseOrderId = firstPO?.id || null;
+          }
+          
         // Consume finished goods if dispatch exceeds QC quantity
         // Example: PO=1000, QC=600, Dispatch=1000 → 600 from QC, 400 from finished goods
         if (finishedGoodsUsed > 0) {
@@ -2386,18 +2504,18 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
             console.log(`✅ [storeStepFormData] Updated FinishQuantity: Added excess ${excessQuantity} units (Total: ${existingFinishQty.overDispatchedQuantity + excessQuantity}) for job ${nrcJobNo}`);
           } else {
             // Create new FinishQuantity record for excess quantity
-            await prisma.finishQuantity.create({
-              data: {
-                jobNrcJobNo: nrcJobNo,
-                purchaseOrderId: purchaseOrderId,
-                overDispatchedQuantity: excessQuantity,
-                totalPOQuantity: jobQuantity,
-                totalDispatchedQuantity: newTotal,
-                status: 'available',
-                remarks: `Excess quantity from dispatch. User tried to dispatch ${quantity}, but PO quantity is ${jobQuantity}. ${actualDispatchQty} dispatched, ${excessQuantity} added to finish quantity.`
-              }
-            });
-            console.log(`✅ [storeStepFormData] Created FinishQuantity: ${excessQuantity} units for job ${nrcJobNo}`);
+          await prisma.finishQuantity.create({
+            data: {
+              jobNrcJobNo: nrcJobNo,
+              purchaseOrderId: purchaseOrderId,
+              overDispatchedQuantity: excessQuantity,
+              totalPOQuantity: jobQuantity,
+              totalDispatchedQuantity: newTotal,
+              status: 'available',
+              remarks: `Excess quantity from dispatch. User tried to dispatch ${quantity}, but PO quantity is ${jobQuantity}. ${actualDispatchQty} dispatched, ${excessQuantity} added to finish quantity.`
+            }
+          });
+          console.log(`✅ [storeStepFormData] Created FinishQuantity: ${excessQuantity} units for job ${nrcJobNo}`);
           }
         }
         
@@ -2429,6 +2547,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
       const finishedGoodsQtyFromJobPlanning = jobStep?.jobPlanning?.finishedGoodsQty || 0;
       const finishedGoodsQtyFromForm = (formData.finishedGoodsQty || formData['Finished Goods Qty']) ? parseInt(formData.finishedGoodsQty || formData['Finished Goods Qty']) || 0 : finishedGoodsQtyFromJobPlanning;
       
+      const remarkFields = await getRemarkFields(stepNameLower, jobStepId);
       await prisma.dispatchProcess.upsert({
         where: { jobStepId },
         update: {
@@ -2441,7 +2560,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           dispatchDate: (formData.dispatchDate || formData['Dispatch Date']) ? new Date(formData.dispatchDate || formData['Dispatch Date']) : undefined,
           balanceQty: (formData.balanceQty || formData['Balance Qty']) ? parseInt(formData.balanceQty || formData['Balance Qty']) || null : null,
           finishedGoodsQty: finishedGoodsQtyFromForm,
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          remarks: remarkFields.remarks,
           totalDispatchedQty: totalDispatchedQty,
           dispatchHistory: dispatchHistory,
         },
@@ -2457,7 +2576,7 @@ async function storeStepFormData(stepName: string, nrcJobNo: string, jobStepId: 
           dispatchDate: (formData.dispatchDate || formData['Dispatch Date']) ? new Date(formData.dispatchDate || formData['Dispatch Date']) : new Date(),
           balanceQty: (formData.balanceQty || formData['Balance Qty']) ? parseInt(formData.balanceQty || formData['Balance Qty']) || null : null,
           finishedGoodsQty: finishedGoodsQtyFromForm,
-          remarks: formData.remarks || formData['Remarks'] || formData['Complete Remark'] || null,
+          remarks: remarkFields.remarks,
           totalDispatchedQty: totalDispatchedQty,
           dispatchHistory: dispatchHistory,
         },

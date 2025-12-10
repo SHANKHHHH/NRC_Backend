@@ -260,6 +260,17 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     })
   ]);
 
+  // ✅ Get completed jobs for this user (jobs completed by this user)
+  const completedJobs = await prisma.completedJob.findMany({
+    where: {
+      completedBy: userId
+    },
+    orderBy: {
+      completedAt: 'desc'
+    },
+    take: 1000
+  });
+
   // ✅ Get completed non-machine JobSteps (PaperStore, Quality, Dispatch) for this user
   // These steps don't have JobStepMachine records, so we need to query JobStep directly
   // Filter by step names that are non-machine steps
@@ -380,6 +391,42 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     };
   });
 
+  // ✅ Convert completed jobs to activity log format
+  const completedJobActivityLogs = completedJobs.map((completedJob: any) => {
+    const nrcJobNo = completedJob.nrcJobNo || '';
+    const jobPlanId = completedJob.jobPlanId || null;
+    const completedAt = completedJob.completedAt || completedJob.createdAt || new Date();
+    const completedBy = completedJob.completedBy || userId;
+
+    // Create a synthetic activity log entry for job completion
+    return {
+      id: `completed_job_${completedJob.id}`,
+      userId: completedBy,
+      action: 'Job Completed',
+      details: JSON.stringify({
+        message: `Job ${nrcJobNo} completed`,
+        nrcJobNo: nrcJobNo,
+        jobPlanId: jobPlanId,
+        completedBy: completedBy,
+        completedAt: completedAt,
+        finalStatus: completedJob.finalStatus || 'completed',
+        totalDuration: completedJob.totalDuration
+      }),
+      nrcJobNo: nrcJobNo,
+      jobPlanId: jobPlanId,
+      completedAt: completedAt, // Add completedAt at root level for frontend filtering
+      createdAt: completedAt, // Use completedAt so it shows in the activity on the day it was completed
+      updatedAt: completedJob.updatedAt || completedAt,
+      user: {
+        id: completedBy,
+        name: completedBy,
+        email: null,
+        role: null
+      },
+      _isCompletedJobLog: true
+    };
+  });
+
   // ✅ Convert completed non-machine JobSteps to activity log format
   const completedNonMachineActivityLogs = completedNonMachineSteps.map((step: any) => {
     const nrcJobNo = step.jobPlanning?.nrcJobNo || '';
@@ -449,9 +496,9 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     };
   });
 
-  // Combine all machine logs and non-machine step logs
+  // Combine all machine logs, non-machine step logs, and completed job logs
   const machineActivityLogs = [...startedActivityLogs, ...completedActivityLogs];
-  const allStepActivityLogs = [...machineActivityLogs, ...completedNonMachineActivityLogs];
+  const allStepActivityLogs = [...machineActivityLogs, ...completedNonMachineActivityLogs, ...completedJobActivityLogs];
 
   // Combine and deduplicate - prefer activity logs over machine logs for same step
   const logMap = new Map();

@@ -263,20 +263,20 @@ export const getQualityDeptByNrcJobNo = async (req: Request, res: Response) => {
   // 1. Not started by anyone (startedBy is null) - available to all QC executives
   // 2. Started by the current user (startedBy === userId) - only visible to that user
   const whereClause: any = {
-    jobNrcJobNo: decodedNrcJobNo,
+      jobNrcJobNo: decodedNrcJobNo,
     OR: [
       { startedBy: null },           // Not started - available to all
       { startedBy: userId }           // Started by current user
     ],
-    ...(jobPlanIdNumber !== undefined && !Number.isNaN(jobPlanIdNumber)
-      ? {
-          jobStep: {
-            is: {
-              jobPlanningId: jobPlanIdNumber,
+      ...(jobPlanIdNumber !== undefined && !Number.isNaN(jobPlanIdNumber)
+        ? {
+            jobStep: {
+              is: {
+                jobPlanningId: jobPlanIdNumber,
+              },
             },
-          },
-        }
-      : {}),
+          }
+        : {}),
   };
 
   const qualityDepts = await prisma.qualityDept.findMany({
