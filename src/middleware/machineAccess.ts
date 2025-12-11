@@ -219,10 +219,19 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
 
     console.log('🔍 [MACHINE FILTERING DEBUG] Parsed role:', parsedRole);
 
-    // Admins, Planners, Flying Squad members, and QC Managers bypass machine restrictions
+    // Admins, Planners, Flying Squad members, QC Managers, QC Head, Production Head, Dispatch Manager, and Printing Manager bypass machine restrictions
     const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
-    if (userRole && (RoleManager.isAdmin(roleString) || RoleManager.isPlanner(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.hasRole(roleString, 'qc_manager'))) {
-      console.log('🔍 [MACHINE FILTERING DEBUG] Admin/Planner/Flying Squad/QC Manager - bypassing machine restrictions');
+    if (userRole && (
+      RoleManager.isAdmin(roleString) || 
+      RoleManager.isPlanner(roleString) || 
+      RoleManager.isFlyingSquad(roleString) || 
+      RoleManager.hasRole(roleString, 'qc_manager') ||
+      RoleManager.hasRole(roleString, 'qc_head') ||
+      RoleManager.hasRole(roleString, 'production_head') ||
+      RoleManager.hasRole(roleString, 'dispatch_manager') ||
+      RoleManager.hasRole(roleString, 'printing_manager')
+    )) {
+      console.log('🔍 [MACHINE FILTERING DEBUG] Admin/Planner/Flying Squad/QC Manager/QC Head/Production Head/Dispatch Manager/Printing Manager - bypassing machine restrictions');
       req.userMachineIds = null; // Indicate no filtering needed
       req.userRole = userRole; // Pass user role for high demand filtering
       return next();

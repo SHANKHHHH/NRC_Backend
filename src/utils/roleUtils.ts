@@ -1,9 +1,27 @@
 // Define role types directly since we removed the UserRole enum
-type UserRole = 'admin' | 'planner' | 'production_head' | 'dispatch_executive' | 'qc_manager' | 'printer' | 'corrugator' | 'flutelaminator' | 'pasting_operator' | 'punching_operator'|'paperstore'|'flyingsquad';
+type UserRole =
+  | "admin"
+  | "planner"
+  | "production_head"
+  | "dispatch_executive"
+  | "dispatch_manager"
+  | "qc_manager"
+  | "qc_head"
+  | "printer"
+  | "printing_manager"
+  | "corrugator"
+  | "flutelaminator"
+  | "pasting_operator"
+  | "punching_operator"
+  | "paperstore"
+  | "flyingsquad";
 
 // Role utility functions for handling multiple roles stored as JSON strings
 export class RoleManager {
-  private static SINGLE_ROLE_AS_PLAIN: Set<UserRole> = new Set(['admin', 'planner']);
+  private static SINGLE_ROLE_AS_PLAIN: Set<UserRole> = new Set([
+    "admin",
+    "planner",
+  ]);
 
   private static serializeRolesArrayInternal(roles: UserRole[]): string {
     if (roles.length === 1 && this.SINGLE_ROLE_AS_PLAIN.has(roles[0])) {
@@ -35,7 +53,7 @@ export class RoleManager {
     try {
       const roles = JSON.parse(userRole);
       if (Array.isArray(roles)) {
-        return requiredRoles.some(role => roles.includes(role));
+        return requiredRoles.some((role) => roles.includes(role));
       }
     } catch {
       // Fallback for existing single roles
@@ -51,7 +69,7 @@ export class RoleManager {
     try {
       const roles = JSON.parse(userRole);
       if (Array.isArray(roles)) {
-        return requiredRoles.every(role => roles.includes(role));
+        return requiredRoles.every((role) => roles.includes(role));
       }
     } catch {
       // Fallback for existing single roles
@@ -88,9 +106,11 @@ export class RoleManager {
    * Remove a role from a user
    */
   static removeRole(userRole: string, roleToRemove: UserRole): string {
-    const roles = this.getUserRoles(userRole).filter(role => role !== roleToRemove);
+    const roles = this.getUserRoles(userRole).filter(
+      (role) => role !== roleToRemove
+    );
     if (roles.length === 0) {
-      return JSON.stringify(['user']);
+      return JSON.stringify(["user"]);
     }
     return this.serializeRolesArrayInternal(roles);
   }
@@ -106,90 +126,113 @@ export class RoleManager {
    * Check if user has admin privileges
    */
   static isAdmin(userRole: string): boolean {
-    return this.hasRole(userRole, 'admin');
+    return this.hasRole(userRole, "admin");
   }
 
   /**
    * Check if user has planner privileges
    */
   static isPlanner(userRole: string): boolean {
-    return this.hasRole(userRole, 'planner');
+    return this.hasRole(userRole, "planner");
   }
 
   /**
    * Check if user has production head privileges
    */
   static isProductionHead(userRole: string): boolean {
-    return this.hasRole(userRole, 'production_head');
+    return this.hasRole(userRole, "production_head");
   }
 
   /**
    * Check if user can perform admin actions
    */
   static canPerformAdminAction(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ['admin']);
+    return this.hasAnyRole(userRole, ["admin"]);
   }
 
   /**
    * Check if user can perform planner actions
    */
   static canPerformPlannerAction(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ['admin', 'planner']);
+    return this.hasAnyRole(userRole, ["admin", "planner"]);
   }
 
   /**
    * Check if user can perform production actions
    */
   static canPerformProductionAction(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ['admin', 'planner', 'production_head']);
+    return this.hasAnyRole(userRole, ["admin", "planner", "production_head"]);
   }
 
   /**
    * Check if user is flying squad member
    */
   static isFlyingSquad(userRole: string): boolean {
-    return this.hasRole(userRole, 'flyingsquad');
+    return this.hasRole(userRole, "flyingsquad");
   }
 
   /**
    * Check if user can perform QC check actions (flying squad, admin, or qc_manager)
    */
   static canPerformQCCheck(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ['admin', 'flyingsquad', 'qc_manager']);
+    return this.hasAnyRole(userRole, ["admin", "flyingsquad", "qc_manager"]);
   }
 
   /**
    * Check if user can access all job steps (flying squad, admin, planner)
    */
   static canAccessAllJobSteps(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ['admin', 'planner', 'flyingsquad']);
+    return this.hasAnyRole(userRole, ["admin", "planner", "flyingsquad"]);
   }
 
   /**
    * Check if user can update step status (not flying squad)
    */
   static canUpdateStepStatus(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ['admin', 'planner', 'production_head', 'printer', 'corrugator', 'flutelaminator', 'pasting_operator', 'punching_operator', 'paperstore', 'dispatch_executive']);
+    return this.hasAnyRole(userRole, [
+      "admin",
+      "planner",
+      "production_head",
+      "printer",
+      "corrugator",
+      "flutelaminator",
+      "pasting_operator",
+      "punching_operator",
+      "paperstore",
+      "dispatch_executive",
+    ]);
   }
 
   /**
    * Check if user can update machine details (not flying squad)
    */
   static canUpdateMachineDetails(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ['admin', 'planner', 'production_head']);
+    return this.hasAnyRole(userRole, ["admin", "planner", "production_head"]);
   }
 
   /**
    * Check if user can update step timing (not flying squad)
    */
   static canUpdateStepTiming(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ['admin', 'planner', 'production_head', 'printer', 'corrugator', 'flutelaminator', 'pasting_operator', 'punching_operator', 'paperstore', 'qc_manager', 'dispatch_executive']);
+    return this.hasAnyRole(userRole, [
+      "admin",
+      "planner",
+      "production_head",
+      "printer",
+      "corrugator",
+      "flutelaminator",
+      "pasting_operator",
+      "punching_operator",
+      "paperstore",
+      "qc_manager",
+      "dispatch_executive",
+    ]);
   }
 
   /**
    * Check if user can only perform QC operations (flying squad)
    */
   static canOnlyPerformQC(userRole: string): boolean {
-    return this.hasRole(userRole, 'flyingsquad');
+    return this.hasRole(userRole, "flyingsquad");
   }
 }
