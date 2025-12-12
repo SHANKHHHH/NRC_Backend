@@ -78,7 +78,7 @@ export const corsMiddleware = (req: Request, res: Response, next: NextFunction) 
   }
   
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Cache-Control, Pragma, Expires');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   
   // Handle preflight requests
