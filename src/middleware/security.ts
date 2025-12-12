@@ -38,18 +38,22 @@ export const corsMiddleware = (req: Request, res: Response, next: NextFunction) 
     'https://nrc-frontend-y5wf.vercel.app',
     'https://nrc-frontend-y5wf.vercel.app/dashboard',
     'https://nrc-shankh-62gr.vercel.app',
-    'https://nrc-shankh-62gr.vercel.app/planner-dashboard'
+    'https://nrc-shankh-62gr.vercel.app/planner-dashboard',
+    'https://nrprod.nrcontainers.com', // Production frontend URL
+    'http://nrprod.nrcontainers.com' // Production frontend URL (HTTP fallback)
   ];
   const origin = req.headers.origin;
   
   // Debug logging
   const isLocalhost = origin && origin.startsWith('http://localhost:');
-  const isAllowed = isLocalhost || (origin && allowedOrigins.includes(origin));
+  const isNrcontainers = origin && (origin.includes('nrcontainers.com') || origin.includes('nrcontainers'));
+  const isAllowed = isLocalhost || isNrcontainers || (origin && allowedOrigins.includes(origin));
   
   console.log('CORS Debug:', {
     method: req.method,
     origin,
     isLocalhost,
+    isNrcontainers,
     allowedOrigins,
     isAllowed,
     url: req.url,
@@ -59,8 +63,18 @@ export const corsMiddleware = (req: Request, res: Response, next: NextFunction) 
   // Allow all localhost ports for development (Flutter web uses dynamic ports)
   if (origin && origin.startsWith('http://localhost:')) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-  } else if (origin && allowedOrigins.includes(origin)) {
+  } 
+  // Allow all nrcontainers.com subdomains (production)
+  else if (origin && isNrcontainers) {
     res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  // Allow specific origins from the list
+  else if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  // If no origin header (e.g., Postman, curl), allow the request (for API testing)
+  else if (!origin) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
   }
   
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
