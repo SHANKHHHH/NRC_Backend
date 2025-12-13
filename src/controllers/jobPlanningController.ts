@@ -1434,6 +1434,7 @@ export const upsertStepByNrcJobNoAndStepNo = async (
 
     // ✅ PROTECTION: For machine-based steps, prevent status updates via this endpoint
     // Machine-based steps should only have status updated via completeWorkOnMachine API
+    // Admin and Planner users can bypass this protection
     const machineBasedSteps = [
       "PrintingDetails",
       "Corrugation",
@@ -1443,7 +1444,25 @@ export const upsertStepByNrcJobNoAndStepNo = async (
     ];
     const isMachineStep = machineBasedSteps.includes(step.stepName);
 
-    if (isMachineStep && status === "stop") {
+    // Parse role to check if user is admin/planner
+    let parsedRole: string | string[] = userRole || "";
+    if (typeof userRole === "string") {
+      try {
+        const roles = JSON.parse(userRole);
+        if (Array.isArray(roles)) {
+          parsedRole = roles;
+        }
+      } catch {
+        // Not JSON, use as is
+      }
+    }
+    const roleString = Array.isArray(parsedRole)
+      ? parsedRole.join(",")
+      : parsedRole;
+    const isAdminOrPlanner =
+      RoleManager.isAdmin(roleString) || RoleManager.isPlanner(roleString);
+
+    if (isMachineStep && status === "stop" && !isAdminOrPlanner) {
       console.log(
         `⚠️ [upsertStepByNrcJobNoAndStepNo] Ignoring status='stop' for machine-based step ${step.stepName}`
       );
