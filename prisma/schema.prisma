@@ -300,30 +300,31 @@ model ProductionPlanning {
 }
 
 model PrintingDetails {
-  id                  Int                  @id @default(autoincrement())
-  jobNrcJobNo         String
-  status              StepStatus           @default(in_progress)
-  date                DateTime?
-  shift               String?
-  oprName             String?
-  noOfColours         Int?
-  inksUsed            String?
-  quantity            Int?
-  wastage             Int?
-  coatingType         String?
-  separateSheets      Int?
-  extraSheets         Int?
-  machine             String?
-  qcCheckSignBy       String?
-  qcCheckAt           DateTime?
-  jobStepId           Int?                 @unique
-  job                 Job                  @relation("JobToPrintingDetails", fields: [jobNrcJobNo], references: [nrcJobNo])
-  jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPrintingDetails")
-  holdRemark          String?
-  majorHoldRemark     String?
-  completeRemark      String?
-  remarks             String?
+  id                      Int                  @id @default(autoincrement())
+  jobNrcJobNo             String
+  status                  StepStatus           @default(in_progress)
+  date                    DateTime?
+  shift                   String?
+  oprName                 String?
+  noOfColours             Int?
+  inksUsed                String?
+  quantity                Int?
+  wastage                 Int?
+  coatingType             String?
+  separateSheets           Int?
+  extraSheets             Int?
+  machine                 String?
+  qcCheckSignBy           String?
+  qcCheckAt               DateTime?
+  jobStepId               Int?                 @unique
+  productionHeadContinued Boolean               @default(false) // Tracks if Production Head has continued Corrugation after Printing
+  job                     Job                  @relation("JobToPrintingDetails", fields: [jobNrcJobNo], references: [nrcJobNo])
+  jobStep                 JobStep?             @relation(fields: [jobStepId], references: [id])
+  productionPlannings     ProductionPlanning[] @relation("ProductionPlanningToPrintingDetails")
+  holdRemark              String?
+  majorHoldRemark         String?
+  completeRemark          String?
+  remarks                 String?
 }
 
 model Corrugation {
@@ -493,29 +494,28 @@ model JobPlanning {
 }
 
 model JobStep {
-  id                      Int                           @id @default(autoincrement())
-  stepNo                  Int
-  stepName                String
-  machineDetails          Json[]
-  jobPlanningId           Int
-  createdAt               DateTime                      @default(now())
-  updatedAt               DateTime                      @updatedAt
-  status                  JobStepStatus                 @default(planned)
-  user                    String?
-  completedBy             String?
-  startDate               DateTime?
-  endDate                 DateTime?
-  productionHeadContinued Boolean                       @default(false) // Tracks if Production Head has continued this step
-  corrugation             Corrugation?
-  dispatchProcess         DispatchProcess?
-  flutelam                FluteLaminateBoardConversion?
-  jobPlanning             JobPlanning                   @relation(fields: [jobPlanningId], references: [jobPlanId])
-  paperStore              PaperStore?
-  printingDetails         PrintingDetails?
-  punching                Punching?
-  qualityDept             QualityDept?
-  sideFlapPasting         SideFlapPasting?
-  jobStepMachines         JobStepMachine[]              @relation("JobStepMachines")
+  id              Int                           @id @default(autoincrement())
+  stepNo          Int
+  stepName        String
+  machineDetails  Json[]
+  jobPlanningId   Int
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+  status          JobStepStatus                 @default(planned)
+  user            String?
+  completedBy     String?
+  startDate       DateTime?
+  endDate         DateTime?
+  corrugation     Corrugation?
+  dispatchProcess DispatchProcess?
+  flutelam        FluteLaminateBoardConversion?
+  jobPlanning     JobPlanning                   @relation(fields: [jobPlanningId], references: [jobPlanId])
+  paperStore      PaperStore?
+  printingDetails PrintingDetails?
+  punching        Punching?
+  qualityDept     QualityDept?
+  sideFlapPasting SideFlapPasting?
+  jobStepMachines JobStepMachine[]              @relation("JobStepMachines")
 }
 
 model JobStepMachine {

@@ -3574,14 +3574,15 @@ export const continueStepByProductionHead = async (req: Request, res: Response) 
   // URL decode the nrcJobNo parameter
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   
-  // Find the job step
-  const jobStep = await prisma.jobStep.findFirst({
+  // Find the Printing step (stepNo = 2) to get its PrintingDetails
+  const printingStep = await prisma.jobStep.findFirst({
     where: {
       jobPlanning: {
         nrcJobNo: decodedNrcJobNo,
         ...(jobPlanId ? { jobPlanId: Number(jobPlanId) } : {})
       },
-      stepNo: Number(stepNo)
+      stepNo: 2, // Printing step
+      stepName: 'PrintingDetails'
     },
     include: {
       jobPlanning: {
@@ -3589,24 +3590,28 @@ export const continueStepByProductionHead = async (req: Request, res: Response) 
           jobPlanId: true,
           nrcJobNo: true
         }
-      }
+      },
+      printingDetails: true
     }
   });
   
-  if (!jobStep) {
-    throw new AppError('Job step not found', 404);
+  if (!printingStep) {
+    throw new AppError('Printing step not found', 404);
   }
   
-  // Update the step to mark it as continued by Production Head
-  const updatedStep = await prisma.jobStep.update({
-    where: { id: jobStep.id },
+  if (!printingStep.printingDetails) {
+    throw new AppError('PrintingDetails record not found for this job', 404);
+  }
+  
+  // Update PrintingDetails to mark it as continued by Production Head
+  const updatedPrintingDetails = await prisma.printingDetails.update({
+    where: { id: printingStep.printingDetails.id },
     data: {
       productionHeadContinued: true
-    },
+    } as any,
     select: {
       id: true,
-      stepNo: true,
-      stepName: true,
+      jobNrcJobNo: true,
       productionHeadContinued: true,
       status: true
     }
@@ -3619,15 +3624,15 @@ export const continueStepByProductionHead = async (req: Request, res: Response) 
         userId,
         ActionTypes.JOBSTEP_UPDATED,
         JSON.stringify({
-          message: `Production Head continued step ${stepNo} (${jobStep.stepName})`,
+          message: `Production Head continued step ${stepNo} (Corrugation) after Printing`,
           nrcJobNo: decodedNrcJobNo,
-          jobPlanId: jobStep.jobPlanning.jobPlanId,
+          jobPlanId: printingStep.jobPlanning.jobPlanId,
           stepNo: stepNo,
-          stepName: jobStep.stepName,
+          stepName: 'Corrugation',
           continuedBy: userId
         }),
-        'JobStep',
-        jobStep.id.toString()
+        'PrintingDetails',
+        printingStep.printingDetails.id.toString()
       );
     } catch (error) {
       console.error('Failed to log activity:', error);
@@ -3635,11 +3640,16 @@ export const continueStepByProductionHead = async (req: Request, res: Response) 
     }
   }
   
-  console.log(`✅ Production Head (${userId}) continued step ${stepNo} (${jobStep.stepName}) for job ${decodedNrcJobNo}`);
+  console.log(`✅ Production Head (${userId}) continued step ${stepNo} (Corrugation) for job ${decodedNrcJobNo}`);
   
   res.status(200).json({
     success: true,
-    message: `Step ${stepNo} (${jobStep.stepName}) continued successfully`,
-    data: updatedStep
+    message: `Step ${stepNo} (Corrugation) continued successfully`,
+    data: {
+      printingDetailsId: updatedPrintingDetails.id,
+      jobNrcJobNo: updatedPrintingDetails.jobNrcJobNo,
+      productionHeadContinued: updatedPrintingDetails.productionHeadContinued,
+      status: updatedPrintingDetails.status
+    }
   });
 };

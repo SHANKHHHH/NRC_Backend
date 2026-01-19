@@ -718,7 +718,11 @@ export const getFilteredJobNumbers = async (
             stepNo: true, 
             stepName: true, 
             status: true,
-            productionHeadContinued: true,
+            printingDetails: {
+              select: {
+                productionHeadContinued: true
+              }
+            },
             paperStore: {
               select: { status: true }
             }
@@ -799,7 +803,9 @@ export const getFilteredJobNumbers = async (
           
           if (printingReady) {
             // If Printing is ready, Corrugation must be continued by Production Head
-            if (!step.productionHeadContinued) {
+            // Check productionHeadContinued from PrintingDetails (not JobStep)
+            const productionHeadContinued = printingStep.printingDetails?.productionHeadContinued ?? false;
+            if (!productionHeadContinued) {
               console.log(`🔍 [MachineAccess] Corrugation step for job ${p.nrcJobNo} is waiting for Production Head continuation`);
               return false; // Hide from app until Production Head continues
             }
@@ -847,7 +853,17 @@ export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null
         nrcJobNo: true, 
         jobDemand: true,
         steps: { 
-          select: { machineDetails: true, stepNo: true, stepName: true, status: true, productionHeadContinued: true },
+          select: { 
+            machineDetails: true, 
+            stepNo: true, 
+            stepName: true, 
+            status: true,
+            printingDetails: {
+              select: {
+                productionHeadContinued: true
+              }
+            }
+          },
           orderBy: { stepNo: 'asc' }
         } 
       }

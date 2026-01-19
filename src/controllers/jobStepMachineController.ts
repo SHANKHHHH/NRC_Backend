@@ -412,28 +412,26 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
       });
     }
     
-    // 🎯 NEW: If Printing (step 2) is started, mark Corrugation (step 3) as waiting for Production Head
+    // 🎯 NEW: If Printing (step 2) is started, mark PrintingDetails as waiting for Production Head
     // NOTE: stepNoInt is already declared above in this function; reuse it to avoid redeclaration.
     // This is for the website dashboard (not the app)
     if (stepNoInt === 2 && jobStep.stepName === 'PrintingDetails') {
       try {
-        const corrugationStep = await prisma.jobStep.findFirst({
+        const printingDetails = await prisma.printingDetails.findFirst({
           where: {
-            jobPlanningId: jobStep.jobPlanningId,
-            stepNo: 3,
-            stepName: 'Corrugation'
+            jobStepId: jobStep.id
           }
-        }) as any; // productionHeadContinued exists in schema
+        });
         
-          if (corrugationStep && corrugationStep.productionHeadContinued === false) {
-          await prisma.jobStep.update({
-            where: { id: corrugationStep.id },
-            data: { productionHeadContinued: false } as any // Ensure it's marked as waiting
+        if (printingDetails) {
+          await prisma.printingDetails.update({
+            where: { id: printingDetails.id },
+            data: { productionHeadContinued: false } as any // Mark as waiting for Production Head
           });
-          console.log(`🎯 Marked Corrugation step (${corrugationStep.id}) as waiting for Production Head continuation (Printing started)`);
+          console.log(`🎯 Marked PrintingDetails (${printingDetails.id}) as waiting for Production Head continuation (Printing started)`);
         }
       } catch (error) {
-        console.error(`❌ Error marking Corrugation for Production Head:`, error);
+        console.error(`❌ Error marking PrintingDetails for Production Head:`, error);
         // Don't throw - this is not critical
       }
     }
@@ -686,27 +684,25 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
       console.log(`   - Total OK: ${completionCheck.totalOK}`);
       console.log(`   - Total Wastage: ${completionCheck.totalWastage}`);
       
-      // 🎯 NEW: If Printing (step 2) is completed, mark Corrugation (step 3) as waiting for Production Head
+      // 🎯 NEW: If Printing (step 2) is completed, mark PrintingDetails as waiting for Production Head
       // This is for the website dashboard (not the app)
       if (stepNoInt === 2 && jobStep.stepName === 'PrintingDetails') {
         try {
-          const corrugationStep = await prisma.jobStep.findFirst({
+          const printingDetails = await prisma.printingDetails.findFirst({
             where: {
-              jobPlanningId: jobStep.jobPlanningId,
-              stepNo: 3,
-              stepName: 'Corrugation'
+              jobStepId: jobStep.id
             }
-          }) as any; // productionHeadContinued exists in schema
+          });
           
-          if (corrugationStep) {
-            await prisma.jobStep.update({
-              where: { id: corrugationStep.id },
+          if (printingDetails) {
+            await prisma.printingDetails.update({
+              where: { id: printingDetails.id },
               data: { productionHeadContinued: false } as any // Mark as waiting for Production Head
             });
-            console.log(`🎯 Marked Corrugation step (${corrugationStep.id}) as waiting for Production Head continuation`);
+            console.log(`🎯 Marked PrintingDetails (${printingDetails.id}) as waiting for Production Head continuation`);
           }
         } catch (error) {
-          console.error(`❌ Error marking Corrugation for Production Head:`, error);
+          console.error(`❌ Error marking PrintingDetails for Production Head:`, error);
           // Don't throw - this is not critical
         }
       }
