@@ -9,7 +9,7 @@ import {
 } from '../middleware/flyingSquadPermissions';
 import { addMachineFiltering } from '../middleware';
 import { validateStepTransition, autoCorrectStateInconsistencies } from '../middleware/stepValidation';
-import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, getJobPlanningByPurchaseOrderId, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps, updateJobStepById } from '../controllers/jobPlanningController';
+import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, getJobPlanningByPurchaseOrderId, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps, updateJobStepById, continueStepByProductionHead } from '../controllers/jobPlanningController';
 
 const router = Router();
 
@@ -82,6 +82,12 @@ router.put('/step/:jobStepId',
   restrictMachineDetailsUpdate, 
   restrictStepTimingUpdate, 
   asyncHandler(updateJobStepById)
+);
+
+// 🎯 NEW: Production Head continuation endpoint
+router.post('/continue-step', 
+  authenticateToken, 
+  asyncHandler(continueStepByProductionHead)
 );
 
 export default router;

@@ -718,6 +718,7 @@ export const getFilteredJobNumbers = async (
             stepNo: true, 
             stepName: true, 
             status: true,
+            productionHeadContinued: true,
             paperStore: {
               select: { status: true }
             }
@@ -763,25 +764,14 @@ export const getFilteredJobNumbers = async (
         return true;
       }
       
-      // For regular jobs: check role and machine access
-      // First check if any step matches user's role and machine access
+      // 🎯 NEW: For regular jobs: show on ALL machines (like urgent jobs)
+      // No machine restriction - jobs will be visible on all machines
+      // When a worker starts the job on a machine, it will be removed from other machines
       const hasAccessibleStep = p.steps.some(s => {
-        // Role-based visibility: If step matches user role AND has machine assignment, require machine match
+        // Role-based visibility: Check if step matches user role
         if (isStepForUserRole(s.stepName, userRole)) {
-          const stepMachineIds = parseMachineDetails(s.machineDetails);
-          if (stepMachineIds.length > 0) {
-            return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
-          }
-          // If no machine details, allow access (for backward compatibility)
-          return true;
+          return true; // Show to all machines for regular jobs too
         }
-        
-        // Machine-based visibility: If step has machine assignment, require machine match
-        const stepMachineIds = parseMachineDetails(s.machineDetails);
-        if (stepMachineIds.length > 0) {
-          return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
-        }
-        
         return false;
       });
 
@@ -797,6 +787,24 @@ export const getFilteredJobNumbers = async (
       if (userRelevantSteps.length === 0) {
         // If no steps match user's role, use machine-based filtering only
         return true;
+      }
+
+      // 🎯 NEW: Check Production Head continuation for Corrugation step
+      // Corrugation should only be visible if Production Head has continued it
+      for (const step of userRelevantSteps) {
+        if (step.stepName === 'Corrugation') {
+          // Check if Printing is started/completed (previous step requirement)
+          const printingStep = p.steps.find(s => s.stepName === 'PrintingDetails');
+          const printingReady = printingStep && (printingStep.status === 'start' || printingStep.status === 'stop');
+          
+          if (printingReady) {
+            // If Printing is ready, Corrugation must be continued by Production Head
+            if (!step.productionHeadContinued) {
+              console.log(`🔍 [MachineAccess] Corrugation step for job ${p.nrcJobNo} is waiting for Production Head continuation`);
+              return false; // Hide from app until Production Head continues
+            }
+          }
+        }
       }
 
       // For each step that matches the user's role, check if previous steps are completed
@@ -839,7 +847,7 @@ export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null
         nrcJobNo: true, 
         jobDemand: true,
         steps: { 
-          select: { machineDetails: true, stepNo: true, stepName: true, status: true },
+          select: { machineDetails: true, stepNo: true, stepName: true, status: true, productionHeadContinued: true },
           orderBy: { stepNo: 'asc' }
         } 
       }
@@ -869,25 +877,14 @@ export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null
         return true;
       }
       
-      // For regular jobs: check role and machine access
-      // First check if any step matches user's role and machine access
+      // 🎯 NEW: For regular jobs: show on ALL machines (like urgent jobs)
+      // No machine restriction - jobs will be visible on all machines
+      // When a worker starts the job on a machine, it will be removed from other machines
       const hasAccessibleStep = p.steps.some(s => {
-        // Role-based visibility: If step matches user role AND has machine assignment, require machine match
+        // Role-based visibility: Check if step matches user role
         if (isStepForUserRole(s.stepName, userRole)) {
-          const stepMachineIds = parseMachineDetails(s.machineDetails);
-          if (stepMachineIds.length > 0) {
-            return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
-          }
-          // If no machine details, allow access (for backward compatibility)
-          return true;
+          return true; // Show to all machines for regular jobs too
         }
-        
-        // Machine-based visibility: If step has machine assignment, require machine match
-        const stepMachineIds = parseMachineDetails(s.machineDetails);
-        if (stepMachineIds.length > 0) {
-          return stepMachineIds.some(machineId => userMachineIds.includes(machineId));
-        }
-        
         return false;
       });
 

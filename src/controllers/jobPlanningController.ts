@@ -582,13 +582,17 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
               return true; // Show all machines for urgent jobs not yet started
             }
             
-            // For regular jobs: filter by user machine access
-            if (userMachineIds && userMachineIds.length > 0) {
-              console.log(`🔍 [Machine Filter] Step ${step.stepName}, Machine ${machineId}, User has access: ${machineId && userMachineIds.includes(machineId)}`);
-              return machineId && userMachineIds.includes(machineId);
+            // 🎯 NEW: For regular jobs: show on ALL machines (like urgent jobs)
+            // When a worker starts the job on a machine, it will be removed from other machines
+            // Check if step has been started by a machine (for regular jobs too)
+            if (step.stepNo !== 1 && startedByMachineId) {
+              const isStartingMachine = machineId === startedByMachineId;
+              console.log(`🔍 [Regular Job Filter] Step ${step.stepName} (${step.id}), Machine ${machineId}, Started by: ${startedByMachineId}, Show: ${isStartingMachine}`);
+              return isStartingMachine;
             }
-            // For bypass users (admin, planner, etc.), show all machines
-            return true;
+            // If not started yet, show ALL machines (visible to all)
+            console.log(`🔍 [Regular Job Filter] Step ${step.stepName} (${step.id}), Machine ${machineId}, Not started yet - showing to all machines`);
+            return true; // Show all machines for regular jobs not yet started
           });
           
           // Debug: Log final machineDetails count for urgent job steps
@@ -2697,3 +2701,96 @@ async function consumeFinishedGoods(nrcJobNo: string, requestedQty: number, purc
     throw error;
   }
 }
+
+// 🎯 NEW: Production Head continuation endpoint
+// Allows Production Head to continue a step (e.g., Corrugation after Printing)
+export const continueStepByProductionHead = async (req: Request, res: Response) => {
+  const { nrcJobNo, stepNo, jobPlanId } = req.body;
+  const userId = req.user?.userId;
+  const userRole = req.user?.role;
+  
+  if (!userId) {
+    throw new AppError('User not authenticated', 401);
+  }
+  
+  // Check if user is Production Head or Admin
+  if (userRole !== 'production_head' && userRole !== 'admin') {
+    throw new AppError('Only Production Head or Admin can continue steps', 403);
+  }
+  
+  if (!nrcJobNo || !stepNo) {
+    throw new AppError('nrcJobNo and stepNo are required', 400);
+  }
+  
+  // URL decode the nrcJobNo parameter
+  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  
+  // Find the job step
+  const jobStep = await prisma.jobStep.findFirst({
+    where: {
+      jobPlanning: {
+        nrcJobNo: decodedNrcJobNo,
+        ...(jobPlanId ? { jobPlanId: Number(jobPlanId) } : {})
+      },
+      stepNo: Number(stepNo)
+    },
+    include: {
+      jobPlanning: {
+        select: {
+          jobPlanId: true,
+          nrcJobNo: true
+        }
+      }
+    }
+  });
+  
+  if (!jobStep) {
+    throw new AppError('Job step not found', 404);
+  }
+  
+  // Update the step to mark it as continued by Production Head
+  const updatedStep = await prisma.jobStep.update({
+    where: { id: jobStep.id },
+    data: {
+      productionHeadContinued: true
+    },
+    select: {
+      id: true,
+      stepNo: true,
+      stepName: true,
+      productionHeadContinued: true,
+      status: true
+    }
+  });
+  
+  // Log the action
+  if (userId) {
+    try {
+      await logUserActionWithResource(
+        userId,
+        ActionTypes.JOBSTEP_UPDATED,
+        JSON.stringify({
+          message: `Production Head continued step ${stepNo} (${jobStep.stepName})`,
+          nrcJobNo: decodedNrcJobNo,
+          jobPlanId: jobStep.jobPlanning.jobPlanId,
+          stepNo: stepNo,
+          stepName: jobStep.stepName,
+          continuedBy: userId
+        }),
+        'JobStep',
+        jobStep.id.toString()
+      );
+    } catch (error) {
+      console.error('Failed to log activity:', error);
+      // Don't throw - activity logging is not critical
+    }
+  }
+  
+  console.log(`✅ Production Head (${userId}) continued step ${stepNo} (${jobStep.stepName}) for job ${decodedNrcJobNo}`);
+  
+  res.status(200).json({
+    success: true,
+    message: `Step ${stepNo} (${jobStep.stepName}) continued successfully`,
+    data: updatedStep
+  });
+};

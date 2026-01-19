@@ -240,21 +240,9 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
     
     console.log(`🔍 [StartWork] Job ${nrcJobNo}, Step ${stepNo}, Machine ${machineId}, isUrgentJob: ${isUrgentJob}, jobDemand: ${job?.jobDemand || 'N/A'}`);
 
-    // For urgent jobs, skip machine access verification
-    // For regular jobs, verify user has access to this machine
-    if (!isUrgentJob) {
-      const userMachine = await prisma.userMachine.findFirst({
-        where: {
-          userId: userId,
-          machineId: machineId,
-          isActive: true
-        }
-      });
-
-      if (!userMachine) {
-        throw new AppError('You do not have access to this machine', 403);
-      }
-    }
+    // 🎯 NEW: For both urgent and regular jobs, skip machine access verification
+    // Regular jobs now work like urgent jobs - shown on all machines, no access check
+    // When a worker starts the job on a machine, it will be removed from other machines
 
     // Get the job step
     const jobStep = await findJobStepForOperation(
@@ -354,7 +342,9 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
     // For urgent jobs (excluding PaperStore), set startedByMachineId to make step exclusive
     let jobStepUpdateData: any = {};
     const stepNoInt = parseInt(stepNo);
-    if (isUrgentJob && stepNoInt !== 1) { // Step 1 is PaperStore
+    // 🎯 NEW: For both urgent and regular jobs, set startedByMachineId and update machineDetails
+    // This ensures the job is removed from other machines when started on one machine
+    if (stepNoInt !== 1) { // Step 1 is PaperStore
       console.log(`🔍 [StartWork] Urgent job detected! Setting startedByMachineId=${machineId} for step ${stepNoInt} (${jobStep.stepName})`);
       console.log(`🔍 [StartWork] JobStepMachine ID: ${jobStepMachine.id}, Current machineId: ${jobStepMachine.machineId}, Requested machineId: ${machineId}`);
       updateData.startedByMachineId = machineId;
@@ -420,6 +410,32 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
         where: { id: jobStep.id },
         data: finalJobStepUpdate
       });
+    }
+    
+    // 🎯 NEW: If Printing (step 2) is started, mark Corrugation (step 3) as waiting for Production Head
+    // NOTE: stepNoInt is already declared above in this function; reuse it to avoid redeclaration.
+    // This is for the website dashboard (not the app)
+    if (stepNoInt === 2 && jobStep.stepName === 'PrintingDetails') {
+      try {
+        const corrugationStep = await prisma.jobStep.findFirst({
+          where: {
+            jobPlanningId: jobStep.jobPlanningId,
+            stepNo: 3,
+            stepName: 'Corrugation'
+          }
+        }) as any; // productionHeadContinued exists in schema
+        
+          if (corrugationStep && corrugationStep.productionHeadContinued === false) {
+          await prisma.jobStep.update({
+            where: { id: corrugationStep.id },
+            data: { productionHeadContinued: false } as any // Ensure it's marked as waiting
+          });
+          console.log(`🎯 Marked Corrugation step (${corrugationStep.id}) as waiting for Production Head continuation (Printing started)`);
+        }
+      } catch (error) {
+        console.error(`❌ Error marking Corrugation for Production Head:`, error);
+        // Don't throw - this is not critical
+      }
     }
 
     // Don't update individual step status here - it will be updated when work is completed
@@ -669,6 +685,31 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
       console.log(`   - Individual step status: 'accept'`);
       console.log(`   - Total OK: ${completionCheck.totalOK}`);
       console.log(`   - Total Wastage: ${completionCheck.totalWastage}`);
+      
+      // 🎯 NEW: If Printing (step 2) is completed, mark Corrugation (step 3) as waiting for Production Head
+      // This is for the website dashboard (not the app)
+      if (stepNoInt === 2 && jobStep.stepName === 'PrintingDetails') {
+        try {
+          const corrugationStep = await prisma.jobStep.findFirst({
+            where: {
+              jobPlanningId: jobStep.jobPlanningId,
+              stepNo: 3,
+              stepName: 'Corrugation'
+            }
+          }) as any; // productionHeadContinued exists in schema
+          
+          if (corrugationStep) {
+            await prisma.jobStep.update({
+              where: { id: corrugationStep.id },
+              data: { productionHeadContinued: false } as any // Mark as waiting for Production Head
+            });
+            console.log(`🎯 Marked Corrugation step (${corrugationStep.id}) as waiting for Production Head continuation`);
+          }
+        } catch (error) {
+          console.error(`❌ Error marking Corrugation for Production Head:`, error);
+          // Don't throw - this is not critical
+        }
+      }
       
       // Log activity for step completion - log for each user who completed a machine
       if (userId && typeof userId === 'string') {
@@ -1448,21 +1489,9 @@ export const holdWorkOnMachine = async (req: Request, res: Response) => {
     
     console.log(`🔍 [StartWork] Job ${nrcJobNo}, Step ${stepNo}, Machine ${machineId}, isUrgentJob: ${isUrgentJob}, jobDemand: ${job?.jobDemand || 'N/A'}`);
 
-    // For urgent jobs, skip machine access verification
-    // For regular jobs, verify user has access to this machine
-    if (!isUrgentJob) {
-      const userMachine = await prisma.userMachine.findFirst({
-        where: {
-          userId: userId,
-          machineId: machineId,
-          isActive: true
-        }
-      });
-
-      if (!userMachine) {
-        throw new AppError('You do not have access to this machine', 403);
-      }
-    }
+    // 🎯 NEW: For both urgent and regular jobs, skip machine access verification
+    // Regular jobs now work like urgent jobs - shown on all machines, no access check
+    // When a worker starts the job on a machine, it will be removed from other machines
 
     // Get the job step
     const jobStep = await findJobStepForOperation(
@@ -1720,21 +1749,9 @@ export const resumeWorkOnMachine = async (req: Request, res: Response) => {
     
     console.log(`🔍 [StartWork] Job ${nrcJobNo}, Step ${stepNo}, Machine ${machineId}, isUrgentJob: ${isUrgentJob}, jobDemand: ${job?.jobDemand || 'N/A'}`);
 
-    // For urgent jobs, skip machine access verification
-    // For regular jobs, verify user has access to this machine
-    if (!isUrgentJob) {
-      const userMachine = await prisma.userMachine.findFirst({
-        where: {
-          userId: userId,
-          machineId: machineId,
-          isActive: true
-        }
-      });
-
-      if (!userMachine) {
-        throw new AppError('You do not have access to this machine', 403);
-      }
-    }
+    // 🎯 NEW: For both urgent and regular jobs, skip machine access verification
+    // Regular jobs now work like urgent jobs - shown on all machines, no access check
+    // When a worker starts the job on a machine, it will be removed from other machines
 
     // Get the job step
     const jobStep = await findJobStepForOperation(

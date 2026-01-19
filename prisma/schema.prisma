@@ -9,25 +9,25 @@ datasource db {
 }
 
 model User {
-  id                  String          @id
-  email               String          @unique
-  phoneNumber         String?
-  password            String
-  role                String
-  name                String?
-  isActive            Boolean         @default(true)
-  lastLogin           DateTime?
-  activeSessionToken  String?         // Stores current active session token for single-session enforcement
-  sessionLoginTime    DateTime?       // When current session was created
-  sessionDeviceInfo   String?         // Optional: Store device/browser info
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-  activityLogs        ActivityLog[]   @relation("UserActivityLogs")
-  jobs                Job[]           @relation("UserJobs")
-  purchaseOrders      PurchaseOrder[] @relation("UserPurchaseOrders")
-  userMachines        UserMachine[]   @relation("UserMachines")
-  jobStepMachines     JobStepMachine[] @relation("UserJobStepMachines")
-  pdAnnouncements     PDAnnouncement[] @relation("PDAnnouncements")
+  id                 String           @id
+  email              String           @unique
+  phoneNumber        String?
+  password           String
+  role               String
+  name               String?
+  isActive           Boolean          @default(true)
+  lastLogin          DateTime?
+  activeSessionToken String? // Stores current active session token for single-session enforcement
+  sessionLoginTime   DateTime? // When current session was created
+  sessionDeviceInfo  String? // Optional: Store device/browser info
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  activityLogs       ActivityLog[]    @relation("UserActivityLogs")
+  jobs               Job[]            @relation("UserJobs")
+  purchaseOrders     PurchaseOrder[]  @relation("UserPurchaseOrders")
+  userMachines       UserMachine[]    @relation("UserMachines")
+  jobStepMachines    JobStepMachine[] @relation("UserJobStepMachines")
+  pdAnnouncements    PDAnnouncement[] @relation("PDAnnouncements")
 }
 
 model Job {
@@ -91,22 +91,22 @@ model Job {
 }
 
 model Machine {
-  id          String        @id @default(cuid())
-  unit        String
-  machineCode String
-  machineType String
-  description String
-  type        String
-  capacity    Int
-  remarks     String?
-  status      MachineStatus @default(available)
-  isActive    Boolean       @default(true)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  jobs        Job[]
-  userMachines UserMachine[] @relation("MachineUsers")
+  id                    String                 @id @default(cuid())
+  unit                  String
+  machineCode           String
+  machineType           String
+  description           String
+  type                  String
+  capacity              Int
+  remarks               String?
+  status                MachineStatus          @default(available)
+  isActive              Boolean                @default(true)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  jobs                  Job[]
+  userMachines          UserMachine[]          @relation("MachineUsers")
   purchaseOrderMachines PurchaseOrderMachine[] @relation("PurchaseOrderMachines")
-  jobStepMachines JobStepMachine[] @relation("MachineJobSteps")
+  jobStepMachines       JobStepMachine[]       @relation("MachineJobSteps")
 }
 
 model ActivityLog {
@@ -215,40 +215,40 @@ model PrintingApproval {
 }
 
 model PurchaseOrder {
-  id                    Int                 @id @default(autoincrement())
-  boardSize             String?
-  customer              String
-  deliveryDate          DateTime?
-  dieCode               Float?
-  dispatchDate          DateTime?
-  dispatchQuantity      Int?
-  fluteType             String?
-  jockeyMonth           String?
-  noOfUps               Int?
-  nrcDeliveryDate       DateTime?
-  noOfSheets            Int?
-  poDate                DateTime?
-  poNumber              String?
-  pendingQuantity       Int?
-  pendingValidity       Float?
-  plant                 String?
-  shadeCardApprovalDate DateTime?
-  sharedCardDiffDate    Int?
-  srNo                  Float?
-  style                 String?
-  totalPOQuantity       Int?
-  unit                  String?
-  status                PurchaseOrderStatus @default(created)
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
-  jobNrcJobNo           String?
-  userId                String?
-  job                   Job?                @relation("JobToPurchaseOrders", fields: [jobNrcJobNo], references: [nrcJobNo])
-  user                  User?               @relation("UserPurchaseOrders", fields: [userId], references: [id])
-  purchaseOrderMachines PurchaseOrderMachine[] @relation("PurchaseOrderMachines")
-  jobPlannings          JobPlanning[]       @relation("PurchaseOrderJobPlannings")
-  finishQuantities      FinishQuantity[]    @relation("PurchaseOrderToFinishQuantity")
-  consumedFinishQuantities FinishQuantity[] @relation("PurchaseOrderConsumedFinishQuantity")
+  id                       Int                    @id @default(autoincrement())
+  boardSize                String?
+  customer                 String
+  deliveryDate             DateTime?
+  dieCode                  Float?
+  dispatchDate             DateTime?
+  dispatchQuantity         Int?
+  fluteType                String?
+  jockeyMonth              String?
+  noOfUps                  Int?
+  nrcDeliveryDate          DateTime?
+  noOfSheets               Int?
+  poDate                   DateTime?
+  poNumber                 String?
+  pendingQuantity          Int?
+  pendingValidity          Float?
+  plant                    String?
+  shadeCardApprovalDate    DateTime?
+  sharedCardDiffDate       Int?
+  srNo                     Float?
+  style                    String?
+  totalPOQuantity          Int?
+  unit                     String?
+  status                   PurchaseOrderStatus    @default(created)
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  jobNrcJobNo              String?
+  userId                   String?
+  job                      Job?                   @relation("JobToPurchaseOrders", fields: [jobNrcJobNo], references: [nrcJobNo])
+  user                     User?                  @relation("UserPurchaseOrders", fields: [userId], references: [id])
+  purchaseOrderMachines    PurchaseOrderMachine[] @relation("PurchaseOrderMachines")
+  jobPlannings             JobPlanning[]          @relation("PurchaseOrderJobPlannings")
+  finishQuantities         FinishQuantity[]       @relation("PurchaseOrderToFinishQuantity")
+  consumedFinishQuantities FinishQuantity[]       @relation("PurchaseOrderConsumedFinishQuantity")
 }
 
 model PaperStore {
@@ -421,32 +421,32 @@ model SideFlapPasting {
 }
 
 model QualityDept {
-  id                  Int                  @id @default(autoincrement())
-  jobNrcJobNo         String
-  status              StepStatus           @default(in_progress)
-  date                DateTime?
-  shift               String?
-  operatorName        String?
-  checkedBy           String?
-  quantity            Int?
-  rejectedQty         Int?
-  reasonForRejection  String?
-  remarks             String?
-  qcCheckSignBy       String?
-  qcCheckAt           DateTime?
-  startedBy           String?              // QC executive who started this job
-  rejectionReasonAQty Int?                 // Rejection reason A quantity
-  rejectionReasonBQty Int?                 // Rejection reason B quantity
-  rejectionReasonCQty Int?                 // Rejection reason C quantity
-  rejectionReasonDQty Int?                 // Rejection reason D quantity
-  rejectionReasonEQty Int?                 // Rejection reason E quantity
-  rejectionReasonFQty Int?                 // Rejection reason F quantity
-  rejectionReasonOthersQty Int?            // Rejection reason Others quantity
-  jobStepId           Int?                 @unique
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToQualityDept")
-  job                 Job                  @relation("JobToQualityDept", fields: [jobNrcJobNo], references: [nrcJobNo])
-  jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
-  
+  id                       Int                  @id @default(autoincrement())
+  jobNrcJobNo              String
+  status                   StepStatus           @default(in_progress)
+  date                     DateTime?
+  shift                    String?
+  operatorName             String?
+  checkedBy                String?
+  quantity                 Int?
+  rejectedQty              Int?
+  reasonForRejection       String?
+  remarks                  String?
+  qcCheckSignBy            String?
+  qcCheckAt                DateTime?
+  startedBy                String? // QC executive who started this job
+  rejectionReasonAQty      Int? // Rejection reason A quantity
+  rejectionReasonBQty      Int? // Rejection reason B quantity
+  rejectionReasonCQty      Int? // Rejection reason C quantity
+  rejectionReasonDQty      Int? // Rejection reason D quantity
+  rejectionReasonEQty      Int? // Rejection reason E quantity
+  rejectionReasonFQty      Int? // Rejection reason F quantity
+  rejectionReasonOthersQty Int? // Rejection reason Others quantity
+  jobStepId                Int?                 @unique
+  productionPlannings      ProductionPlanning[] @relation("ProductionPlanningToQualityDept")
+  job                      Job                  @relation("JobToQualityDept", fields: [jobNrcJobNo], references: [nrcJobNo])
+  jobStep                  JobStep?             @relation(fields: [jobStepId], references: [id])
+
   @@index([startedBy])
 }
 
@@ -471,7 +471,7 @@ model DispatchProcess {
   productionPlannings ProductionPlanning[] @relation("ProductionPlanningToDispatchProcess")
   // Partial dispatch tracking
   totalDispatchedQty  Int?                 @default(0) // Cumulative dispatched quantity across all partial dispatches
-  dispatchHistory     Json?                // Store array of {dispatchDate, dispatchedQty, dispatchNo, remarks}
+  dispatchHistory     Json? // Store array of {dispatchDate, dispatchedQty, dispatchNo, remarks}
 }
 
 model DieCutting {
@@ -481,99 +481,100 @@ model DieCutting {
 }
 
 model JobPlanning {
-  jobPlanId        Int       @id @default(autoincrement())
+  jobPlanId        Int            @id @default(autoincrement())
   nrcJobNo         String
-  purchaseOrderId  Int?      // Link to specific Purchase Order
+  purchaseOrderId  Int? // Link to specific Purchase Order
   jobDemand        JobDemand
-  finishedGoodsQty Int?      @default(0) // Finished goods quantity selected for this job plan (can be 0)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  finishedGoodsQty Int?           @default(0) // Finished goods quantity selected for this job plan (can be 0)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
   steps            JobStep[]
   purchaseOrder    PurchaseOrder? @relation("PurchaseOrderJobPlannings", fields: [purchaseOrderId], references: [id])
 }
 
 model JobStep {
-  id              Int                           @id @default(autoincrement())
-  stepNo          Int
-  stepName        String
-  machineDetails  Json[]
-  jobPlanningId   Int
-  createdAt       DateTime                      @default(now())
-  updatedAt       DateTime                      @updatedAt
-  status          JobStepStatus                 @default(planned)
-  user            String?
-  completedBy     String?
-  startDate       DateTime?
-  endDate         DateTime?
-  corrugation     Corrugation?
-  dispatchProcess DispatchProcess?
-  flutelam        FluteLaminateBoardConversion?
-  jobPlanning     JobPlanning                   @relation(fields: [jobPlanningId], references: [jobPlanId])
-  paperStore      PaperStore?
-  printingDetails PrintingDetails?
-  punching        Punching?
-  qualityDept     QualityDept?
-  sideFlapPasting SideFlapPasting?
-  jobStepMachines JobStepMachine[] @relation("JobStepMachines")
+  id                      Int                           @id @default(autoincrement())
+  stepNo                  Int
+  stepName                String
+  machineDetails          Json[]
+  jobPlanningId           Int
+  createdAt               DateTime                      @default(now())
+  updatedAt               DateTime                      @updatedAt
+  status                  JobStepStatus                 @default(planned)
+  user                    String?
+  completedBy             String?
+  startDate               DateTime?
+  endDate                 DateTime?
+  productionHeadContinued Boolean                       @default(false) // Tracks if Production Head has continued this step
+  corrugation             Corrugation?
+  dispatchProcess         DispatchProcess?
+  flutelam                FluteLaminateBoardConversion?
+  jobPlanning             JobPlanning                   @relation(fields: [jobPlanningId], references: [jobPlanId])
+  paperStore              PaperStore?
+  printingDetails         PrintingDetails?
+  punching                Punching?
+  qualityDept             QualityDept?
+  sideFlapPasting         SideFlapPasting?
+  jobStepMachines         JobStepMachine[]              @relation("JobStepMachines")
 }
 
 model JobStepMachine {
-  id          String   @id @default(cuid())
-  jobStepId   Int
-  nrcJobNo    String?  // Direct reference to job
-  machineId   String
-  stepNo      Int?     // Step number (1=PaperStore, 2=Printing, etc.)
-  status      String   @default("available") // 'available', 'in_progress', 'hold', 'stop', 'completed'
-  startedAt   DateTime?
-  completedAt DateTime?
-  userId      String?
+  id                 String    @id @default(cuid())
+  jobStepId          Int
+  nrcJobNo           String? // Direct reference to job
+  machineId          String
+  stepNo             Int? // Step number (1=PaperStore, 2=Printing, etc.)
+  status             String    @default("available") // 'available', 'in_progress', 'hold', 'stop', 'completed'
+  startedAt          DateTime?
+  completedAt        DateTime?
+  userId             String?
   startedByMachineId String? // For urgent jobs: tracks which machine started this step (makes it exclusive to that machine)
-  
+
   // Individual form fields for each step type
   // Common fields
-  quantity    Int?
-  remarks     String?
-  
+  quantity Int?
+  remarks  String?
+
   // PaperStore fields (step 1)
-  requiredQty Int?
+  requiredQty  Int?
   availableQty Int?
-  sheetSize   String?
-  gsm         Int?
-  
+  sheetSize    String?
+  gsm          Int?
+
   // Printing fields (step 2)
-  colorsUsed     String?
-  processColors  String?
-  specialColors  String?
-  inksUsed       String?
-  coatingType    String?
-  quantityOK     Int?
-  
+  colorsUsed    String?
+  processColors String?
+  specialColors String?
+  inksUsed      String?
+  coatingType   String?
+  quantityOK    Int?
+
   // Corrugation fields (step 3)
   fluteType   String?
   gsm1        Int?
   gsm2        Int?
   size        String?
   sheetsCount Int?
-  
+
   // Flute Lamination fields (step 4)
-  okQuantity  Int?
-  
+  okQuantity Int?
+
   // Punching/Die Cutting fields (step 5,6)
-  dieUsed     String?
-  
+  dieUsed String?
+
   // Quality Control fields (step 8)
   rejectedQty Int?
-  
-  // Legacy formData for backward compatibility
-  formData    Json?
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
 
-  jobStep     JobStep  @relation("JobStepMachines", fields: [jobStepId], references: [id], onDelete: Cascade)
-  machine     Machine  @relation("MachineJobSteps", fields: [machineId], references: [id])
-  user        User?    @relation("UserJobStepMachines", fields: [userId], references: [id])
-  job         Job?     @relation("JobJobStepMachines", fields: [nrcJobNo], references: [nrcJobNo])
+  // Legacy formData for backward compatibility
+  formData Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobStep JobStep @relation("JobStepMachines", fields: [jobStepId], references: [id], onDelete: Cascade)
+  machine Machine @relation("MachineJobSteps", fields: [machineId], references: [id])
+  user    User?   @relation("UserJobStepMachines", fields: [userId], references: [id])
+  job     Job?    @relation("JobJobStepMachines", fields: [nrcJobNo], references: [nrcJobNo])
 
   @@unique([jobStepId, machineId])
   @@index([status])
@@ -602,22 +603,22 @@ model CompletedJob {
 }
 
 model FinishQuantity {
-  id                     Int      @id @default(autoincrement())
-  jobNrcJobNo            String
-  purchaseOrderId        Int?
-  overDispatchedQuantity Int      // Excess quantity that went to finish quantity
-  totalPOQuantity        Int      // PO quantity for reference
-  totalDispatchedQuantity Int     // Total dispatched quantity for reference
-  status                 FinishQuantityStatus @default(available) // available or consumed
-  consumedByPOId         Int?     // PO that consumed this finish quantity
-  remarks                String?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
-  
-  job                    Job      @relation("JobToFinishQuantity", fields: [jobNrcJobNo], references: [nrcJobNo])
-  purchaseOrder          PurchaseOrder? @relation("PurchaseOrderToFinishQuantity", fields: [purchaseOrderId], references: [id])
-  consumedByPO           PurchaseOrder? @relation("PurchaseOrderConsumedFinishQuantity", fields: [consumedByPOId], references: [id])
-  
+  id                      Int                  @id @default(autoincrement())
+  jobNrcJobNo             String
+  purchaseOrderId         Int?
+  overDispatchedQuantity  Int // Excess quantity that went to finish quantity
+  totalPOQuantity         Int // PO quantity for reference
+  totalDispatchedQuantity Int // Total dispatched quantity for reference
+  status                  FinishQuantityStatus @default(available) // available or consumed
+  consumedByPOId          Int? // PO that consumed this finish quantity
+  remarks                 String?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+
+  job           Job            @relation("JobToFinishQuantity", fields: [jobNrcJobNo], references: [nrcJobNo])
+  purchaseOrder PurchaseOrder? @relation("PurchaseOrderToFinishQuantity", fields: [purchaseOrderId], references: [id])
+  consumedByPO  PurchaseOrder? @relation("PurchaseOrderConsumedFinishQuantity", fields: [consumedByPOId], references: [id])
+
   @@index([jobNrcJobNo])
   @@index([status])
 }
@@ -680,17 +681,17 @@ enum FinishQuantityStatus {
 }
 
 model UserMachine {
-  id          String   @id @default(cuid())
-  userId      String
-  machineId   String
-  assignedAt  DateTime @default(now())
-  assignedBy  String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  userId     String
+  machineId  String
+  assignedAt DateTime @default(now())
+  assignedBy String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  user        User     @relation("UserMachines", fields: [userId], references: [id], onDelete: Cascade)
-  machine     Machine  @relation("MachineUsers", fields: [machineId], references: [id], onDelete: Cascade)
+  user    User    @relation("UserMachines", fields: [userId], references: [id], onDelete: Cascade)
+  machine Machine @relation("MachineUsers", fields: [machineId], references: [id], onDelete: Cascade)
 
   @@unique([userId, machineId])
 }
@@ -704,23 +705,23 @@ model PurchaseOrderMachine {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  purchaseOrder   PurchaseOrder @relation("PurchaseOrderMachines", fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  machine         Machine       @relation("PurchaseOrderMachines", fields: [machineId], references: [id], onDelete: Cascade)
+  purchaseOrder PurchaseOrder @relation("PurchaseOrderMachines", fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  machine       Machine       @relation("PurchaseOrderMachines", fields: [machineId], references: [id], onDelete: Cascade)
 
   @@unique([purchaseOrderId, machineId])
 }
 
 model PDAnnouncement {
-  id          Int      @id @default(autoincrement())
-  title       String
-  message     String
-  createdBy   String
-  isActive    Boolean  @default(true)
-  priority    String   @default("normal") // normal, high, urgent
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  creator     User     @relation("PDAnnouncements", fields: [createdBy], references: [id])
-  
+  id        Int      @id @default(autoincrement())
+  title     String
+  message   String
+  createdBy String
+  isActive  Boolean  @default(true)
+  priority  String   @default("normal") // normal, high, urgent
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creator User @relation("PDAnnouncements", fields: [createdBy], references: [id])
+
   @@index([isActive, createdAt])
 }
