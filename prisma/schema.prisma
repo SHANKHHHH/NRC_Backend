@@ -268,35 +268,10 @@ model PaperStore {
   jobStepId           Int?                 @unique
   job                 Job                  @relation("JobToPaperStore", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPaperStore")
   holdRemark          String?
   majorHoldRemark     String?
   completeRemark      String?
   remarks             String?
-}
-
-model ProductionPlanning {
-  id                       Int                           @id @default(autoincrement())
-  corrugationId            Int?
-  dieCuttingId             Int?
-  dispatchId               Int?
-  fluteLaminateBoardConvId Int?
-  printingDetailsId        Int?
-  punchingId               Int?
-  qualityDeptId            Int?
-  sideFlapPastingId        Int?
-  paperStoreId             Int?
-  createdAt                DateTime                      @default(now())
-  updatedAt                DateTime                      @updatedAt
-  corrugation              Corrugation?                  @relation("ProductionPlanningToCorrugation", fields: [corrugationId], references: [id])
-  dieCutting               DieCutting?                   @relation(fields: [dieCuttingId], references: [id])
-  dispatch                 DispatchProcess?              @relation("ProductionPlanningToDispatchProcess", fields: [dispatchId], references: [id])
-  fluteLaminateBoardConv   FluteLaminateBoardConversion? @relation("ProductionPlanningToFluteLaminateBoardConversion", fields: [fluteLaminateBoardConvId], references: [id])
-  paperStore               PaperStore?                   @relation("ProductionPlanningToPaperStore", fields: [paperStoreId], references: [id])
-  printingDetails          PrintingDetails?              @relation("ProductionPlanningToPrintingDetails", fields: [printingDetailsId], references: [id])
-  punching                 Punching?                     @relation("ProductionPlanningToPunching", fields: [punchingId], references: [id])
-  qualityDept              QualityDept?                  @relation("ProductionPlanningToQualityDept", fields: [qualityDeptId], references: [id])
-  sideFlapPasting          SideFlapPasting?              @relation("ProductionPlanningToSideFlapPasting", fields: [sideFlapPastingId], references: [id])
 }
 
 model PrintingDetails {
@@ -320,7 +295,6 @@ model PrintingDetails {
   productionHeadContinued Boolean               @default(false) // Tracks if Production Head has continued Corrugation after Printing
   job                     Job                  @relation("JobToPrintingDetails", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep                 JobStep?             @relation(fields: [jobStepId], references: [id])
-  productionPlannings     ProductionPlanning[] @relation("ProductionPlanningToPrintingDetails")
   holdRemark              String?
   majorHoldRemark         String?
   completeRemark          String?
@@ -346,7 +320,6 @@ model Corrugation {
   jobStepId           Int?                 @unique
   job                 Job                  @relation("JobToCorrugation", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToCorrugation")
   holdRemark          String?
   majorHoldRemark     String?
   completeRemark      String?
@@ -368,7 +341,6 @@ model FluteLaminateBoardConversion {
   jobStepId           Int?                 @unique
   job                 Job                  @relation("JobToFluteLaminateBoardConversion", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToFluteLaminateBoardConversion")
   holdRemark          String?
   majorHoldRemark     String?
   completeRemark      String?
@@ -390,7 +362,6 @@ model Punching {
   wastage             Int?
   remarks             String?
   jobStepId           Int?                 @unique
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToPunching")
   job                 Job                  @relation("JobToPunching", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   holdRemark          String?
@@ -413,7 +384,6 @@ model SideFlapPasting {
   qcCheckAt           DateTime?
   remarks             String?
   jobStepId           Int?                 @unique
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToSideFlapPasting")
   job                 Job                  @relation("JobToSideFlapPasting", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
   holdRemark          String?
@@ -444,7 +414,6 @@ model QualityDept {
   rejectionReasonFQty      Int? // Rejection reason F quantity
   rejectionReasonOthersQty Int? // Rejection reason Others quantity
   jobStepId                Int?                 @unique
-  productionPlannings      ProductionPlanning[] @relation("ProductionPlanningToQualityDept")
   job                      Job                  @relation("JobToQualityDept", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep                  JobStep?             @relation(fields: [jobStepId], references: [id])
 
@@ -469,7 +438,6 @@ model DispatchProcess {
   jobStepId           Int?                 @unique
   job                 Job                  @relation("JobToDispatchProcess", fields: [jobNrcJobNo], references: [nrcJobNo])
   jobStep             JobStep?             @relation(fields: [jobStepId], references: [id])
-  productionPlannings ProductionPlanning[] @relation("ProductionPlanningToDispatchProcess")
   // Partial dispatch tracking
   totalDispatchedQty  Int?                 @default(0) // Cumulative dispatched quantity across all partial dispatches
   dispatchHistory     Json? // Store array of {dispatchDate, dispatchedQty, dispatchNo, remarks}
@@ -478,7 +446,6 @@ model DispatchProcess {
 model DieCutting {
   id                 Int                  @id @default(autoincrement())
   details            String?
-  productionPlanning ProductionPlanning[]
 }
 
 model JobPlanning {
