@@ -739,36 +739,13 @@ export const getFilteredJobNumbers = async (
 
   const planningLevelAccessible = jobPlannings
     .filter(p => {
-      // Check if this is an urgent job (high demand)
-      // Check Job table first, but also check JobPlanning.jobDemand as the source of truth
+      // Check if this is an urgent job (high demand) - used only for logging now
       const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
-      const jobExists = jobs.some(j => j.nrcJobNo === p.nrcJobNo);
-      // Urgent if Job.jobDemand is high OR JobPlanning.jobDemand is high (JobPlanning is source of truth)
       const isUrgentJob = highDemandJob || p.jobDemand === 'high';
+      console.log(`🔍 [MachineAccess] Job ${p.nrcJobNo}: jobDemand=${p.jobDemand}, isUrgentJob=${isUrgentJob}`);
       
-      console.log(`🔍 [MachineAccess] Job ${p.nrcJobNo}: jobDemand=${p.jobDemand}, highDemandJob=${highDemandJob}, jobExists=${jobExists}, isUrgentJob=${isUrgentJob}`);
-      
-      // For urgent jobs: bypass role and step dependency checks - show to all machines
-      // Only check that PaperStore is started or stopped if it exists
-      if (isUrgentJob) {
-        const paperStoreStep = p.steps.find(s => s.stepName === 'PaperStore');
-        console.log(`🔍 [MachineAccess] Urgent job ${p.nrcJobNo}: PaperStore step found=${!!paperStoreStep}, status=${paperStoreStep?.status}`);
-        // If PaperStore exists, it must be started (status = 'start') or stopped (status = 'stop') for urgent jobs to be visible
-        if (paperStoreStep) {
-          const jobStepStatus = paperStoreStep.status;
-          // PaperStore must be started (status = 'start') or stopped (status = 'stop') for urgent jobs to be visible
-          const isPaperStoreStartedOrStopped = jobStepStatus === 'start' || jobStepStatus === 'stop';
-          if (!isPaperStoreStartedOrStopped) {
-            console.log(`🔍 [MachineAccess] Urgent job ${p.nrcJobNo} blocked - PaperStore not started/stopped yet (JobStep.status: ${jobStepStatus})`);
-            return false;
-          }
-        }
-        // Urgent job with PaperStore started/stopped (or no PaperStore) - visible to all machines
-        console.log(`🔍 [MachineAccess] ✅ Urgent job ${p.nrcJobNo} - visible to all machines`);
-        return true;
-      }
-      
-      // 🎯 NEW: For regular jobs: show on ALL machines (like urgent jobs)
+      // 🎯 For ALL jobs (urgent + regular): show on ALL machines logically,
+      // but actual visibility will be controlled by machineDetails and step dependencies below.
       // No machine restriction - jobs will be visible on all machines
       // When a worker starts the job on a machine, it will be removed from other machines
       const hasAccessibleStep = p.steps.some(s => {
