@@ -63,6 +63,47 @@ export const createJobPlanning = async (req: Request, res: Response) => {
   });
 
   try {
+    // 🔢 Generate monthly sequence + human-readable job plan code (e.g. "jan26-001")
+    const now = new Date();
+    const year = now.getFullYear();
+    const monthIndex = now.getMonth(); // 0-based
+
+    // Start and end of current month for filtering existing plannings
+    const monthStart = new Date(year, monthIndex, 1);
+    const monthEnd = new Date(year, monthIndex + 1, 1);
+
+    // Count how many plannings already exist in this month to get the next sequence
+    const existingCount = await prisma.jobPlanning.count({
+      where: {
+        createdAt: {
+          gte: monthStart,
+          lt: monthEnd,
+        },
+      },
+    });
+
+    const nextSequence = existingCount + 1;
+
+    const monthNames = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "may",
+      "jun",
+      "jul",
+      "aug",
+      "sep",
+      "oct",
+      "nov",
+      "dec",
+    ];
+
+    const monthCode = monthNames[monthIndex];
+    const yearCode = (year % 100).toString().padStart(2, "0"); // 2026 -> "26"
+    const sequenceCode = nextSequence.toString().padStart(3, "0"); // 1 -> "001"
+    const jobPlanCode = `${monthCode}${yearCode}-${sequenceCode}`;
+
     // Debug: Log the data being passed to Prisma
     const stepsData = steps.map((step: any) => ({
       stepNo: step.stepNo,
@@ -76,12 +117,13 @@ export const createJobPlanning = async (req: Request, res: Response) => {
     // Note: Finished goods are NOT consumed here - they are consumed when dispatch actually uses them
     // finishedGoodsQuantity in JobPlanning is just a reference/selection, not consumption
 
-    const jobPlanning = await prisma.jobPlanning.create({
+    const jobPlanning: any = await (prisma as any).jobPlanning.create({
       data: {
         nrcJobNo,
         jobDemand,
         purchaseOrderId: purchaseOrderId ? parseInt(purchaseOrderId) : null,
         finishedGoodsQty: finishedGoodsQuantity,
+        jobPlanCode,
         steps: {
           create: stepsData,
         },
@@ -97,6 +139,7 @@ export const createJobPlanning = async (req: Request, res: Response) => {
       nrcJobNo: jobPlanning.nrcJobNo,
       finishedGoodsQty: jobPlanning.finishedGoodsQty,
       purchaseOrderId: jobPlanning.purchaseOrderId,
+      jobPlanCode: jobPlanning.jobPlanCode,
     });
 
     // Immediately update the job's machine details flag based on initial steps
@@ -3549,7 +3592,6 @@ async function consumeFinishedGoods(
     throw error;
   }
 }
-<<<<<<< HEAD
 
 // 🎯 NEW: Production Head continuation endpoint
 // Allows Production Head to continue a step (e.g., Corrugation after Printing)

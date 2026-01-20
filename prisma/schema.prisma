@@ -454,6 +454,8 @@ model JobPlanning {
   purchaseOrderId  Int? // Link to specific Purchase Order
   jobDemand        JobDemand
   finishedGoodsQty Int?           @default(0) // Finished goods quantity selected for this job plan (can be 0)
+  // Human-readable code (e.g. "jan26-001"), resets every month
+  jobPlanCode      String?        @unique
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   steps            JobStep[]
