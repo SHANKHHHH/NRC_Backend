@@ -412,27 +412,45 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
       });
     }
     
-    // 🎯 NEW: If Printing (step 2) is started, mark PrintingDetails as waiting for Production Head
-    // NOTE: stepNoInt is already declared above in this function; reuse it to avoid redeclaration.
-    // This is for the website dashboard (not the app)
+    // 🎯 NEW: If Printing (step 2) is started, ensure a PrintingDetails record exists
+    // and mark it as waiting for Production Head (productionHeadContinued = false).
+    // This must happen on START so that the Production Head / web dashboard can
+    // immediately use /job-planning/continue-step.
     if (stepNoInt === 2 && jobStep.stepName === 'PrintingDetails') {
       try {
-        const printingDetails = await prisma.printingDetails.findFirst({
+        let printingDetails = await prisma.printingDetails.findFirst({
           where: {
             jobStepId: jobStep.id
           }
         });
-        
-        if (printingDetails) {
-          await prisma.printingDetails.update({
-            where: { id: printingDetails.id },
-            data: { productionHeadContinued: false } as any // Mark as waiting for Production Head
+
+        // If no PrintingDetails exists yet (previously created only on STOP),
+        // create a minimal record now, linked to this jobStep and jobNrcJobNo.
+        if (!printingDetails) {
+          printingDetails = await prisma.printingDetails.create({
+            data: {
+              jobNrcJobNo: nrcJobNo,
+              jobStepId: jobStep.id,
+              status: 'in_progress',
+              productionHeadContinued: false
+            } as any
           });
-          console.log(`🎯 Marked PrintingDetails (${printingDetails.id}) as waiting for Production Head continuation (Printing started)`);
+          console.log(
+            `🎯 Created minimal PrintingDetails (${printingDetails.id}) on Printing START for job ${nrcJobNo}, jobStepId ${jobStep.id}`
+          );
+        } else if (printingDetails.productionHeadContinued !== false) {
+          // Reset flag to waiting if it was previously continued
+          printingDetails = await prisma.printingDetails.update({
+            where: { id: printingDetails.id },
+            data: { productionHeadContinued: false } as any
+          });
+          console.log(
+            `🎯 Reset PrintingDetails (${printingDetails.id}) productionHeadContinued=false on Printing START for job ${nrcJobNo}`
+          );
         }
       } catch (error) {
-        console.error(`❌ Error marking PrintingDetails for Production Head:`, error);
-        // Don't throw - this is not critical
+        console.error(`❌ Error ensuring PrintingDetails record on Printing START:`, error);
+        // Don't throw - this is not critical for starting work
       }
     }
 

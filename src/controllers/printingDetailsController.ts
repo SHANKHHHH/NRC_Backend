@@ -41,8 +41,22 @@ export const createPrintingDetails = async (req: Request, res: Response) => {
   if (!workflowValidation.canProceed) {
     throw new AppError(workflowValidation.message || 'Workflow validation failed', 400);
   }
-  const printingDetails = await prisma.printingDetails.create({ data: { ...data, jobStepId } });
-  await prisma.jobStep.update({ where: { id: jobStepId }, data: { printingDetails: { connect: { id: printingDetails.id } } } });
+  // If a minimal PrintingDetails was already created on START, update it; otherwise create a new one.
+  const printingDetails = await prisma.printingDetails.upsert({
+    where: { jobStepId: jobStepId },
+    update: {
+      ...data
+    },
+    create: {
+      ...data,
+      jobStepId
+    }
+  });
+
+  await prisma.jobStep.update({
+    where: { id: jobStepId },
+    data: { printingDetails: { connect: { id: printingDetails.id } } }
+  });
 
   // Log PrintingDetails step creation
   if (req.user?.userId) {

@@ -3609,20 +3609,20 @@ export const continueStepByProductionHead = async (req: Request, res: Response) 
     throw new AppError('Only Production Head or Admin can continue steps', 403);
   }
   
-  if (!nrcJobNo || !stepNo) {
-    throw new AppError('nrcJobNo and stepNo are required', 400);
+  // 🔁 New: use jobPlanId as the primary identifier instead of nrcJobNo
+  if (!jobPlanId || !stepNo) {
+    throw new AppError('jobPlanId and stepNo are required', 400);
   }
   
-  // URL decode the nrcJobNo parameter
-  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+  const jobPlanIdNum = Number(jobPlanId);
+  if (Number.isNaN(jobPlanIdNum)) {
+    throw new AppError('jobPlanId must be a valid number', 400);
+  }
   
-  // Find the Printing step (stepNo = 2) to get its PrintingDetails
+  // Find the Printing step (stepNo = 2) for this specific jobPlanId to get its PrintingDetails
   const printingStep = await prisma.jobStep.findFirst({
     where: {
-      jobPlanning: {
-        nrcJobNo: decodedNrcJobNo,
-        ...(jobPlanId ? { jobPlanId: Number(jobPlanId) } : {})
-      },
+      jobPlanningId: jobPlanIdNum,
       stepNo: 2, // Printing step
       stepName: 'PrintingDetails'
     },
@@ -3662,27 +3662,29 @@ export const continueStepByProductionHead = async (req: Request, res: Response) 
   // Log the action
   if (userId) {
     try {
-      await logUserActionWithResource(
-        userId,
-        ActionTypes.JOBSTEP_UPDATED,
-        JSON.stringify({
-          message: `Production Head continued step ${stepNo} (Corrugation) after Printing`,
-          nrcJobNo: decodedNrcJobNo,
-          jobPlanId: printingStep.jobPlanning.jobPlanId,
-          stepNo: stepNo,
-          stepName: 'Corrugation',
-          continuedBy: userId
-        }),
-        'PrintingDetails',
-        printingStep.printingDetails.id.toString()
-      );
+        await logUserActionWithResource(
+          userId,
+          ActionTypes.JOBSTEP_UPDATED,
+          JSON.stringify({
+            message: `Production Head continued step ${stepNo} (Corrugation) after Printing`,
+            nrcJobNo: printingStep.jobPlanning.nrcJobNo,
+            jobPlanId: printingStep.jobPlanning.jobPlanId,
+            stepNo: stepNo,
+            stepName: 'Corrugation',
+            continuedBy: userId
+          }),
+          'PrintingDetails',
+          printingStep.printingDetails.id.toString()
+        );
     } catch (error) {
       console.error('Failed to log activity:', error);
       // Don't throw - activity logging is not critical
     }
   }
   
-  console.log(`✅ Production Head (${userId}) continued step ${stepNo} (Corrugation) for job ${decodedNrcJobNo}`);
+  console.log(
+    `✅ Production Head (${userId}) continued step ${stepNo} (Corrugation) for jobPlanId ${printingStep.jobPlanning.jobPlanId} (job ${printingStep.jobPlanning.nrcJobNo})`
+  );
   
   res.status(200).json({
     success: true,

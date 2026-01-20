@@ -621,8 +621,22 @@ function arePreviousStepsCompleted(steps: any[], targetStepName: string): boolea
       const punchingStep = steps.find(s => s.stepName === 'Punching');
       const dieCuttingStep = steps.find(s => s.stepName === 'Die Cutting');
       
-      const punchingReady = punchingStep && (punchingStep.status === 'start' || punchingStep.status === 'stop');
-      const dieCuttingReady = dieCuttingStep && (dieCuttingStep.status === 'start' || dieCuttingStep.status === 'stop');
+      const normalizeStatus = (status: any): string =>
+        typeof status === 'string' ? status.toLowerCase() : '';
+      const allowedStatuses = new Set([
+        'start',
+        'started',
+        'in_progress',
+        'stop',
+        'stopped',
+        'completed',
+        'accept',
+      ]);
+
+      const punchingReady =
+        punchingStep && allowedStatuses.has(normalizeStatus(punchingStep.status));
+      const dieCuttingReady =
+        dieCuttingStep && allowedStatuses.has(normalizeStatus(dieCuttingStep.status));
       
       if (!punchingReady && !dieCuttingReady) {
         return false;
@@ -631,14 +645,23 @@ function arePreviousStepsCompleted(steps: any[], targetStepName: string): boolea
       continue;
     }
     
-    // For all other cases, the previous step must exist and be started or completed/accepted
+    // For all other cases, the previous step must exist and be started / in progress / stopped / completed / accepted
     if (!prevStep) {
       return false;
     }
-    const prevStatus = typeof prevStep.status === 'string'
-      ? prevStep.status.toLowerCase()
-      : '';
-    const allowedStatuses = new Set(['start', 'stop', 'stopped', 'completed', 'accept']);
+    const prevStatus =
+      typeof prevStep.status === 'string'
+        ? prevStep.status.toLowerCase()
+        : '';
+    const allowedStatuses = new Set([
+      'start',
+      'started',
+      'in_progress',
+      'stop',
+      'stopped',
+      'completed',
+      'accept',
+    ]);
     if (!allowedStatuses.has(prevStatus)) {
       return false;
     }
