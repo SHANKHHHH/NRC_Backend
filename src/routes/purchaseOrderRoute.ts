@@ -6,6 +6,7 @@ import {
   recalculatePurchaseOrderSharedCardDiffDate,
   getAllPurchaseOrders,
   deletePurchaseOrder,
+  syncPurchaseOrderSequence,
 } from "../controllers/purchaseOrderController";
 import { requireAdminJWT, authenticateToken } from "../middleware/auth";
 
@@ -29,6 +30,13 @@ router.post(
 
 // Delete purchase order by ID (admin only)
 router.delete("/:id", requireAdminJWT, asyncHandler(deletePurchaseOrder));
+
+// Manually sync PurchaseOrder ID sequence (admin only)
+router.post(
+  "/sync-sequence",
+  requireAdminJWT,
+  asyncHandler(syncPurchaseOrderSequence)
+);
 
 // Update purchase order status by ID (admin only)
 // router.patch('/:id/status', requireAdminJWT, updatePurchaseOrderStatus);

@@ -114,6 +114,11 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
     }
   }
 
+  // Safety: never allow client to control primary key (prevents sequence desync / unique constraint on id)
+  if (createData.id !== undefined) {
+    delete createData.id;
+  }
+
   // Calculate shared card diff date
   createData.sharedCardDiffDate = calculateSharedCardDiffDate(
     data.shadeCardApprovalDate
@@ -279,6 +284,32 @@ export const deletePurchaseOrder = async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: "Failed to delete purchase order",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+// Manually sync PurchaseOrder id sequence to MAX(id)
+// Useful after legacy imports or data fixes; normally the trigger keeps this in sync.
+export const syncPurchaseOrderSequence = async (req: Request, res: Response) => {
+  try {
+    await prisma.$executeRawUnsafe(`
+      SELECT setval(
+        pg_get_serial_sequence('"PurchaseOrder"', 'id'),
+        COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 1),
+        false
+      );
+    `);
+
+    res.status(200).json({
+      success: true,
+      message: "PurchaseOrder id sequence synchronized to MAX(id)",
+    });
+  } catch (error) {
+    console.error("Error syncing purchase order sequence:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to sync purchase order sequence",
       error: error instanceof Error ? error.message : "Unknown error",
     });
   }

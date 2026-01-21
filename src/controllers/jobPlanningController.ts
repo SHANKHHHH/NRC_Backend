@@ -63,7 +63,7 @@ export const createJobPlanning = async (req: Request, res: Response) => {
   });
 
   try {
-    // 🔢 Generate monthly sequence + human-readable job plan code (e.g. "jan26-001")
+    // 🔢 Generate monthly sequence + human-readable job plan code (e.g. "JAN26-001")
     const now = new Date();
     const year = now.getFullYear();
     const monthIndex = now.getMonth(); // 0-based
@@ -85,18 +85,18 @@ export const createJobPlanning = async (req: Request, res: Response) => {
     const nextSequence = existingCount + 1;
 
     const monthNames = [
-      "jan",
-      "feb",
-      "mar",
-      "apr",
-      "may",
-      "jun",
-      "jul",
-      "aug",
-      "sep",
-      "oct",
-      "nov",
-      "dec",
+      "JAN",
+      "FEB",
+      "MAR",
+      "APR",
+      "MAY",
+      "JUN",
+      "JUL",
+      "AUG",
+      "SEP",
+      "OCT",
+      "NOV",
+      "DEC",
     ];
 
     const monthCode = monthNames[monthIndex];
@@ -3595,105 +3595,114 @@ async function consumeFinishedGoods(
 
 // 🎯 NEW: Production Head continuation endpoint
 // Allows Production Head to continue a step (e.g., Corrugation after Printing)
-export const continueStepByProductionHead = async (req: Request, res: Response) => {
-  const { nrcJobNo, stepNo, jobPlanId } = req.body;
+export const continueStepByProductionHead = async (
+  req: Request,
+  res: Response
+) => {
+  // We only need stepNo and jobPlanId from the body (nrcJobNo can be derived from JobPlanning)
+  const { stepNo, jobPlanId } = req.body as {
+    stepNo: number | string;
+    jobPlanId: number | string;
+  };
   const userId = req.user?.userId;
   const userRole = req.user?.role;
-  
+
   if (!userId) {
-    throw new AppError('User not authenticated', 401);
+    throw new AppError("User not authenticated", 401);
   }
-  
+
   // Check if user is Production Head or Admin
-  if (userRole !== 'production_head' && userRole !== 'admin') {
-    throw new AppError('Only Production Head or Admin can continue steps', 403);
+  if (userRole !== "production_head" && userRole !== "admin") {
+    throw new AppError("Only Production Head or Admin can continue steps", 403);
   }
-  
+
+  const stepNoNum = Number(stepNo);
   // 🔁 New: use jobPlanId as the primary identifier instead of nrcJobNo
-  if (!jobPlanId || !stepNo) {
-    throw new AppError('jobPlanId and stepNo are required', 400);
+  if (!jobPlanId || Number.isNaN(stepNoNum)) {
+    throw new AppError("jobPlanId and stepNo are required", 400);
   }
-  
+
   const jobPlanIdNum = Number(jobPlanId);
   if (Number.isNaN(jobPlanIdNum)) {
-    throw new AppError('jobPlanId must be a valid number', 400);
+    throw new AppError("jobPlanId must be a valid number", 400);
   }
-  
+
   // Find the Printing step (stepNo = 2) for this specific jobPlanId to get its PrintingDetails
   const printingStep = await prisma.jobStep.findFirst({
     where: {
       jobPlanningId: jobPlanIdNum,
       stepNo: 2, // Printing step
-      stepName: 'PrintingDetails'
+      stepName: "PrintingDetails",
     },
     include: {
       jobPlanning: {
         select: {
           jobPlanId: true,
-          nrcJobNo: true
-        }
+          nrcJobNo: true,
+        },
       },
-      printingDetails: true
-    }
+      printingDetails: true,
+    },
   });
-  
+
   if (!printingStep) {
-    throw new AppError('Printing step not found', 404);
+    throw new AppError("Printing step not found", 404);
   }
-  
+
   if (!printingStep.printingDetails) {
-    throw new AppError('PrintingDetails record not found for this job', 404);
+    throw new AppError("PrintingDetails record not found for this job", 404);
   }
-  
+
   // Update PrintingDetails to mark it as continued by Production Head
-  const updatedPrintingDetails = await prisma.printingDetails.update({
+  const updatedPrintingDetails = await (prisma as any).printingDetails.update({
     where: { id: printingStep.printingDetails.id },
     data: {
-      productionHeadContinued: true
-    } as any,
+      productionHeadContinued: true,
+    },
     select: {
       id: true,
       jobNrcJobNo: true,
       productionHeadContinued: true,
-      status: true
-    }
+      status: true,
+    },
   });
-  
+
   // Log the action
   if (userId) {
     try {
-        await logUserActionWithResource(
-          userId,
-          ActionTypes.JOBSTEP_UPDATED,
-          JSON.stringify({
-            message: `Production Head continued step ${stepNo} (Corrugation) after Printing`,
-            nrcJobNo: printingStep.jobPlanning.nrcJobNo,
-            jobPlanId: printingStep.jobPlanning.jobPlanId,
-            stepNo: stepNo,
-            stepName: 'Corrugation',
-            continuedBy: userId
-          }),
-          'PrintingDetails',
-          printingStep.printingDetails.id.toString()
-        );
+      await logUserActionWithResource(
+        userId,
+        ActionTypes.JOBSTEP_UPDATED,
+        JSON.stringify({
+          message: `Production Head continued step ${stepNoNum} (Corrugation) after Printing`,
+          nrcJobNo: printingStep.jobPlanning.nrcJobNo,
+          jobPlanId: printingStep.jobPlanning.jobPlanId,
+          stepNo: stepNoNum,
+          stepName: "Corrugation",
+          continuedBy: userId,
+        }),
+        "PrintingDetails",
+        printingStep.printingDetails.id.toString()
+      );
     } catch (error) {
-      console.error('Failed to log activity:', error);
+      console.error("Failed to log activity:", error);
       // Don't throw - activity logging is not critical
     }
   }
-  
+
   console.log(
-    `✅ Production Head (${userId}) continued step ${stepNo} (Corrugation) for jobPlanId ${printingStep.jobPlanning.jobPlanId} (job ${printingStep.jobPlanning.nrcJobNo})`
+    `✅ Production Head (${userId}) continued step ${stepNoNum} (Corrugation) for jobPlanId ${printingStep.jobPlanning.jobPlanId} (job ${printingStep.jobPlanning.nrcJobNo})`
   );
-  
+
   res.status(200).json({
     success: true,
-    message: `Step ${stepNo} (Corrugation) continued successfully`,
+    message: `Step ${stepNoNum} (Corrugation) continued successfully`,
     data: {
       printingDetailsId: updatedPrintingDetails.id,
       jobNrcJobNo: updatedPrintingDetails.jobNrcJobNo,
-      productionHeadContinued: updatedPrintingDetails.productionHeadContinued,
-      status: updatedPrintingDetails.status
-    }
+      productionHeadContinued: (updatedPrintingDetails as any)
+        .productionHeadContinued,
+      status: updatedPrintingDetails.status,
+    },
   });
 };
