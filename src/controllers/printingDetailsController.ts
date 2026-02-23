@@ -163,9 +163,9 @@ export const getAllPrintingDetails = async (req: Request, res: Response) => {
               jobDemand: 'high'
             }
           },
-          // Regular jobs only visible to printers (or admin/planner) with machine access
-          ...(userRole === 'printer' || userRole === 'admin' || userRole === 'planner' || 
-              (typeof userRole === 'string' && userRole.includes('printer')) ? [{
+          // Regular jobs visible to printers, admin, planner, and production_head (so Production Head can see and continue)
+          ...(userRole === 'printer' || userRole === 'admin' || userRole === 'planner' || userRole === 'production_head' ||
+              (typeof userRole === 'string' && (userRole.includes('printer') || userRole.includes('production_head'))) ? [{
             jobPlanning: {
               jobDemand: { not: 'high' as any }
             },
@@ -185,9 +185,9 @@ export const getAllPrintingDetails = async (req: Request, res: Response) => {
       orderBy: { updatedAt: 'desc' }
     });
 
-    // Filter by machine access for non-admin/planner users
+    // Filter by machine access for non-admin/planner/production_head users (Production Head sees all to continue jobs)
     let filteredSteps = jobSteps;
-    if (userRole !== 'admin' && userRole !== 'planner' && userMachineIds.length > 0) {
+    if (userRole !== 'admin' && userRole !== 'planner' && userRole !== 'production_head' && userMachineIds.length > 0) {
       filteredSteps = jobSteps.filter(step => {
         // High demand jobs are always visible
         if (step.jobPlanning?.jobDemand === 'high') return true;
@@ -226,7 +226,7 @@ export const getAllPrintingDetails = async (req: Request, res: Response) => {
       success: true, 
       count: formattedSteps.length, 
       data: formattedSteps,
-      message: `Found ${formattedSteps.length} printing job steps (high demand visible to all, regular jobs only to printers)`
+      message: `Found ${formattedSteps.length} printing job steps (high demand visible to all, regular jobs to printers and production head)`
     });
   } catch (error) {
     console.error('Error fetching printing details:', error);
