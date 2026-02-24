@@ -252,18 +252,17 @@ export const deletePurchaseOrder = async (req: Request, res: Response) => {
       throw new AppError("Purchase order not found", 404);
     }
 
-    // Check if the linked job has job planning
-    if (existingPO.job) {
-      const jobPlanning = await prisma.jobPlanning.findFirst({
-        where: { nrcJobNo: existingPO.job.nrcJobNo },
-      });
+    // Check if this specific purchase order has job planning (by purchaseOrderId, not nrcJobNo)
+    // Multiple POs can share the same jobNrcJobNo; only block delete when this PO is the one with planning
+    const jobPlanningForThisPO = await prisma.jobPlanning.findFirst({
+      where: { purchaseOrderId: Number(id) },
+    });
 
-      if (jobPlanning) {
-        throw new AppError(
-          "Cannot delete purchase order with job planning. Please delete the job planning first.",
-          400
-        );
-      }
+    if (jobPlanningForThisPO) {
+      throw new AppError(
+        "Cannot delete purchase order with job planning. Please delete the job planning first.",
+        400
+      );
     }
 
     // Delete the purchase order (related purchaseOrderMachines will be deleted automatically due to cascade)
