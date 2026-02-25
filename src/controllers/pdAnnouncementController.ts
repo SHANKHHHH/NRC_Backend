@@ -4,12 +4,22 @@ import { AppError } from '../utils/errorHandler';
 
 const prisma = new PrismaClient();
 
-// Get all active PD announcements
+// Get all active PD announcements (only those from the last 30 days - older ones are auto-removed)
 export const getAllPDAnnouncements = async (req: Request, res: Response) => {
   try {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    // Auto-deactivate announcements older than 30 days so they are removed from the app
+    await prisma.pDAnnouncement.updateMany({
+      where: { createdAt: { lt: thirtyDaysAgo }, isActive: true },
+      data: { isActive: false },
+    });
+
     const announcements = await prisma.pDAnnouncement.findMany({
       where: {
         isActive: true,
+        createdAt: { gte: thirtyDaysAgo },
       },
       include: {
         creator: {
