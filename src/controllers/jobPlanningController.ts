@@ -231,12 +231,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
       include: {
         steps: {
           include: {
-            paperStore: {
-              select: {
-                id: true,
-                status: true,
-              },
-            },
+            paperStore: true, // Full PaperStore details for step details display and PDF
             qualityDept: {
               select: {
                 id: true,
@@ -347,12 +342,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     include: {
       steps: {
         include: {
-          paperStore: {
-            select: {
-              id: true,
-              status: true,
-            },
-          },
+          paperStore: true, // Full PaperStore details for step details display and PDF
           qualityDept: {
             select: {
               id: true,
