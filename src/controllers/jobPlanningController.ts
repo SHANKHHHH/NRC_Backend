@@ -2932,6 +2932,24 @@ async function storeStepFormData(
         },
       });
     } else if (stepNameLower.includes("dispatch")) {
+      // Block dispatch when job is in major hold: at least one step must not be major_hold to allow dispatch
+      const [paperStoreMajorHold, printingMajorHold, corrugationMajorHold, fluteMajorHold, punchingMajorHold, flapMajorHold, qualityMajorHold] = await Promise.all([
+        prisma.paperStore.findFirst({ where: { jobNrcJobNo: nrcJobNo, status: "major_hold" }, select: { id: true } }),
+        prisma.printingDetails.findFirst({ where: { jobNrcJobNo: nrcJobNo, status: "major_hold" }, select: { id: true } }),
+        prisma.corrugation.findFirst({ where: { jobNrcJobNo: nrcJobNo, status: "major_hold" }, select: { id: true } }),
+        prisma.fluteLaminateBoardConversion.findFirst({ where: { jobNrcJobNo: nrcJobNo, status: "major_hold" }, select: { id: true } }),
+        prisma.punching.findFirst({ where: { jobNrcJobNo: nrcJobNo, status: "major_hold" }, select: { id: true } }),
+        prisma.sideFlapPasting.findFirst({ where: { jobNrcJobNo: nrcJobNo, status: "major_hold" }, select: { id: true } }),
+        prisma.qualityDept.findFirst({ where: { jobNrcJobNo: nrcJobNo, status: "major_hold" }, select: { id: true } }),
+      ]);
+      const isJobInMajorHold = !!(paperStoreMajorHold || printingMajorHold || corrugationMajorHold || fluteMajorHold || punchingMajorHold || flapMajorHold || qualityMajorHold);
+      if (isJobInMajorHold) {
+        throw new AppError(
+          "Cannot dispatch: job is in major hold. Please resume the job from major hold (Admin/Planner) before dispatching.",
+          400
+        );
+      }
+
       // Use user input for quantity, fallback to null if not provided
       const quantity =
         formData.noOfBoxes || formData["No of Boxes"]
