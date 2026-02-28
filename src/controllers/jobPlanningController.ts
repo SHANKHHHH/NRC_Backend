@@ -3619,8 +3619,8 @@ export const continueStepByProductionHead = async (
     throw new AppError("User not authenticated", 401);
   }
 
-  // Check if user is Production Head or Admin
-  if (userRole !== "production_head" && userRole !== "admin") {
+  // Check if user is Production Head or Admin (role may be plain string or JSON array e.g. ["production_head"])
+  if (!RoleManager.isProductionHead(userRole ?? "") && !RoleManager.isAdmin(userRole ?? "")) {
     throw new AppError("Only Production Head or Admin can continue steps", 403);
   }
 
