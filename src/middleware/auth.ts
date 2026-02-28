@@ -45,12 +45,13 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     if (!user) throw new AppError('User not found', 401);
     if (!user.isActive) throw new AppError('Account is deactivated', 401);
 
-    // 🔒 SINGLE SESSION ENFORCEMENT: Check if this token matches the active session
-    // Note: activeSessionToken field needs to be added to User model in Prisma schema if needed
-    // if (user.activeSessionToken && user.activeSessionToken !== token) {
-    //   // This session has been invalidated by a new login
-    //   throw new AppError('Session expired. This account is logged in on another device.', 401);
-    // }
+    // 🔒 SINGLE SESSION ENFORCEMENT: Reject if session was cleared (e.g. admin force logout) or doesn't match
+    if (user.activeSessionToken === null || user.activeSessionToken === undefined) {
+      throw new AppError('Session cleared. Please sign in again.', 401);
+    }
+    if (user.activeSessionToken !== token) {
+      throw new AppError('Session expired or invalid. Please sign in again.', 401);
+    }
 
     // Convert role to string format for RoleManager compatibility
     const roleString = typeof user.role === 'string' ? user.role : JSON.stringify(user.role);
