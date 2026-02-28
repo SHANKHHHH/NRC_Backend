@@ -244,11 +244,10 @@ export const getJobByNrcJobNo = async (req: Request, res: Response) => {
 };
 
 // New function: Get job details with comprehensive PO details
+// Any authenticated user can view (workers need this for Job Details modal); create/edit stays restricted.
 export const getJobWithPODetails = async (req: Request, res: Response) => {
-  // Authorization Check - Admin, Planner, and other production roles
-  const userRole = req.user?.role;
-  if (!userRole || !RoleManager.canPerformProductionAction(userRole)) {
-    throw new AppError('You are not authorized to perform this action. Required roles: admin, planner, or production_head', 403);
+  if (!req.user?.userId) {
+    throw new AppError('You must be logged in to view job details', 401);
   }
 
   const { nrcJobNo } = req.params;
