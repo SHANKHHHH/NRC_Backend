@@ -485,6 +485,34 @@ export const deleteUser = async (req: Request, res: Response) => {
   });
 };
 
+/**
+ * Force logout a user by clearing their active session token (admin only).
+ * The user will need to log in again on their next request.
+ */
+export const forceLogoutUser = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  await prisma.user.update({
+    where: { id },
+    data: {
+      activeSessionToken: null,
+      sessionLoginTime: null,
+      sessionDeviceInfo: null,
+    },
+  });
+
+  res.json({
+    success: true,
+    message: "User session cleared. They will be logged out on next request.",
+    data: { userId: id },
+  });
+};
+
 export const getRoles = async (_req: Request, res: Response) => {
   res.json({
     success: true,

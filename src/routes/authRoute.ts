@@ -16,6 +16,7 @@ import {
   getUserById,
   updateUser,
   deleteUser,
+  forceLogoutUser,
   getRoles,
 } from "../controllers/authControllers/authController";
 
@@ -51,6 +52,7 @@ router.post("/add-member", requireAdminJWT, asyncHandler(addMember));
 router.get("/users", requireAdminJWT, asyncHandler(getAllUsers));
 router.put("/users/:id", requireAdminJWT, asyncHandler(updateUser));
 router.delete("/users/:id", requireAdminJWT, asyncHandler(deleteUser));
+router.post("/users/:id/force-logout", requireAdminJWT, asyncHandler(forceLogoutUser));
 
 // Authenticated user routes
 router.get("/profile", authenticateToken, asyncHandler(getProfile));
