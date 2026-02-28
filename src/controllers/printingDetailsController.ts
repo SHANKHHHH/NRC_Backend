@@ -156,10 +156,14 @@ function hasPrintingDashboardFullAccess(userRole: string | string[] | undefined)
 
 export const getAllPrintingDetails = async (req: Request, res: Response) => {
   const userRole = req.user?.role || '';
-  const userMachineIds = req.userMachineIds || []; // From middleware
-  
+  // Middleware sets userMachineIds = null for admin/planner/printing_manager etc. (bypass). Don't overwrite with [].
+  const bypassMachineFilter = req.userMachineIds === null;
+  const userMachineIds = req.userMachineIds ?? [];
+
   try {
-    const canSeeAllJobs = hasPrintingDashboardFullAccess(userRole) ||
+    // See all jobs when: middleware bypass (null) OR role-based full access (admin, planner, production_head, printing_manager, printer)
+    const canSeeAllJobs = bypassMachineFilter ||
+      hasPrintingDashboardFullAccess(userRole) ||
       userRole === 'printer' ||
       (typeof userRole === 'string' && (userRole.includes('printer') || userRole.includes('production_head')));
 
@@ -195,9 +199,9 @@ export const getAllPrintingDetails = async (req: Request, res: Response) => {
       orderBy: { updatedAt: 'desc' }
     });
 
-    // Filter by machine access: admin, planner, production_head, printing_manager see all (no filter)
+    // Filter by machine access: bypass (null) or full-access roles see all; others filter by assigned machines
     let filteredSteps = jobSteps;
-    if (!hasPrintingDashboardFullAccess(userRole) && userMachineIds.length > 0) {
+    if (!bypassMachineFilter && !hasPrintingDashboardFullAccess(userRole) && userMachineIds.length > 0) {
       filteredSteps = jobSteps.filter(step => {
         // High demand jobs are always visible
         if (step.jobPlanning?.jobDemand === 'high') return true;
