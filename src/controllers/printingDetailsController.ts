@@ -146,13 +146,25 @@ export const getPrintingDetailsByJobStepId = async (req: Request, res: Response)
   }
 };
 
+// Roles that can see all printing jobs (same as admin on Printing Dashboard)
+const PRINTING_DASHBOARD_FULL_ACCESS_ROLES = ['admin', 'planner', 'production_head', 'printing_manager'];
+
+function hasPrintingDashboardFullAccess(userRole: string | string[] | undefined): boolean {
+  const roleStr = typeof userRole === 'string' ? userRole : (Array.isArray(userRole) ? userRole.join(',') : '');
+  return PRINTING_DASHBOARD_FULL_ACCESS_ROLES.some(r => roleStr.includes(r));
+}
+
 export const getAllPrintingDetails = async (req: Request, res: Response) => {
   const userRole = req.user?.role || '';
   const userMachineIds = req.userMachineIds || []; // From middleware
   
   try {
+    const canSeeAllJobs = hasPrintingDashboardFullAccess(userRole) ||
+      userRole === 'printer' ||
+      (typeof userRole === 'string' && (userRole.includes('printer') || userRole.includes('production_head')));
+
     // Get job steps for printing role using jobStepId as unique identifier
-    // High demand jobs are visible to all users, regular jobs only to printers with machine access
+    // High demand jobs are visible to all users; regular jobs visible to printers, admin, planner, production_head, printing_manager
     const jobSteps = await prisma.jobStep.findMany({
       where: { 
         stepName: 'PrintingDetails',
@@ -163,13 +175,11 @@ export const getAllPrintingDetails = async (req: Request, res: Response) => {
               jobDemand: 'high'
             }
           },
-          // Regular jobs visible to printers, admin, planner, and production_head (so Production Head can see and continue)
-          ...(userRole === 'printer' || userRole === 'admin' || userRole === 'planner' || userRole === 'production_head' ||
-              (typeof userRole === 'string' && (userRole.includes('printer') || userRole.includes('production_head'))) ? [{
+          // Regular jobs visible to printers, admin, planner, production_head, and printing_manager (same as admin)
+          ...(canSeeAllJobs ? [{
             jobPlanning: {
               jobDemand: { not: 'high' as any }
             },
-            // Machine filtering will be done in application logic
           }] : [])
         ]
       },
@@ -185,9 +195,9 @@ export const getAllPrintingDetails = async (req: Request, res: Response) => {
       orderBy: { updatedAt: 'desc' }
     });
 
-    // Filter by machine access for non-admin/planner/production_head users (Production Head sees all to continue jobs)
+    // Filter by machine access: admin, planner, production_head, printing_manager see all (no filter)
     let filteredSteps = jobSteps;
-    if (userRole !== 'admin' && userRole !== 'planner' && userRole !== 'production_head' && userMachineIds.length > 0) {
+    if (!hasPrintingDashboardFullAccess(userRole) && userMachineIds.length > 0) {
       filteredSteps = jobSteps.filter(step => {
         // High demand jobs are always visible
         if (step.jobPlanning?.jobDemand === 'high') return true;
