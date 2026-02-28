@@ -426,6 +426,8 @@ function parseMachineDetails(machineDetails: any): string[] {
 export function isStepForUserRole(stepName: string, userRole: string | string[]): boolean {
   const roleStepMapping = {
     'printer': 'PrintingDetails',
+    'printing_manager': 'PrintingDetails',
+    'printing': 'PrintingDetails',
     'corrugator': 'Corrugation', 
     'punching_operator': ['Punching', 'Die Cutting', 'DispatchProcess'],
     'pasting_operator': 'SideFlapPasting',

@@ -12,9 +12,15 @@ import {
   holdJobByNrcJobNo,
   checkJobPlanningStatus,
   recalculateSharedCardDiffDate,
+  syncJobSequence,
 } from '../controllers/jobController';
 
 const router = Router();
+
+// Sync Job id sequence after bulk import (e.g. Excel) - must be before /:nrcJobNo
+router
+  .route('/sync-sequence')
+  .post(authenticateToken, asyncHandler(syncJobSequence));
 
 // Chain routes for getting all jobs and creating a new job
 router

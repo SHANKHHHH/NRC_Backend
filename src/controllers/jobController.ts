@@ -75,6 +75,30 @@ export const createJob = async (req: Request, res: Response) => {
   });
 };
 
+/** Sync Job id sequence to MAX(id) so next insert gets MAX(id)+1. Use after bulk imports (e.g. Excel). */
+export const syncJobSequence = async (req: Request, res: Response) => {
+  try {
+    await prisma.$executeRawUnsafe(`
+      SELECT setval(
+        pg_get_serial_sequence('"Job"', 'id'),
+        COALESCE((SELECT MAX(id) FROM "Job"), 1),
+        false
+      );
+    `);
+    return res.status(200).json({
+      success: true,
+      message: 'Job id sequence synchronized; next id will be MAX(id)+1',
+    });
+  } catch (error) {
+    console.error('Error syncing job sequence:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to sync job sequence',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+};
+
 
 //get all jobs
 export const getAllJobs = async (req: Request, res: Response) => {
