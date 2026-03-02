@@ -49,7 +49,7 @@ router.post("/login", asyncHandler(login));
 // User management routes
 // Admin-only routes
 router.post("/add-member", requireAdminJWT, asyncHandler(addMember));
-router.get("/users", requireAdminJWT, asyncHandler(getAllUsers));
+router.get("/users", authenticateToken, asyncHandler(getAllUsers));
 router.put("/users/:id", requireAdminJWT, asyncHandler(updateUser));
 router.delete("/users/:id", requireAdminJWT, asyncHandler(deleteUser));
 router.post("/users/:id/force-logout", requireAdminJWT, asyncHandler(forceLogoutUser));
