@@ -9,7 +9,8 @@ export const generateToken = (userId: string) => {
   return jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '30d' });
 };
 
-// Generate access token with 30 days expiration
+// Generate access token with 30 days expiration.
+// Session only ends earlier if: user logs out, admin force-logout, or JWT expires (30d).
 export const generateAccessToken = (userId: string) => {
   return jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '30d' });
 };
