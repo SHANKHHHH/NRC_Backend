@@ -151,10 +151,10 @@ export class RoleManager {
   }
 
   /**
-   * Check if user can perform planner actions
+   * Check if user can perform planner actions (create jobs, job plannings, add POs, etc.)
    */
   static canPerformPlannerAction(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ["admin", "planner"]);
+    return this.hasAnyRole(userRole, ["admin", "planner", "printing_manager", "production_head"]);
   }
 
   /**
@@ -179,10 +179,10 @@ export class RoleManager {
   }
 
   /**
-   * Check if user can access all job steps (flying squad, admin, planner)
+   * Check if user can access all job steps (flying squad, admin, planner, printing manager, production head)
    */
   static canAccessAllJobSteps(userRole: string): boolean {
-    return this.hasAnyRole(userRole, ["admin", "planner", "flyingsquad"]);
+    return this.hasAnyRole(userRole, ["admin", "planner", "flyingsquad", "printing_manager", "production_head"]);
   }
 
   /**

@@ -40,7 +40,7 @@ export const login = async (
 ) => {
   try {
     const loginValidator = loginSchema.parse(req.body);
-    const { email, password, replaceSession } = loginValidator;
+    const { email, password } = loginValidator;
 
     const user = await prisma.user.findFirst({ where: { email } });
 
@@ -59,8 +59,7 @@ export const login = async (
     }
 
     // 🔒 SINGLE SESSION ENFORCEMENT: Check if user is already logged in somewhere else
-    // If replaceSession is true (e.g. same device re-open after app was closed), allow login by replacing the session
-    if (user.activeSessionToken && !replaceSession) {
+    if (user.activeSessionToken) {
       // User is already logged in on another device
       const deviceInfo = user.sessionDeviceInfo || "Unknown device";
       const loginTime = user.sessionLoginTime
