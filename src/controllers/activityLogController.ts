@@ -207,7 +207,8 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
             jobPlanning: {
               select: {
                 nrcJobNo: true,
-                jobPlanId: true
+                jobPlanId: true,
+                jobPlanCode: true
               }
             }
           }
@@ -239,7 +240,8 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
             jobPlanning: {
               select: {
                 nrcJobNo: true,
-                jobPlanId: true
+                jobPlanId: true,
+                jobPlanCode: true
               }
             }
           }
@@ -288,7 +290,8 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       jobPlanning: {
         select: {
           nrcJobNo: true,
-          jobPlanId: true
+          jobPlanId: true,
+          jobPlanCode: true
         }
       },
       paperStore: {
@@ -328,6 +331,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
   const startedActivityLogs = startedMachines.map((machine: any) => {
     const nrcJobNo = machine.nrcJobNo || machine.jobStep?.jobPlanning?.nrcJobNo || '';
     const jobPlanId = machine.jobStep?.jobPlanning?.jobPlanId || machine.jobStep?.jobPlanningId || null;
+    const jobPlanCode = machine.jobStep?.jobPlanning?.jobPlanCode ?? null;
     const startedAt = machine.startedAt;
 
     // Create a synthetic activity log entry for started action
@@ -338,14 +342,16 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       details: JSON.stringify({
         message: `Step ${machine.stepNo || 'N/A'} (${machine.jobStep?.stepName || 'Unknown'}) started`,
         nrcJobNo: nrcJobNo,
-        jobPlanId: jobPlanId, // Include jobPlanId in details
+        jobPlanId: jobPlanId,
+        jobPlanCode: jobPlanCode,
         stepNo: machine.stepNo,
         stepName: machine.jobStep?.stepName || 'Unknown',
         machineId: machine.machineId,
         startDate: startedAt
       }),
       nrcJobNo: nrcJobNo,
-      jobPlanId: jobPlanId, // Include jobPlanId at root level
+      jobPlanId: jobPlanId,
+      jobPlanCode: jobPlanCode,
       createdAt: startedAt, // Use startedAt so it shows in the activity on the day it was started
       updatedAt: machine.updatedAt,
       user: machine.user,
@@ -361,6 +367,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     const completedAt = machine.completedAt || machine.updatedAt;
     const nrcJobNo = machine.nrcJobNo || machine.jobStep?.jobPlanning?.nrcJobNo || '';
     const jobPlanId = machine.jobStep?.jobPlanning?.jobPlanId || machine.jobStep?.jobPlanningId || null;
+    const jobPlanCode = machine.jobStep?.jobPlanning?.jobPlanCode ?? null;
     // Use completedAt first (when step was completed), then updatedAt, then createdAt as fallback
     // This ensures activities appear on the completion date, not the last update date
     const activityDate = machine.completedAt || machine.updatedAt || machine.createdAt;
@@ -373,7 +380,8 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       details: JSON.stringify({
         message: `Step ${machine.stepNo || 'N/A'} (${machine.jobStep?.stepName || 'Unknown'}) completed`,
         nrcJobNo: nrcJobNo,
-        jobPlanId: jobPlanId, // Include jobPlanId in details
+        jobPlanId: jobPlanId,
+        jobPlanCode: jobPlanCode,
         stepNo: machine.stepNo,
         stepName: machine.jobStep?.stepName || 'Unknown',
         totalOK: okQuantity,
@@ -383,7 +391,8 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
         machineId: machine.machineId
       }),
       nrcJobNo: nrcJobNo,
-      jobPlanId: jobPlanId, // Include jobPlanId at root level
+      jobPlanId: jobPlanId,
+      jobPlanCode: jobPlanCode,
       createdAt: activityDate, // Use completedAt/updatedAt so it shows in the activity on the day it was completed
       updatedAt: machine.updatedAt,
       user: machine.user,
@@ -431,6 +440,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
   const completedNonMachineActivityLogs = completedNonMachineSteps.map((step: any) => {
     const nrcJobNo = step.jobPlanning?.nrcJobNo || '';
     const jobPlanId = step.jobPlanning?.jobPlanId || step.jobPlanningId || null;
+    const jobPlanCode = step.jobPlanning?.jobPlanCode ?? null;
     const stepName = step.stepName || 'Unknown';
     const stepNo = step.stepNo || 0;
     const completedAt = step.endDate || step.updatedAt || step.createdAt;
@@ -479,7 +489,8 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       details: JSON.stringify({
         message: `Step ${stepNo} (${stepName}) completed`,
         nrcJobNo: nrcJobNo,
-        jobPlanId: jobPlanId, // Include jobPlanId in details
+        jobPlanId: jobPlanId,
+        jobPlanCode: jobPlanCode,
         stepNo: stepNo,
         stepName: stepName,
         quantity: quantity,
@@ -488,7 +499,8 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
         ...additionalDetails
       }),
       nrcJobNo: nrcJobNo,
-      jobPlanId: jobPlanId, // Include jobPlanId at root level for easier access
+      jobPlanId: jobPlanId,
+      jobPlanCode: jobPlanCode,
       createdAt: activityDate, // Use endDate so it shows in the activity on the day it was completed
       updatedAt: step.updatedAt,
       user: userDetails,
@@ -522,6 +534,28 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
   });
 
   const allLogs = Array.from(logMap.values());
+
+  // Enrich logs that have jobPlanId but no jobPlanCode (e.g. raw ActivityLog, CompletedJob) from JobPlanning table
+  const planIdsToLookup = [...new Set(
+    allLogs
+      .filter((log: any) => log.jobPlanId != null && !log.jobPlanCode)
+      .map((log: any) => Number(log.jobPlanId))
+      .filter((id: number) => !Number.isNaN(id))
+  )];
+  if (planIdsToLookup.length > 0) {
+    const planRows = await prisma.jobPlanning.findMany({
+      where: { jobPlanId: { in: planIdsToLookup } },
+      select: { jobPlanId: true, jobPlanCode: true }
+    });
+    const planCodeById = Object.fromEntries(
+      (planRows || []).map((r: any) => [r.jobPlanId, r.jobPlanCode])
+    );
+    allLogs.forEach((log: any) => {
+      if (log.jobPlanId != null && !log.jobPlanCode && planCodeById[Number(log.jobPlanId)] != null) {
+        log.jobPlanCode = planCodeById[Number(log.jobPlanId)];
+      }
+    });
+  }
 
   // Sanitize data to ensure it's UTF-8 compatible and remove replacement characters
   const sanitizedLogs = allLogs.map(log => ({
