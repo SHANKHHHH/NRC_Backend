@@ -8,10 +8,10 @@ const router = Router();
 // All routes require authentication
 router.use(authenticateToken);
 
-// Get all finish quantities (admin/planner only)
+// Get all finish quantities
 router.get('/', asyncHandler(getAllFinishQuantities));
 
-// Get finish quantities by job number (admin/planner only)
+// Get finish quantities by job number
 router.get('/by-job/:nrcJobNo', asyncHandler(getFinishQuantitiesByJob));
 
 // Get available finished goods quantity for a job (for UI)

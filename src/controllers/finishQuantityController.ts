@@ -1,20 +1,12 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
-import { RoleManager } from '../utils/roleUtils';
 
 /**
- * Get all finish quantities (admin and planner only)
- * Returns finish quantities grouped by job for easy viewing in admin/planner dashboard
+ * Get all finish quantities
+ * Returns finish quantities grouped by job (any authenticated user can call)
  */
 export const getAllFinishQuantities = async (req: Request, res: Response) => {
-  const userRole = req.user?.role || '';
-  
-  // Only admin and planner can access
-  if (!RoleManager.isAdmin(userRole) && userRole !== 'planner') {
-    throw new AppError('Access denied. Only admin and planner roles can view finish quantities.', 403);
-  }
-
   try {
     // Get all finish quantities with job details
     const finishQuantities = await prisma.finishQuantity.findMany({
@@ -103,16 +95,10 @@ export const getAllFinishQuantities = async (req: Request, res: Response) => {
 };
 
 /**
- * Get finish quantities by job number
+ * Get finish quantities by job number (any authenticated user can call)
  */
 export const getFinishQuantitiesByJob = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
-  const userRole = req.user?.role || '';
-  
-  // Only admin and planner can access
-  if (!RoleManager.isAdmin(userRole) && userRole !== 'planner') {
-    throw new AppError('Access denied. Only admin and planner roles can view finish quantities.', 403);
-  }
 
   try {
     const finishQuantities = await prisma.finishQuantity.findMany({
