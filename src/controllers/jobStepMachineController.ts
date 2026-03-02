@@ -113,6 +113,29 @@ async function findJobStepForOperation(
   return jobStep;
 }
 
+/**
+ * When multiple job plans exist for the same nrcJobNo, we must resolve by job plan (like corrugation by jobStepId).
+ * Ensures jobPlanId or jobStepId is provided so the correct step is used.
+ */
+async function requirePlanOrStepForJob(
+  nrcJobNo: string,
+  stepNo: number,
+  identifiers: PlanningIdentifiers
+): Promise<void> {
+  const { jobPlanId, jobStepId } = identifiers;
+  if (jobStepId !== undefined || jobPlanId !== undefined) return;
+
+  const planCount = await prisma.jobPlanning.count({
+    where: { nrcJobNo }
+  });
+  if (planCount > 1) {
+    throw new AppError(
+      'This job has multiple plans. Please provide jobPlanId or jobStepId in the request (e.g. ?jobPlanId=630) so the correct step is used.',
+      400
+    );
+  }
+}
+
 // Get available machines for a specific job step
 export const getAvailableMachines = async (req: Request, res: Response) => {
   try {
@@ -123,6 +146,8 @@ export const getAvailableMachines = async (req: Request, res: Response) => {
     if (!userId) {
       throw new AppError('User not authenticated', 401);
     }
+
+    await requirePlanOrStepForJob(nrcJobNo, parseInt(stepNo), identifiers);
 
     // Get the job step
     const jobStep = await findJobStepForOperation(
@@ -235,6 +260,8 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
     if (!machineId || machineId === 'null' || machineId === 'undefined') {
       throw new AppError('No machine assigned for this step. Please contact the planner to assign a machine.', 400);
     }
+
+    await requirePlanOrStepForJob(nrcJobNo, parseInt(stepNo), identifiers);
 
     // Check if this is an urgent job
     // Check job.jobDemand first (existing functionality - UNCHANGED)
@@ -800,6 +827,8 @@ export const getMachineWorkStatus = async (req: Request, res: Response) => {
   try {
     const { nrcJobNo, stepNo } = req.params;
     const identifiers = parsePlanningIdentifiers(req);
+
+    await requirePlanOrStepForJob(nrcJobNo, parseInt(stepNo), identifiers);
 
     // Get the job step with all machine work
     const jobStep = await findJobStepForOperation(
