@@ -6,7 +6,7 @@ import { autoCompleteJobIfReady } from "../utils/workflowValidator";
 import { Machine } from "@prisma/client";
 import { getWorkflowStatus } from "../utils/workflowValidator";
 import { updateJobMachineDetailsFlag } from "../utils/machineDetailsTracker";
-import { getFilteredJobNumbers } from "../middleware/machineAccess";
+import { getFilteredJobNumbers, getFilteredJobPlanKeys } from "../middleware/machineAccess";
 import { RoleManager } from "../utils/roleUtils";
 
 export const createJobPlanning = async (req: Request, res: Response) => {
@@ -206,10 +206,10 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
 
   // Get job numbers that are accessible to the user based on machine assignments
   const userRole = req.user?.role || "";
-  const accessibleJobNumbers = await getFilteredJobNumbers(
-    userMachineIds || null,
-    userRole
-  );
+  const [accessibleJobNumbers, accessiblePlanKeys] = await Promise.all([
+    getFilteredJobNumbers(userMachineIds || null, userRole),
+    getFilteredJobPlanKeys(userMachineIds || null, userRole),
+  ]);
 
   // Bypass branch: Roles that should see ALL plannings without deduplication
   // Admin, Planner, Flying Squad, QC Manager, PaperStore, Production Head need to see all versions
@@ -329,15 +329,22 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     return res.status(200).json(response);
   }
 
-  // Paginate the accessible job numbers only if pagination is requested
-  const jobNumbersToFetch = isPaginated
-    ? accessibleJobNumbers.slice(skip, skip + limit)
-    : accessibleJobNumbers;
+  // When plan keys are used (machine users), only these (nrcJobNo, jobPlanId) pairs are allowed
+  const planKeysSet =
+    accessiblePlanKeys != null
+      ? new Set(accessiblePlanKeys.map((k) => `${k.nrcJobNo}_${k.jobPlanId}`))
+      : null;
 
-  // Get ALL job plannings for accessible jobs (NO deduplication)
-  // Production roles with machines should see ALL accessible plannings, not just the latest
+  const jobNumbersToFetch =
+    accessiblePlanKeys != null
+      ? [...new Set(accessiblePlanKeys.map((k) => k.nrcJobNo))]
+      : isPaginated
+        ? accessibleJobNumbers.slice(skip, skip + limit)
+        : accessibleJobNumbers;
+
+  // Get job plannings for accessible jobs; when planKeysSet is set, filter to only those (nrcJobNo, jobPlanId)
   const userId = req.user?.userId;
-  const jobPlannings = await prisma.jobPlanning.findMany({
+  let jobPlannings = await prisma.jobPlanning.findMany({
     where: { nrcJobNo: { in: jobNumbersToFetch } },
     include: {
       steps: {
@@ -357,8 +364,14 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     orderBy: { jobPlanId: "desc" },
   });
 
+  if (planKeysSet != null) {
+    jobPlannings = jobPlannings.filter(
+      (p: any) => planKeysSet.has(`${p.nrcJobNo}_${p.jobPlanId}`)
+    );
+  }
+
   console.log(
-    `🔍 [getAllJobPlannings] Fetched ${jobPlannings.length} job plannings from DB. Accessible job numbers: ${jobNumbersToFetch.length}`
+    `🔍 [getAllJobPlannings] Fetched ${jobPlannings.length} job plannings from DB. Accessible job numbers: ${jobNumbersToFetch.length}${planKeysSet != null ? " (plan-key filtered)" : ""}`
   );
   console.log(
     `🔍 [getAllJobPlannings] Urgent jobs in fetched plannings: ${jobPlannings

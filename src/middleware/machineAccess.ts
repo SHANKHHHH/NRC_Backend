@@ -762,74 +762,138 @@ export const getFilteredJobNumbers = async (
     .filter(j => (j.machineId && userMachineIds.includes(j.machineId)) || j.jobDemand === 'high')
     .map(j => j.nrcJobNo);
 
-  const planningLevelAccessible = jobPlannings
-    .filter(p => {
-      // Check if this is an urgent job (high demand) - used only for logging now
-      const highDemandJob = jobs.find(j => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
-      const isUrgentJob = highDemandJob || p.jobDemand === 'high';
-      console.log(`🔍 [MachineAccess] Job ${p.nrcJobNo}: jobDemand=${p.jobDemand}, isUrgentJob=${isUrgentJob}`);
-      
-      // 🎯 For ALL jobs (urgent + regular): show on ALL machines logically,
-      // but actual visibility will be controlled by machineDetails and step dependencies below.
-      // No machine restriction - jobs will be visible on all machines
-      // When a worker starts the job on a machine, it will be removed from other machines
-      const hasAccessibleStep = p.steps.some(s => {
-        // Role-based visibility: Check if step matches user role
-        if (isStepForUserRole(s.stepName, userRole)) {
-          return true; // Show to all machines for regular jobs too
-        }
-        return false;
-      });
+  const planningLevelFilter = (p: any) => {
+    // Check if this is an urgent job (high demand) - used only for logging now
+    const highDemandJob = jobs.find((j: any) => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
+    const isUrgentJob = highDemandJob || p.jobDemand === 'high';
+    console.log(`🔍 [MachineAccess] Job ${p.nrcJobNo}: jobDemand=${p.jobDemand}, isUrgentJob=${isUrgentJob}`);
 
-      // If no accessible step, job is not visible
-      if (!hasAccessibleStep) {
-        return false;
-      }
-
-      // 🎯 NEW: Step dependency filtering (only for regular jobs)
-      // Check if the user's relevant steps have their previous steps completed
-      const userRelevantSteps = p.steps.filter(s => isStepForUserRole(s.stepName, userRole));
-      
-      if (userRelevantSteps.length === 0) {
-        // If no steps match user's role, use machine-based filtering only
+    const hasAccessibleStep = p.steps.some((s: any) => {
+      if (isStepForUserRole(s.stepName, userRole)) {
         return true;
       }
+      return false;
+    });
 
-      // 🎯 NEW: Check Production Head continuation for Corrugation step
-      // Corrugation should only be visible if Production Head has continued it
-      for (const step of userRelevantSteps) {
-        if (step.stepName === 'Corrugation') {
-          // Check if Printing is started/completed (previous step requirement)
-          const printingStep = p.steps.find(s => s.stepName === 'PrintingDetails');
-          const printingReady = printingStep && (printingStep.status === 'start' || printingStep.status === 'stop');
-          
-          if (printingReady) {
-            // If Printing is ready, Corrugation must be continued by Production Head
-            // Check productionHeadContinued from PrintingDetails (not JobStep)
-            const productionHeadContinued = printingStep.printingDetails?.productionHeadContinued ?? false;
-            if (!productionHeadContinued) {
-              console.log(`🔍 [MachineAccess] Corrugation step for job ${p.nrcJobNo} is waiting for Production Head continuation`);
-              return false; // Hide from app until Production Head continues
-            }
+    if (!hasAccessibleStep) {
+      return false;
+    }
+
+    const userRelevantSteps = p.steps.filter((s: any) => isStepForUserRole(s.stepName, userRole));
+
+    if (userRelevantSteps.length === 0) {
+      return true;
+    }
+
+    // 🎯 Check Production Head continuation for Corrugation step
+    for (const step of userRelevantSteps) {
+      if (step.stepName === 'Corrugation') {
+        const printingStep = p.steps.find((s: any) => s.stepName === 'PrintingDetails');
+        const printingReady = printingStep && (printingStep.status === 'start' || printingStep.status === 'stop');
+
+        if (printingReady) {
+          const productionHeadContinued = printingStep.printingDetails?.productionHeadContinued ?? false;
+          if (!productionHeadContinued) {
+            console.log(`🔍 [MachineAccess] Corrugation step for job ${p.nrcJobNo} (plan ${p.jobPlanId}) is waiting for Production Head continuation`);
+            return false;
           }
         }
       }
+    }
 
-      // For each step that matches the user's role, check if previous steps are completed
-      const hasStepWithCompletedPrerequisites = userRelevantSteps.some(userStep => {
-        const ready = arePreviousStepsCompleted(p.steps, userStep.stepName);
-        if (!ready && (Array.isArray(userRole) ? userRole.join(',') : userRole).toLowerCase().includes('quality')) {
-          console.log(`🔍 [MachineAccess] Quality filtering blocked job ${p.nrcJobNo} at step ${userStep.stepName}. Steps:`, JSON.stringify(p.steps.map(s => ({ stepName: s.stepName, status: s.status }))));
-        }
-        return ready;
-      });
+    const hasStepWithCompletedPrerequisites = userRelevantSteps.some((userStep: any) => {
+      const ready = arePreviousStepsCompleted(p.steps, userStep.stepName);
+      if (!ready && (Array.isArray(userRole) ? userRole.join(',') : userRole).toLowerCase().includes('quality')) {
+        console.log(`🔍 [MachineAccess] Quality filtering blocked job ${p.nrcJobNo} at step ${userStep.stepName}. Steps:`, JSON.stringify(p.steps.map((s: any) => ({ stepName: s.stepName, status: s.status }))));
+      }
+      return ready;
+    });
 
-      return hasStepWithCompletedPrerequisites;
-    })
-    .map(p => p.nrcJobNo);
+    return hasStepWithCompletedPrerequisites;
+  };
+
+  const planningLevelAccessible = jobPlannings
+    .filter(planningLevelFilter)
+    .map((p: any) => p.nrcJobNo);
 
   const set = new Set<string>([...jobLevelAccessible, ...planningLevelAccessible]);
   return Array.from(set);
+};
+
+/**
+ * Returns (nrcJobNo, jobPlanId) pairs that passed the same filter as getFilteredJobNumbers.
+ * Used by getAllJobPlannings so only plannings with e.g. productionHeadContinued are returned,
+ * not all plannings for an accessible job number.
+ * Returns null for admin/planner/paperstore (no plan-level filter).
+ */
+export const getFilteredJobPlanKeys = async (
+  userMachineIds: string[] | null,
+  userRole: string
+): Promise<{ nrcJobNo: string; jobPlanId: number }[] | null> => {
+  if (userMachineIds === null || userRole.includes('paperstore')) {
+    return null;
+  }
+
+  const [jobs, jobPlannings] = await Promise.all([
+    prisma.job.findMany({ select: { nrcJobNo: true, machineId: true, jobDemand: true } }),
+    prisma.jobPlanning.findMany({
+      select: {
+        nrcJobNo: true,
+        jobPlanId: true,
+        jobDemand: true,
+        steps: {
+          select: {
+            machineDetails: true,
+            stepNo: true,
+            stepName: true,
+            status: true,
+            printingDetails: {
+              select: { productionHeadContinued: true }
+            },
+            paperStore: { select: { status: true } }
+          },
+          orderBy: { stepNo: 'asc' }
+        }
+      }
+    })
+  ]);
+
+  const jobLevelAccessibleSet = new Set(
+    jobs
+      .filter((j: any) => (j.machineId && userMachineIds.includes(j.machineId)) || j.jobDemand === 'high')
+      .map((j: any) => j.nrcJobNo)
+  );
+
+  const planningLevelFilter = (p: any) => {
+    const highDemandJob = jobs.find((j: any) => j.nrcJobNo === p.nrcJobNo)?.jobDemand === 'high';
+    const isUrgentJob = highDemandJob || p.jobDemand === 'high';
+
+    const hasAccessibleStep = p.steps.some((s: any) => isStepForUserRole(s.stepName, userRole));
+    if (!hasAccessibleStep) return false;
+
+    const userRelevantSteps = p.steps.filter((s: any) => isStepForUserRole(s.stepName, userRole));
+    if (userRelevantSteps.length === 0) return true;
+
+    for (const step of userRelevantSteps) {
+      if (step.stepName === 'Corrugation') {
+        const printingStep = p.steps.find((s: any) => s.stepName === 'PrintingDetails');
+        const printingReady = printingStep && (printingStep.status === 'start' || printingStep.status === 'stop');
+        if (printingReady) {
+          const productionHeadContinued = printingStep.printingDetails?.productionHeadContinued ?? false;
+          if (!productionHeadContinued) return false;
+        }
+      }
+    }
+
+    return userRelevantSteps.some((userStep: any) => arePreviousStepsCompleted(p.steps, userStep.stepName));
+  };
+
+  // Include: all plannings for job-level accessible jobs, OR plannings that pass the step/productionHead filter
+  const keys = jobPlannings
+    .filter((p: any) => jobLevelAccessibleSet.has(p.nrcJobNo) || planningLevelFilter(p))
+    .map((p: any) => ({ nrcJobNo: p.nrcJobNo, jobPlanId: p.jobPlanId }));
+
+  return keys;
 };
 
 /**
