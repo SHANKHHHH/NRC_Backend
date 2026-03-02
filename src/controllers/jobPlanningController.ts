@@ -3603,14 +3603,15 @@ async function consumeFinishedGoods(
 
 // 🎯 NEW: Production Head continuation endpoint
 // Allows Production Head to continue a step (e.g., Corrugation after Printing)
+// Accepts jobPlanCode (string) or jobPlanId (number) in the body; jobPlanCode is preferred when available.
 export const continueStepByProductionHead = async (
   req: Request,
   res: Response
 ) => {
-  // We only need stepNo and jobPlanId from the body (nrcJobNo can be derived from JobPlanning)
-  const { stepNo, jobPlanId } = req.body as {
+  const { stepNo, jobPlanId: jobPlanIdBody, jobPlanCode } = req.body as {
     stepNo: number | string;
-    jobPlanId: number | string;
+    jobPlanId?: number | string;
+    jobPlanCode?: string;
   };
   const userId = req.user?.userId;
   const userRole = req.user?.role;
@@ -3625,14 +3626,29 @@ export const continueStepByProductionHead = async (
   }
 
   const stepNoNum = Number(stepNo);
-  // 🔁 New: use jobPlanId as the primary identifier instead of nrcJobNo
-  if (!jobPlanId || Number.isNaN(stepNoNum)) {
-    throw new AppError("jobPlanId and stepNo are required", 400);
+  if (Number.isNaN(stepNoNum)) {
+    throw new AppError("stepNo is required and must be a valid number", 400);
   }
 
-  const jobPlanIdNum = Number(jobPlanId);
-  if (Number.isNaN(jobPlanIdNum)) {
-    throw new AppError("jobPlanId must be a valid number", 400);
+  // Resolve jobPlanId: prefer jobPlanCode (look up by code), then jobPlanId from body
+  let jobPlanIdNum: number;
+  if (jobPlanCode && typeof jobPlanCode === "string" && jobPlanCode.trim()) {
+    // Schema has jobPlanCode @unique; cast for Prisma clients where types omit jobPlanCode
+    const planning = await (prisma as any).jobPlanning.findFirst({
+      where: { jobPlanCode: jobPlanCode.trim() },
+      select: { jobPlanId: true },
+    }) as { jobPlanId: number } | null;
+    if (!planning) {
+      throw new AppError(`No job plan found for job plan code: ${jobPlanCode}`, 404);
+    }
+    jobPlanIdNum = planning.jobPlanId;
+  } else if (jobPlanIdBody !== undefined && jobPlanIdBody !== null && jobPlanIdBody !== "") {
+    jobPlanIdNum = Number(jobPlanIdBody);
+    if (Number.isNaN(jobPlanIdNum)) {
+      throw new AppError("jobPlanId must be a valid number when provided", 400);
+    }
+  } else {
+    throw new AppError("jobPlanCode or jobPlanId is required", 400);
   }
 
   // Find the Printing step (stepNo = 2) for this specific jobPlanId to get its PrintingDetails

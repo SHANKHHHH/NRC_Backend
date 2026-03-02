@@ -100,13 +100,10 @@ export const getPrintingDetailsByJobStepId = async (req: Request, res: Response)
       where: { id: Number(jobStepId) },
       include: {
         jobPlanning: {
-          select: {
-            nrcJobNo: true,
-            jobDemand: true
-          }
+          select: { nrcJobNo: true, jobDemand: true, jobPlanCode: true } as { nrcJobNo: true; jobDemand: true },
         },
-        printingDetails: true
-      }
+        printingDetails: true,
+      },
     });
 
     if (!jobStep) {
@@ -189,12 +186,9 @@ export const getAllPrintingDetails = async (req: Request, res: Response) => {
       },
       include: {
         jobPlanning: {
-          select: {
-            nrcJobNo: true,
-            jobDemand: true
-          }
+          select: { nrcJobNo: true, jobDemand: true, jobPlanCode: true } as { nrcJobNo: true; jobDemand: true },
         },
-        printingDetails: true
+        printingDetails: true,
       },
       orderBy: { updatedAt: 'desc' }
     });
