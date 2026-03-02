@@ -971,8 +971,19 @@ export const getStepByNrcJobNoAndStepNo = async (
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
 
   console.log(
-    `🚨 [getStepByNrcJobNoAndStepNo] Request for stepNo: ${stepNo}, nrcJobNo: ${decodedNrcJobNo}`
+    `🚨 [getStepByNrcJobNoAndStepNo] Request for stepNo: ${stepNo}, nrcJobNo: ${decodedNrcJobNo}, jobPlanId: ${jobPlanId}, jobStepId: ${jobStepId}`
   );
+
+  // When multiple plans exist for same nrcJobNo, require jobPlanId or jobStepId to avoid returning wrong step (e.g. 629 vs 630)
+  const planCount = await prisma.jobPlanning.count({
+    where: { nrcJobNo: decodedNrcJobNo }
+  });
+  if (planCount > 1 && jobStepId === undefined && jobPlanId === undefined) {
+    throw new AppError(
+      "This job has multiple plans. Please provide jobPlanId or jobStepId in the request (e.g. ?jobPlanId=630).",
+      400
+    );
+  }
 
   let step: any = null;
 

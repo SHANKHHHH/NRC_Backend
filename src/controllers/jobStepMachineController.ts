@@ -171,56 +171,97 @@ export const getAvailableMachines = async (req: Request, res: Response) => {
 
     // Extract machine details from the step's machineDetails JSON
     const machineDetails = (Array.isArray(jobStep.machineDetails) ? jobStep.machineDetails : []) as any[];
-    const availableMachines = [];
+    const availableMachines: any[] = [];
 
-    for (const machineInfo of machineDetails) {
-      const machineId = resolveMachineIdFromDetail(machineInfo);
-      if (!machineId) {
-        console.warn(
-          `[getAvailableMachines] Skipping machineDetail with no valid machineId for step ${jobStep.id}:`,
-          JSON.stringify(machineInfo)
-        );
-        continue;
-      }
-
-      // Check if this machine is already tracked in JobStepMachine
-      let jobStepMachine = (jobStep as any).jobStepMachines?.find(
-        (jsm: any) => jsm.machineId === machineId
-      );
-
-      // If not tracked, create a new entry (use connect to avoid undefined and satisfy Prisma)
-      if (!jobStepMachine) {
-        jobStepMachine = await prisma.jobStepMachine.create({
-          data: {
-            jobStepId: jobStep.id,
-            machineId: machineId,
-            nrcJobNo: nrcJobNo,
-            stepNo: parseInt(stepNo),
-            status: 'available'
-          },
-          include: {
-            machine: true,
-            user: {
-              select: { id: true, name: true, email: true }
+    // When no machines are pre-assigned: show job on every machine the user has.
+    // Whichever machine starts the job gets it assigned (startWorkOnMachine creates the assignment).
+    if (machineDetails.length === 0) {
+      const userMachines = await prisma.userMachine.findMany({
+        where: { userId, isActive: true },
+        include: { machine: true }
+      });
+      for (const um of userMachines) {
+        const machineId = um.machineId;
+        let jobStepMachine = (jobStep as any).jobStepMachines?.find((jsm: any) => jsm.machineId === machineId);
+        if (!jobStepMachine) {
+          jobStepMachine = await prisma.jobStepMachine.create({
+            data: {
+              jobStepId: jobStep.id,
+              machineId,
+              nrcJobNo,
+              stepNo: parseInt(stepNo),
+              status: 'available'
+            },
+            include: {
+              machine: true,
+              user: { select: { id: true, name: true, email: true } }
             }
-          }
+          });
+        }
+        const m = jobStepMachine.machine as any;
+        availableMachines.push({
+          id: jobStepMachine.id,
+          machineId: jobStepMachine.machineId,
+          machineCode: m?.machineCode,
+          machineType: m?.machineType,
+          unit: m?.unit,
+          status: jobStepMachine.status,
+          startedAt: jobStepMachine.startedAt,
+          completedAt: jobStepMachine.completedAt,
+          userId: jobStepMachine.userId,
+          userName: (jobStepMachine as any).user?.name,
+          userEmail: (jobStepMachine as any).user?.email,
+          isAvailable: jobStepMachine.status === 'available'
         });
       }
+    } else {
+      for (const machineInfo of machineDetails) {
+        const machineId = resolveMachineIdFromDetail(machineInfo);
+        if (!machineId) {
+          console.warn(
+            `[getAvailableMachines] Skipping machineDetail with no valid machineId for step ${jobStep.id}:`,
+            JSON.stringify(machineInfo)
+          );
+          continue;
+        }
 
-      availableMachines.push({
-        id: jobStepMachine.id,
-        machineId: jobStepMachine.machineId,
-        machineCode: machineInfo.machineCode || jobStepMachine.machine.machineCode,
-        machineType: machineInfo.machineType || jobStepMachine.machine.machineType,
-        unit: machineInfo.unit || jobStepMachine.machine.unit,
-        status: jobStepMachine.status,
-        startedAt: jobStepMachine.startedAt,
-        completedAt: jobStepMachine.completedAt,
-        userId: jobStepMachine.userId,
-        userName: jobStepMachine.user?.name,
-        userEmail: jobStepMachine.user?.email,
-        isAvailable: jobStepMachine.status === 'available'
-      });
+        let jobStepMachine = (jobStep as any).jobStepMachines?.find(
+          (jsm: any) => jsm.machineId === machineId
+        );
+
+        if (!jobStepMachine) {
+          jobStepMachine = await prisma.jobStepMachine.create({
+            data: {
+              jobStepId: jobStep.id,
+              machineId: machineId,
+              nrcJobNo: nrcJobNo,
+              stepNo: parseInt(stepNo),
+              status: 'available'
+            },
+            include: {
+              machine: true,
+              user: {
+                select: { id: true, name: true, email: true }
+              }
+            }
+          });
+        }
+
+        availableMachines.push({
+          id: jobStepMachine.id,
+          machineId: jobStepMachine.machineId,
+          machineCode: machineInfo.machineCode || (jobStepMachine.machine as any).machineCode,
+          machineType: machineInfo.machineType || (jobStepMachine.machine as any).machineType,
+          unit: machineInfo.unit || (jobStepMachine.machine as any).unit,
+          status: jobStepMachine.status,
+          startedAt: jobStepMachine.startedAt,
+          completedAt: jobStepMachine.completedAt,
+          userId: jobStepMachine.userId,
+          userName: (jobStepMachine as any).user?.name,
+          userEmail: (jobStepMachine as any).user?.email,
+          isAvailable: jobStepMachine.status === 'available'
+        });
+      }
     }
 
     res.status(200).json({
