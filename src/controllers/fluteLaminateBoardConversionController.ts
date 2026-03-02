@@ -2,64 +2,45 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware';
 import { logUserActionWithResource, ActionTypes } from '../lib/logger';
-import { checkJobStepMachineAccess, getFilteredJobNumbers } from '../middleware/machineAccess';
+import { checkMachineAccess, getFilteredJobNumbers } from '../middleware/machineAccess';
 import { RoleManager } from '../utils/roleUtils';
 import { calculateShift } from '../utils/autoPopulateFields';
+import { validateWorkflowStep } from '../utils/workflowValidator';
 
 export const createFluteLaminateBoardConversion = async (req: Request, res: Response) => {
   const { jobStepId, ...data } = req.body;
   if (!jobStepId) throw new AppError('jobStepId is required', 400);
   
-  // Check machine access for flute laminate board conversion
+  // Check machine access for flute laminate board conversion (same pattern as Corrugation)
   const userId = req.user?.userId;
   const userRole = req.user?.role;
   
   if (userId && userRole) {
-    const hasAccess = await checkJobStepMachineAccess(userId, userRole, jobStepId);
-    if (!hasAccess) {
-      throw new AppError('Access denied: You do not have access to this flute lamination machine', 403);
+    const jobStep = await prisma.jobStep.findUnique({
+      where: { id: jobStepId },
+      select: { machineDetails: true }
+    });
+
+    if (jobStep?.machineDetails && (jobStep.machineDetails as any[]).length > 0) {
+      const hasAccess = await Promise.all(
+        (jobStep.machineDetails as any[]).map((machine: any) => {
+          const machineId = (machine && typeof machine === 'object') ? (machine.machineId || (machine as any).id) : machine;
+          return checkMachineAccess(userId, userRole, machineId);
+        })
+      );
+
+      if (!hasAccess.some(access => access)) {
+        throw new AppError('Access denied: You do not have access to this flute lamination machine', 403);
+      }
     }
   }
-  
-  const jobStep = await prisma.jobStep.findUnique({ where: { id: jobStepId }, include: { jobPlanning: { include: { steps: true } } } });
-  if (!jobStep) throw new AppError('JobStep not found', 404);
-  const steps = jobStep.jobPlanning.steps.sort((a, b) => a.stepNo - b.stepNo);
-  const thisStepIndex = steps.findIndex(s => s.id === jobStepId);
-  if (thisStepIndex > 0) {
-    const prevStep = steps[thisStepIndex - 1];
-    let prevDetail: any = null;
-    switch (prevStep.stepName) {
-      case 'PaperStore':
-        prevDetail = await prisma.paperStore.findUnique({ where: { jobStepId: prevStep.id } });
-        break;
-      case 'PrintingDetails':
-        prevDetail = await prisma.printingDetails.findUnique({ where: { jobStepId: prevStep.id } });
-        break;
-      case 'Corrugation':
-        prevDetail = await prisma.corrugation.findUnique({ where: { jobStepId: prevStep.id } });
-        break;
-      case 'FluteLaminateBoardConversion':
-        prevDetail = await prisma.fluteLaminateBoardConversion.findUnique({ where: { jobStepId: prevStep.id } });
-        break;
-      case 'Punching':
-        prevDetail = await prisma.punching.findUnique({ where: { jobStepId: prevStep.id } });
-        break;
-      case 'SideFlapPasting':
-        prevDetail = await prisma.sideFlapPasting.findUnique({ where: { jobStepId: prevStep.id } });
-        break;
-      case 'QualityDept':
-        prevDetail = await prisma.qualityDept.findUnique({ where: { jobStepId: prevStep.id } });
-        break;
-      case 'DispatchProcess':
-        prevDetail = await prisma.dispatchProcess.findUnique({ where: { jobStepId: prevStep.id } });
-        break;
-      default:
-        break;
-    }
-    if (!prevDetail || prevDetail.status !== 'accept') {
-      throw new AppError('Previous step must be accepted before creating this step', 400);
-    }
+
+  // Validate workflow (same as Corrugation)
+  const workflowValidation = await validateWorkflowStep(jobStepId, 'FluteLaminateBoardConversion');
+  if (!workflowValidation.canProceed) {
+    throw new AppError(workflowValidation.message || 'Workflow validation failed', 400);
   }
+
   const fluteLaminateBoardConversion = await prisma.fluteLaminateBoardConversion.create({ data: { ...data, jobStepId } });
   await prisma.jobStep.update({ where: { id: jobStepId }, data: { flutelam: { connect: { id: fluteLaminateBoardConversion.id } } } });
 
@@ -243,11 +224,29 @@ export const getFluteLaminateBoardConversionByNrcJobNo = async (req: Request, re
   const { nrcJobNo } = req.params;
   const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const flutes = await prisma.fluteLaminateBoardConversion.findMany({ where: { jobNrcJobNo: decodedNrcJobNo } });
-  
+
+  // Auto-populate missing fields for each record (same pattern as Corrugation)
+  const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
+  const populatedFlutes = await Promise.all(
+    flutes.map(async (f) => {
+      const jobStep = await prisma.jobStep.findFirst({
+        where: {
+          jobPlanning: { nrcJobNo: decodedNrcJobNo },
+          stepName: 'FluteLaminateBoardConversion'
+        }
+      });
+
+      if (jobStep) {
+        return await autoPopulateStepFields(f, jobStep.id, req.user?.userId, decodedNrcJobNo);
+      }
+      return f;
+    })
+  );
+
   // Add editability information for each flute lamination record
   const { wrapWithEditability } = await import('../utils/fieldEditability');
-  const dataWithEditability = flutes.map(f => wrapWithEditability(f));
-  
+  const dataWithEditability = populatedFlutes.map(f => wrapWithEditability(f));
+
   res.status(200).json({ success: true, data: dataWithEditability });
 };
 
@@ -322,6 +321,24 @@ export const updateFluteLaminateBoardConversion = async (req: Request, res: Resp
       where: { id: existingRecord.id },
       data: populatedData,
     });
+
+    // Auto-update job's machine details flag when machine-related field is present (same as Corrugation)
+    try {
+      const hasMachineField = Object.prototype.hasOwnProperty.call(req.body || {}, 'machineNo') ||
+        Object.prototype.hasOwnProperty.call(req.body || {}, 'machineCode');
+      if (hasMachineField && jobStep) {
+        const js = await prisma.jobStep.findFirst({
+          where: { flutelam: { id: fluteLaminateBoardConversion.id } },
+          include: { jobPlanning: { select: { nrcJobNo: true } } }
+        });
+        if (js?.jobPlanning?.nrcJobNo) {
+          const { updateJobMachineDetailsFlag } = await import('../utils/machineDetailsTracker');
+          await updateJobMachineDetailsFlag(js.jobPlanning.nrcJobNo);
+        }
+      }
+    } catch (e) {
+      console.warn('Warning: could not update isMachineDetailsFilled after flute lamination update:', e);
+    }
 
     // Step 3: Log update
     if (req.user?.userId) {

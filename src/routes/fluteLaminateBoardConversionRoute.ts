@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
 import { asyncHandler, addMachineFiltering } from '../middleware';
+import { autoCorrectStateInconsistencies, validateStepTransition } from '../middleware/stepValidation';
 import { createFluteLaminateBoardConversion, getFluteLaminateBoardConversionById, getFluteLaminateBoardConversionByJobStepId, getAllFluteLaminateBoardConversions, updateFluteLaminateBoardConversion, deleteFluteLaminateBoardConversion, getFluteLaminateBoardConversionByNrcJobNo, updateFluteLaminateBoardConversionStatus } from '../controllers/fluteLaminateBoardConversionController';
 
 const router = Router();
@@ -11,7 +12,7 @@ router.get('/by-job/:nrcJobNo', authenticateToken, asyncHandler(getFluteLaminate
 router.get('/:id', authenticateToken, asyncHandler(getFluteLaminateBoardConversionById));
 router.get('/', authenticateToken, addMachineFiltering, asyncHandler(getAllFluteLaminateBoardConversions));
 
-router.put('/:nrcJobNo', authenticateToken, asyncHandler(updateFluteLaminateBoardConversion));
+router.put('/:nrcJobNo', authenticateToken, autoCorrectStateInconsistencies, validateStepTransition, asyncHandler(updateFluteLaminateBoardConversion));
 router.patch('/:nrcJobNo/status', authenticateToken, asyncHandler(updateFluteLaminateBoardConversionStatus));
 router.delete('/:id', requireAdminJWT, asyncHandler(deleteFluteLaminateBoardConversion));
 
