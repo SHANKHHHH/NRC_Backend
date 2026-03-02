@@ -11,6 +11,17 @@ type PlanningIdentifiers = {
   jobStepId?: number;
 };
 
+/** Resolve machine ID from machineDetail (top-level or nested machine object). Returns null if invalid. */
+function resolveMachineIdFromDetail(machineInfo: any): string | null {
+  if (!machineInfo || typeof machineInfo !== 'object') return null;
+  const id =
+    machineInfo.machineId ||
+    machineInfo.id ||
+    (machineInfo.machine && (machineInfo.machine.machineId || machineInfo.machine.id));
+  if (id && typeof id === 'string' && id !== 'undefined') return id;
+  return null;
+}
+
 function parsePlanningIdentifiers(req: Request): PlanningIdentifiers {
   const rawJobPlanId =
     (req.query?.jobPlanId as string | undefined) ??
@@ -134,21 +145,27 @@ export const getAvailableMachines = async (req: Request, res: Response) => {
     );
 
     // Extract machine details from the step's machineDetails JSON
-    const machineDetails = jobStep.machineDetails as any[];
+    const machineDetails = (Array.isArray(jobStep.machineDetails) ? jobStep.machineDetails : []) as any[];
     const availableMachines = [];
 
     for (const machineInfo of machineDetails) {
-      // Get the machine ID from the correct field (id, not machineId)
-      const machineId = machineInfo.machineId || machineInfo.id;
-      
+      const machineId = resolveMachineIdFromDetail(machineInfo);
+      if (!machineId) {
+        console.warn(
+          `[getAvailableMachines] Skipping machineDetail with no valid machineId for step ${jobStep.id}:`,
+          JSON.stringify(machineInfo)
+        );
+        continue;
+      }
+
       // Check if this machine is already tracked in JobStepMachine
       let jobStepMachine = (jobStep as any).jobStepMachines?.find(
         (jsm: any) => jsm.machineId === machineId
       );
 
-      // If not tracked, create a new entry
+      // If not tracked, create a new entry (use connect to avoid undefined and satisfy Prisma)
       if (!jobStepMachine) {
-        jobStepMachine = await (prisma as any).jobStepMachine.create({
+        jobStepMachine = await prisma.jobStepMachine.create({
           data: {
             jobStepId: jobStep.id,
             machineId: machineId,
@@ -279,29 +296,26 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
 
     // CRITICAL: Create JobStepMachine entries for ALL machines in this step (if not already created)
     // This ensures the allFinished check works correctly for multi-machine steps
-    const machineDetails = jobStep.machineDetails as any[];
-    if (machineDetails && machineDetails.length > 0) {
-      for (const machineInfo of machineDetails) {
-        if (machineInfo.machineId) {
-          const existing = await (prisma as any).jobStepMachine.findFirst({
-            where: {
-              jobStepId: jobStep.id,
-              machineId: machineInfo.machineId
-            }
-          });
-          
-          if (!existing) {
-            await (prisma as any).jobStepMachine.create({
-              data: {
-                jobStepId: jobStep.id,
-                nrcJobNo: nrcJobNo,
-                machineId: machineInfo.machineId,
-                stepNo: parseInt(stepNo),
-                status: 'available'
-              }
-            });
-          }
+    const machineDetails = (Array.isArray(jobStep.machineDetails) ? jobStep.machineDetails : []) as any[];
+    for (const machineInfo of machineDetails) {
+      const mid = resolveMachineIdFromDetail(machineInfo);
+      if (!mid) continue;
+      const existing = await prisma.jobStepMachine.findFirst({
+        where: {
+          jobStepId: jobStep.id,
+          machineId: mid
         }
+      });
+      if (!existing) {
+        await prisma.jobStepMachine.create({
+          data: {
+            jobStepId: jobStep.id,
+            nrcJobNo: nrcJobNo,
+            machineId: mid,
+            stepNo: parseInt(stepNo),
+            status: 'available'
+          }
+        });
       }
     }
     
