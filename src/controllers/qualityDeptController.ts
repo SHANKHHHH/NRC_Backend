@@ -333,7 +333,7 @@ export const getAllQualityDepts = async (req: Request, res: Response) => {
       });
     }
 
-    // Add quality details to the job
+    // Add quality details to the job (include rejection reason A–F and Others like completed jobs API)
     jobsMap.get(qd.jobNrcJobNo).qualityDetails.push({
       idx: index + 1,
       id: qd.id,
@@ -349,6 +349,15 @@ export const getAllQualityDepts = async (req: Request, res: Response) => {
       quantity: qd.quantity,
       rejectedQty: qd.rejectedQty,
       reasonForRejection: qd.reasonForRejection,
+      rejectionReasonAQty: qd.rejectionReasonAQty ?? null,
+      rejectionReasonBQty: qd.rejectionReasonBQty ?? null,
+      rejectionReasonCQty: qd.rejectionReasonCQty ?? null,
+      rejectionReasonDQty: qd.rejectionReasonDQty ?? null,
+      rejectionReasonEQty: qd.rejectionReasonEQty ?? null,
+      rejectionReasonFQty: qd.rejectionReasonFQty ?? null,
+      rejectionReasonOthersQty: qd.rejectionReasonOthersQty ?? null,
+      startedBy: qd.startedBy ?? null,
+      jobNrcJobNo: qd.jobNrcJobNo,
       stepDetails: qd.jobStep,
     });
   });
