@@ -28,8 +28,8 @@ router.post(
   asyncHandler(recalculatePurchaseOrderSharedCardDiffDate)
 );
 
-// Delete purchase order by ID (admin only)
-router.delete("/:id", requireAdminJWT, asyncHandler(deletePurchaseOrder));
+// Delete purchase order by ID (any authenticated user)
+router.delete("/:id", authenticateToken, asyncHandler(deletePurchaseOrder));
 
 // Manually sync PurchaseOrder ID sequence (admin only)
 router.post(
