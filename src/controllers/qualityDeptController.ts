@@ -456,7 +456,8 @@ export const startQualityWork = async (req: Request, res: Response) => {
     }
 
     // VALIDATION: Check if previous step is started (allows parallel work)
-    const allSteps = jobStep.jobPlanning.steps;
+    // Use plan order: sort by stepNo so "previous" = step before this one in the selected steps (flexible step selection)
+    const allSteps = (jobStep.jobPlanning.steps as any[]).slice().sort((a: any, b: any) => (a.stepNo ?? 0) - (b.stepNo ?? 0));
     const currentStepIndex = allSteps.findIndex((s) => s.id === jobStep.id);
 
     if (currentStepIndex > 0) {

@@ -3205,35 +3205,31 @@ async function _updateIndividualStepHoldRemark(stepNo: number, nrcJobNo: string,
 
 // Helper function to update individual step tables with form data
 // IMPORTANT: This should ONLY be called when ALL machines for the step are completed!
-// Helper function to get previous step's available/OK quantity
+// Helper function to get previous step's available/OK quantity.
+// Uses plan order: previous step = the step immediately before this one in the plan (flexible step selection).
 async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJobNo: string): Promise<number> {
   try {
     console.log(`🔍 [GET_PREV_QTY] Getting previous step quantity for step ${stepNo}, job ${nrcJobNo}, jobPlanId ${jobPlanId}`);
 
-    if (stepNo === 1) {
+    const planSteps = await prisma.jobStep.findMany({
+      where: { jobPlanningId: jobPlanId },
+      select: { id: true, stepNo: true, stepName: true },
+      orderBy: { stepNo: 'asc' }
+    });
+
+    const currentIndex = planSteps.findIndex((s: any) => s.stepNo === stepNo);
+    if (currentIndex <= 0) {
       return 0;
     }
 
-    const getStepId = async (targetStepNo: number): Promise<number | undefined> => {
-      if (targetStepNo <= 0) return undefined;
-      const step = await prisma.jobStep.findFirst({
-        where: {
-          jobPlanningId: jobPlanId,
-          stepNo: targetStepNo
-        },
-        select: { id: true }
-      });
-      return step?.id;
-    };
+    const prevStep = planSteps[currentIndex - 1] as { id: number; stepNo: number; stepName: string };
+    const prevStepId = prevStep.id;
+    const prevStepName = prevStep.stepName ?? '';
 
     const getPaperStoreQuantity = async (stepId?: number) => {
       if (stepId) {
-        const record = await prisma.paperStore.findUnique({
-          where: { jobStepId: stepId }
-        });
-        if (record) {
-          return record.available ?? record.quantity ?? 0;
-        }
+        const record = await prisma.paperStore.findUnique({ where: { jobStepId: stepId } });
+        if (record) return record.available ?? record.quantity ?? 0;
       }
       const fallback = await prisma.paperStore.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3245,12 +3241,10 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
 
     const getPrintingQuantity = async (stepId?: number) => {
       if (stepId) {
-        const record = await prisma.printingDetails.findUnique({
-          where: { jobStepId: stepId }
-        });
+        const record = await prisma.printingDetails.findUnique({ where: { jobStepId: stepId } });
         if (record) {
-          const recordAny = record as any;
-          return record.quantity ?? recordAny.quantityOK ?? recordAny.okQuantity ?? 0;
+          const r = record as any;
+          return r.quantity ?? r.quantityOK ?? r.okQuantity ?? 0;
         }
       }
       const fallback = await prisma.printingDetails.findFirst({
@@ -3258,18 +3252,27 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
         orderBy: { id: 'desc' }
       });
       if (!fallback) return 0;
-      const fallbackAny = fallback as any;
-      return fallback.quantity ?? fallbackAny.quantityOK ?? fallbackAny.okQuantity ?? 0;
+      const r = fallback as any;
+      return r.quantity ?? r.quantityOK ?? r.okQuantity ?? 0;
+    };
+
+    const getCorrugationQuantity = async (stepId?: number) => {
+      if (stepId) {
+        const record = await (prisma as any).corrugation.findUnique({ where: { jobStepId: stepId } });
+        if (record) return record.quantity ?? 0;
+      }
+      const fallback = await (prisma as any).corrugation.findFirst({
+        where: { jobNrcJobNo: nrcJobNo },
+        select: { quantity: true },
+        orderBy: { id: 'desc' }
+      });
+      return fallback?.quantity ?? 0;
     };
 
     const getFluteQuantity = async (stepId?: number) => {
       if (stepId) {
-        const record = await prisma.fluteLaminateBoardConversion.findUnique({
-          where: { jobStepId: stepId }
-        });
-        if (record) {
-          return record.quantity ?? 0;
-        }
+        const record = await prisma.fluteLaminateBoardConversion.findUnique({ where: { jobStepId: stepId } });
+        if (record) return record.quantity ?? 0;
       }
       const fallback = await prisma.fluteLaminateBoardConversion.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3281,12 +3284,8 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
 
     const getPunchingQuantity = async (stepId?: number) => {
       if (stepId) {
-        const record = await prisma.punching.findUnique({
-          where: { jobStepId: stepId }
-        });
-        if (record) {
-          return record.quantity ?? 0;
-        }
+        const record = await prisma.punching.findUnique({ where: { jobStepId: stepId } });
+        if (record) return record.quantity ?? 0;
       }
       const fallback = await prisma.punching.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3298,12 +3297,8 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
 
     const getFlapQuantity = async (stepId?: number) => {
       if (stepId) {
-        const record = await prisma.sideFlapPasting.findUnique({
-          where: { jobStepId: stepId }
-        });
-        if (record) {
-          return record.quantity ?? 0;
-        }
+        const record = await prisma.sideFlapPasting.findUnique({ where: { jobStepId: stepId } });
+        if (record) return record.quantity ?? 0;
       }
       const fallback = await prisma.sideFlapPasting.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3315,12 +3310,8 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
 
     const getQualityQuantity = async (stepId?: number) => {
       if (stepId) {
-        const record = await prisma.qualityDept.findUnique({
-          where: { jobStepId: stepId }
-        });
-        if (record) {
-          return record.quantity ?? 0;
-        }
+        const record = await prisma.qualityDept.findUnique({ where: { jobStepId: stepId } });
+        if (record) return record.quantity ?? 0;
       }
       const fallback = await prisma.qualityDept.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3330,35 +3321,22 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
       return fallback?.quantity ?? 0;
     };
 
-    switch (stepNo) {
-      case 2: {
-        const prevStepId = await getStepId(1);
+    switch (prevStepName) {
+      case 'PaperStore':
         return await getPaperStoreQuantity(prevStepId);
-      }
-      case 3: {
-        const prevStepId = await getStepId(1); // Corrugation depends on PaperStore output
-        return await getPaperStoreQuantity(prevStepId);
-      }
-      case 4: {
-        const prevStepId = await getStepId(2);
+      case 'PrintingDetails':
         return await getPrintingQuantity(prevStepId);
-      }
-      case 5: {
-        const prevStepId = await getStepId(4);
+      case 'Corrugation':
+        return await getCorrugationQuantity(prevStepId);
+      case 'FluteLaminateBoardConversion':
         return await getFluteQuantity(prevStepId);
-      }
-      case 6: {
-        const prevStepId = await getStepId(5);
+      case 'Punching':
+      case 'Die Cutting':
         return await getPunchingQuantity(prevStepId);
-      }
-      case 7: {
-        const prevStepId = await getStepId(6);
+      case 'SideFlapPasting':
         return await getFlapQuantity(prevStepId);
-      }
-      case 8: {
-        const prevStepId = await getStepId(7);
+      case 'QualityDept':
         return await getQualityQuantity(prevStepId);
-      }
       default:
         return 0;
     }
@@ -3367,6 +3345,24 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
     return 0;
   }
 }
+
+/**
+ * GET handler: previous step available quantity for a step in plan order (flexible step selection).
+ * Params: nrcJobNo. Query: stepNo, jobPlanId (both required).
+ */
+export const getPreviousStepQuantity = async (req: Request, res: Response) => {
+  const nrcJobNo = req.params.nrcJobNo;
+  const stepNo = req.query.stepNo != null ? parseInt(String(req.query.stepNo), 10) : undefined;
+  const jobPlanId = req.query.jobPlanId != null ? parseInt(String(req.query.jobPlanId), 10) : undefined;
+  if (!nrcJobNo || stepNo == null || Number.isNaN(stepNo) || jobPlanId == null || Number.isNaN(jobPlanId)) {
+    return res.status(400).json({
+      success: false,
+      message: 'nrcJobNo (path), stepNo (query), and jobPlanId (query) are required',
+    });
+  }
+  const qty = await _getPreviousStepQuantity(stepNo, jobPlanId, nrcJobNo);
+  return res.status(200).json({ success: true, previousStepQuantity: qty });
+};
 
 // Helper function to check if step completion criteria is met
 async function _checkStepCompletionCriteria(

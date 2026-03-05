@@ -447,24 +447,26 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     const activityDate = step.endDate || step.updatedAt || step.createdAt;
     const completedBy = step.user || step.completedBy || userId;
 
-    // Get quantity based on step type
+    // Get "issued quantity" (quantity passed to next step) per step type; field names differ by step
     let quantity = 0;
     let additionalDetails: any = {};
     
     if (step.stepName?.toLowerCase().includes('paperstore') && step.paperStore) {
-      quantity = step.paperStore.available || step.paperStore.quantity || 0;
+      quantity = step.paperStore.available ?? step.paperStore.quantity ?? 0;
       additionalDetails = {
         available: step.paperStore.available,
         quantity: step.paperStore.quantity
       };
     } else if (step.stepName?.toLowerCase().includes('quality') && step.qualityDept) {
-      quantity = step.qualityDept.quantity || 0;
+      // QC: issued quantity is the accepted/OK quantity (QualityDept.quantity)
+      quantity = step.qualityDept.quantity ?? 0;
       additionalDetails = {
         quantity: step.qualityDept.quantity,
         rejectedQty: step.qualityDept.rejectedQty
       };
     } else if (step.stepName?.toLowerCase().includes('dispatch') && step.dispatchProcess) {
-      quantity = step.dispatchProcess.totalDispatchedQty || step.dispatchProcess.quantity || 0;
+      // Dispatch: issued quantity is total dispatched (totalDispatchedQty), not the single-batch quantity field
+      quantity = step.dispatchProcess.totalDispatchedQty ?? step.dispatchProcess.quantity ?? 0;
       additionalDetails = {
         quantity: step.dispatchProcess.quantity,
         totalDispatchedQty: step.dispatchProcess.totalDispatchedQty
@@ -481,7 +483,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       role: null
     } : null;
 
-    // Create a synthetic activity log entry
+    // Create a synthetic activity log entry (quantity/totalOK last so they are not overwritten by additionalDetails)
     return {
       id: `non_machine_step_${step.id}`,
       userId: completedBy,
@@ -493,10 +495,11 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
         jobPlanCode: jobPlanCode,
         stepNo: stepNo,
         stepName: stepName,
-        quantity: quantity,
         completedBy: completedBy,
         endDate: completedAt,
-        ...additionalDetails
+        ...additionalDetails,
+        quantity: quantity,
+        totalOK: quantity
       }),
       nrcJobNo: nrcJobNo,
       jobPlanId: jobPlanId,

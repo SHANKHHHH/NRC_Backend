@@ -15,7 +15,8 @@ import {
   resumeMajorHoldJob,
   resumeMajorHoldJobPlan,
   stopWorkOnMachine,
-  getAllHeldMachines
+  getAllHeldMachines,
+  getPreviousStepQuantity
 } from '../controllers/jobStepMachineController';
 
 const router = express.Router();
@@ -37,6 +38,9 @@ router.post('/:nrcJobNo/major-hold', majorHoldJob);
 
 // Resume major hold for entire job (simple - no machine/step required) - MUST be before /:nrcJobNo/steps routes
 router.post('/:nrcJobNo/resume-major-hold', resumeMajorHoldJob);
+
+// Get previous step available quantity (plan order - flexible step selection)
+router.get('/:nrcJobNo/previous-step-quantity', getPreviousStepQuantity);
 
 // Get available machines for a job step
 router.get('/:nrcJobNo/steps/:stepNo/machines', getAvailableMachines);

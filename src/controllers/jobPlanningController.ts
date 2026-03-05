@@ -291,6 +291,29 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
       });
     }
 
+    // Enrich each planning with boardSize from Job (for job card dropdown display)
+    const jobNosForBoardSizeBypass = [
+      ...new Set(
+        filteredPlannings.map((p: any) => p.nrcJobNo).filter(Boolean)
+      ),
+    ];
+    if (jobNosForBoardSizeBypass.length > 0) {
+      const jobsWithBoardSizeBypass = await prisma.job.findMany({
+        where: { nrcJobNo: { in: jobNosForBoardSizeBypass } },
+        select: { nrcJobNo: true, boardSize: true },
+      });
+      const boardSizeByJobNoBypass: Record<string, string | null> =
+        Object.fromEntries(
+          (jobsWithBoardSizeBypass || []).map((j: any) => [
+            j.nrcJobNo,
+            j.boardSize ?? null,
+          ])
+        );
+      filteredPlannings.forEach((p: any) => {
+        p.boardSize = boardSizeByJobNoBypass[p.nrcJobNo] ?? null;
+      });
+    }
+
     // Enrich PaperStore steps with PaperStore table status
     // For PaperStore steps, use the PaperStore.status instead of JobStep.status
     for (const planning of filteredPlannings) {
@@ -400,6 +423,28 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
         return true;
       }
       return true;
+    });
+  }
+
+  // Enrich each planning with boardSize from Job (for job card dropdown display)
+  const jobNosForBoardSize = [
+    ...new Set(
+      filteredJobPlannings.map((p: any) => p.nrcJobNo).filter(Boolean)
+    ),
+  ];
+  if (jobNosForBoardSize.length > 0) {
+    const jobsWithBoardSize = await prisma.job.findMany({
+      where: { nrcJobNo: { in: jobNosForBoardSize } },
+      select: { nrcJobNo: true, boardSize: true },
+    });
+    const boardSizeByJobNo: Record<string, string | null> = Object.fromEntries(
+      (jobsWithBoardSize || []).map((j: any) => [
+        j.nrcJobNo,
+        j.boardSize ?? null,
+      ])
+    );
+    filteredJobPlannings.forEach((p: any) => {
+      p.boardSize = boardSizeByJobNo[p.nrcJobNo] ?? null;
     });
   }
 

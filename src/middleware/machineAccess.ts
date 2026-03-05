@@ -581,8 +581,8 @@ export const getFilteredJobStepIds = async (userMachineIds: string[] | null, use
 };
 
 /**
- * Helper function to get previous step name(s) for a given step
- * Returns array to support parallel steps (e.g., FluteLamination requires both Printing and Corrugation)
+ * Helper function to get previous step name(s) for a given step (legacy / fixed pipeline).
+ * Used only where plan-based order is not available.
  */
 function getPreviousStepNames(stepName: string): string[] {
   const stepDependencies: { [key: string]: string[] } = {
@@ -601,69 +601,28 @@ function getPreviousStepNames(stepName: string): string[] {
 }
 
 /**
- * Check if all previous steps for a given step are started/completed in a job (parallel start logic)
+ * Check if all previous steps for a given step are completed in a job.
+ * Uses plan order: "previous" = steps with stepNo < target step's stepNo (flexible step selection).
+ * So if plan has steps 1, 5, 6, 7, 8, step 5's previous is step 1 only.
  */
 function arePreviousStepsCompleted(steps: any[], targetStepName: string): boolean {
-  const previousStepNames = getPreviousStepNames(targetStepName);
-  
-  // If no previous steps required, return true
-  if (previousStepNames.length === 0) {
+  const targetStep = steps.find((s: any) => s.stepName === targetStepName);
+  if (!targetStep) {
+    return false;
+  }
+
+  const sortedSteps = [...steps].sort((a: any, b: any) => (a.stepNo ?? 0) - (b.stepNo ?? 0));
+  const previousSteps = sortedSteps.filter((s: any) => (s.stepNo ?? 0) < (targetStep.stepNo ?? 0));
+
+  if (previousSteps.length === 0) {
     return true;
   }
 
-  // Check if all previous steps exist and are started or completed (status = 'start' or 'stop')
-  for (const prevStepName of previousStepNames) {
-    const prevStep = steps.find(s => s.stepName === prevStepName);
-    
-    // For parallel dependencies (like FluteLamination requiring both Printing and Corrugation)
-    // we need ALL to be started or completed. But for alternatives (like SideFlapPasting after Punching OR Die Cutting)
-    // we need at least ONE to be started or completed
-    if (targetStepName === 'SideFlapPasting' && previousStepNames.includes('Punching') && previousStepNames.includes('Die Cutting')) {
-      // Special case: SideFlapPasting needs either Punching OR Die Cutting
-      const punchingStep = steps.find(s => s.stepName === 'Punching');
-      const dieCuttingStep = steps.find(s => s.stepName === 'Die Cutting');
-      
-      const normalizeStatus = (status: any): string =>
-        typeof status === 'string' ? status.toLowerCase() : '';
-      const allowedStatuses = new Set([
-        'start',
-        'started',
-        'in_progress',
-        'stop',
-        'stopped',
-        'completed',
-        'accept',
-      ]);
+  const allowedStatuses = new Set(['start', 'started', 'in_progress', 'stop', 'stopped', 'completed', 'accept']);
+  const normalizeStatus = (status: any): string => (typeof status === 'string' ? status.toLowerCase() : '');
 
-      const punchingReady =
-        punchingStep && allowedStatuses.has(normalizeStatus(punchingStep.status));
-      const dieCuttingReady =
-        dieCuttingStep && allowedStatuses.has(normalizeStatus(dieCuttingStep.status));
-      
-      if (!punchingReady && !dieCuttingReady) {
-        return false;
-      }
-      // If at least one is started or completed, continue checking other dependencies
-      continue;
-    }
-    
-    // For all other cases, the previous step must exist and be started / in progress / stopped / completed / accepted
-    if (!prevStep) {
-      return false;
-    }
-    const prevStatus =
-      typeof prevStep.status === 'string'
-        ? prevStep.status.toLowerCase()
-        : '';
-    const allowedStatuses = new Set([
-      'start',
-      'started',
-      'in_progress',
-      'stop',
-      'stopped',
-      'completed',
-      'accept',
-    ]);
+  for (const prevStep of previousSteps) {
+    const prevStatus = normalizeStatus(prevStep.status);
     if (!allowedStatuses.has(prevStatus)) {
       return false;
     }
