@@ -110,8 +110,14 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
   const createData: any = { status: "created" };
   for (const field of allowedFields) {
     if (data[field] !== undefined) {
-      createData[field] = data[field];
+      const value = data[field];
+      createData[field] = typeof value === "string" ? value.trim() : value;
     }
+  }
+
+  // jobNrcJobNo is a FK to Job.nrcJobNo — ensure no leading/trailing spaces so lookup succeeds
+  if (createData.jobNrcJobNo != null && typeof createData.jobNrcJobNo === "string") {
+    createData.jobNrcJobNo = createData.jobNrcJobNo.trim();
   }
 
   // Safety: never allow client to control primary key (prevents sequence desync / unique constraint on id)
