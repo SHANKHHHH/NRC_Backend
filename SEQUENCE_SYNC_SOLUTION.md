@@ -56,8 +56,8 @@ RETURNS TRIGGER AS $$
 BEGIN
   PERFORM setval(
     pg_get_serial_sequence('"PurchaseOrder"', 'id'),
-    COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 1),
-    false
+    COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 0),
+    true
   );
   RETURN NEW;
 END;
@@ -69,11 +69,11 @@ AFTER INSERT ON "PurchaseOrder"
 FOR EACH STATEMENT
 EXECUTE FUNCTION sync_purchase_order_sequence();
 
--- Sync existing sequence
+-- Sync existing sequence so next insert gets MAX(id)+1 (is_called=true)
 SELECT setval(
   pg_get_serial_sequence('"PurchaseOrder"', 'id'),
-  COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 1),
-  false
+  COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 0),
+  true
 );
 ```
 
@@ -113,12 +113,12 @@ If you still see sequence errors:
    SELECT * FROM pg_trigger WHERE tgname = 'sync_purchase_order_id_sequence';
    ```
 
-2. **Manually sync sequence:**
+2. **Manually sync sequence** (use `true` so next insert gets MAX(id)+1):
    ```sql
    SELECT setval(
      pg_get_serial_sequence('"PurchaseOrder"', 'id'),
-     COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 1),
-     false
+     COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 0),
+     true
    );
    ```
 

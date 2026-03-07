@@ -2,11 +2,11 @@
 CREATE OR REPLACE FUNCTION sync_purchase_order_sequence()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Reset the sequence to be at least as high as the maximum ID in the table
+  -- Reset the sequence so the NEXT nextval() returns MAX(id)+1 (is_called=true)
   PERFORM setval(
     pg_get_serial_sequence('"PurchaseOrder"', 'id'),
-    COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 1),
-    false
+    COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 0),
+    true
   );
   RETURN NEW;
 END;
@@ -18,9 +18,9 @@ AFTER INSERT ON "PurchaseOrder"
 FOR EACH STATEMENT
 EXECUTE FUNCTION sync_purchase_order_sequence();
 
--- Also sync the sequence immediately for existing records
+-- Also sync the sequence immediately so next insert gets MAX(id)+1
 SELECT setval(
   pg_get_serial_sequence('"PurchaseOrder"', 'id'),
-  COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 1),
-  false
+  COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 0),
+  true
 );

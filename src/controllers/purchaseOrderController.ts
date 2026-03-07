@@ -295,8 +295,8 @@ export const syncPurchaseOrderSequence = async (req: Request, res: Response) => 
     await prisma.$executeRawUnsafe(`
       SELECT setval(
         pg_get_serial_sequence('"PurchaseOrder"', 'id'),
-        COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 1),
-        false
+        COALESCE((SELECT MAX(id) FROM "PurchaseOrder"), 0),
+        true
       );
     `);
 
