@@ -31,12 +31,8 @@ router.post(
 // Delete purchase order by ID (any authenticated user)
 router.delete("/:id", authenticateToken, asyncHandler(deletePurchaseOrder));
 
-// Manually sync PurchaseOrder ID sequence (admin only)
-router.post(
-  "/sync-sequence",
-  requireAdminJWT,
-  asyncHandler(syncPurchaseOrderSequence)
-);
+// Manually sync PurchaseOrder ID sequence (no role restriction; used after bulk upload and before PO create)
+router.post("/sync-sequence", asyncHandler(syncPurchaseOrderSequence));
 
 // Update purchase order status by ID (admin only)
 // router.patch('/:id/status', requireAdminJWT, updatePurchaseOrderStatus);
