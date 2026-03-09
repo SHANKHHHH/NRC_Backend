@@ -234,8 +234,8 @@ export const updateSideFlapPasting = async (req: Request, res: Response) => {
       : editableData;
 
     // Step 2: Update using its unique `id`
-    // Prisma update() does not accept id, jobStepId, jobNrcJobNo, createdAt, updatedAt in data
-    const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, ...updateData } = populatedData as any;
+    // Prisma: SideFlapPasting has operatorName, machineNo only (strip oprName, machine)
+    const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, oprName: _op, machine: _m, ...updateData } = populatedData as any;
     const sideFlapPasting = await prisma.sideFlapPasting.update({
       where: { id: existingSideFlap.id },
       data: updateData,

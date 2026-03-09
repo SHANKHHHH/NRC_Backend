@@ -202,8 +202,8 @@ export const updatePunching = async (req: Request, res: Response) => {
     populatedData = await autoPopulatePunchingFields(populatedData, decodedNrcJobNo);
 
     // Step 2: Update using its unique `id`
-    // Prisma update() does not accept id, jobStepId, jobNrcJobNo, createdAt, updatedAt in data
-    const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, ...updateData } = populatedData as any;
+    // Prisma: Punching has operatorName, machine only (strip oprName, machineNo)
+    const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, oprName: _op, machineNo: _mno, ...updateData } = populatedData as any;
     const punching = await prisma.punching.update({
       where: { id: existingPunching.id },
       data: updateData,

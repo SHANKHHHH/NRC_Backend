@@ -308,7 +308,8 @@ export const updatePrintingDetails = async (req: Request, res: Response) => {
     : editableData;
 
   // Prisma update() does not accept id, jobStepId, jobNrcJobNo, createdAt, updatedAt in data (primary/relation keys)
-  const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, ...updateData } = populatedData as any;
+  // PrintingDetails model has oprName and machine only (no operatorName, no machineNo)
+  const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, operatorName: _opName, machineNo: _mno, ...updateData } = populatedData as any;
 
   const printingDetails = await prisma.printingDetails.update({
     where: { id: existingPrintingDetails.id },
