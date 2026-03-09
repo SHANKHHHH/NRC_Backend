@@ -982,7 +982,7 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
         ActionTypes.JOBSTEP_UPDATED,
         `Updated DispatchProcess step with jobNrcJobNo: ${decodedNrcJobNo}`,
         'DispatchProcess',
-        nrcJobNo
+        decodedNrcJobNo
       );
     }
 
