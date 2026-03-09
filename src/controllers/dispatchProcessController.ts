@@ -499,8 +499,12 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
 
     // Filter out non-editable fields (fields that already have data)
     const { filterEditableFields } = await import('../utils/fieldEditability');
-    const editableData = filterEditableFields(existingDispatchProcess, req.body);
-    
+    const editableData = filterEditableFields(existingDispatchProcess, req.body, [
+      'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+      'quantity', 'balanceQty', 'dispatchNo', 'dispatchDate', 'finishedGoodsQty',
+      'totalDispatchedQty', 'dispatchHistory',
+    ]);
+
     // Debug: Log what's in req.body and editableData
     console.log(`🔍 [updateDispatchProcess] req.body.finishedGoodsQty: ${req.body.finishedGoodsQty}`);
     console.log(`🔍 [updateDispatchProcess] editableData.finishedGoodsQty: ${editableData.finishedGoodsQty}`);

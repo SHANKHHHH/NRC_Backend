@@ -191,7 +191,11 @@ export const updatePunching = async (req: Request, res: Response) => {
 
     // Filter out non-editable fields (fields that already have data)
     const { filterEditableFields } = await import('../utils/fieldEditability');
-    const editableData = filterEditableFields(existingPunching, req.body);
+    const editableData = filterEditableFields(existingPunching, req.body, [
+      'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+      'quantity', 'wastage', 'die',
+      'holdRemark', 'majorHoldRemark', 'completeRemark',
+    ]);
 
     // Auto-populate common step fields and punching-specific fields
     const { autoPopulateStepFields, autoPopulatePunchingFields } = await import('../utils/autoPopulateFields');
@@ -289,7 +293,11 @@ export const updatePunchingByStepId = async (req: Request, res: Response) => {
   }
 
   const { filterEditableFields } = await import('../utils/fieldEditability');
-  const editableData = filterEditableFields(existingPunching, req.body);
+  const editableData = filterEditableFields(existingPunching, req.body, [
+    'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+    'quantity', 'wastage', 'die',
+    'holdRemark', 'majorHoldRemark', 'completeRemark',
+  ]);
   const { autoPopulateStepFields, autoPopulatePunchingFields } = await import('../utils/autoPopulateFields');
   const decodedNrcJobNo = existingPunching.jobNrcJobNo;
   let populatedData = editableData;

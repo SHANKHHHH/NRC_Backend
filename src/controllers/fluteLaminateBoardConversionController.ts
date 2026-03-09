@@ -308,7 +308,11 @@ export const updateFluteLaminateBoardConversion = async (req: Request, res: Resp
 
     // Filter out non-editable fields (fields that already have data)
     const { filterEditableFields } = await import('../utils/fieldEditability');
-    const editableData = filterEditableFields(existingRecord, req.body);
+    const editableData = filterEditableFields(existingRecord, req.body, [
+      'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+      'quantity', 'wastage', 'film', 'adhesive',
+      'holdRemark', 'majorHoldRemark', 'completeRemark', 'remarks',
+    ]);
 
     // Auto-populate common step fields (date, shift, operator)
     const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
@@ -399,7 +403,11 @@ export const updateFluteLaminateBoardConversionByStepId = async (req: Request, r
   }
 
   const { filterEditableFields } = await import('../utils/fieldEditability');
-  const editableData = filterEditableFields(existingRecord, req.body);
+  const editableData = filterEditableFields(existingRecord, req.body, [
+    'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+    'quantity', 'wastage', 'film', 'adhesive',
+    'holdRemark', 'majorHoldRemark', 'completeRemark', 'remarks',
+  ]);
   const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
   const decodedNrcJobNo = existingRecord.jobNrcJobNo;
   const populatedData = jobStep

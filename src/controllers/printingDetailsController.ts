@@ -297,9 +297,13 @@ export const updatePrintingDetails = async (req: Request, res: Response) => {
     }
   }
 
-  // Filter out non-editable fields (fields that already have data)
+  // Filter out non-editable fields; allow quantity and wastage to be updated (user may correct values)
   const { filterEditableFields } = await import('../utils/fieldEditability');
-  const editableData = filterEditableFields(existingPrintingDetails, req.body);
+  const editableData = filterEditableFields(existingPrintingDetails, req.body, [
+    'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+    'quantity', 'wastage', 'noOfColours', 'inksUsed', 'coatingType', 'separateSheets', 'extraSheets',
+    'machine', 'productionHeadContinued', 'holdRemark', 'majorHoldRemark', 'completeRemark',
+  ]);
 
   // Auto-populate common step fields (date, shift, operator, machine)
   const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
@@ -392,7 +396,11 @@ export const updatePrintingDetailsByStepId = async (req: Request, res: Response)
   }
 
   const { filterEditableFields } = await import('../utils/fieldEditability');
-  const editableData = filterEditableFields(existingPrintingDetails, req.body);
+  const editableData = filterEditableFields(existingPrintingDetails, req.body, [
+    'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+    'quantity', 'wastage', 'noOfColours', 'inksUsed', 'coatingType', 'separateSheets', 'extraSheets',
+    'machine', 'productionHeadContinued', 'holdRemark', 'majorHoldRemark', 'completeRemark',
+  ]);
   const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
   const populatedData = jobStep
     ? await autoPopulateStepFields(editableData, jobStep.id, req.user?.userId, existingPrintingDetails.jobNrcJobNo)

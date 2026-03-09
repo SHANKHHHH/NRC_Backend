@@ -370,7 +370,11 @@ export const updateCorrugation = async (req: Request, res: Response) => {
 
     // Filter out non-editable fields (fields that already have data)
     const { filterEditableFields } = await import('../utils/fieldEditability');
-    const editableData = filterEditableFields(existingCorrugation, req.body);
+    const editableData = filterEditableFields(existingCorrugation, req.body, [
+      'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+      'quantity', 'size', 'gsm1', 'gsm2', 'flute',
+      'holdRemark', 'majorHoldRemark', 'completeRemark',
+    ]);
 
     // Auto-populate common step fields and corrugation-specific fields
     const { autoPopulateStepFields, autoPopulateCorrugationFields } = await import('../utils/autoPopulateFields');
@@ -464,7 +468,11 @@ export const updateCorrugationByStepId = async (req: Request, res: Response) => 
   }
 
   const { filterEditableFields } = await import('../utils/fieldEditability');
-  const editableData = filterEditableFields(existingCorrugation, req.body);
+  const editableData = filterEditableFields(existingCorrugation, req.body, [
+    'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+    'quantity', 'size', 'gsm1', 'gsm2', 'flute',
+    'holdRemark', 'majorHoldRemark', 'completeRemark',
+  ]);
   const { autoPopulateStepFields, autoPopulateCorrugationFields } = await import('../utils/autoPopulateFields');
   const decodedNrcJobNo = existingCorrugation.jobNrcJobNo;
   let populatedData = jobStep

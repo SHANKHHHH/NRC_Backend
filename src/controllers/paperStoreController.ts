@@ -461,7 +461,11 @@ if (!existing) {
 
   // Filter out non-editable fields (fields that already have data)
 const { filterEditableFields } = await import('../utils/fieldEditability');
-const editableData = filterEditableFields(existing ?? {}, req.body);
+const editableData = filterEditableFields(existing ?? {}, req.body, [
+    'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+    'quantity', 'available', 'sheetSize', 'mill', 'gsm', 'quality', 'extraMargin', 'issuedDate',
+    'holdRemark', 'majorHoldRemark', 'completeRemark',
+  ]);
 
 // Always allow overriding status when explicitly provided
 if (req.body.status !== undefined) {
@@ -538,7 +542,11 @@ export const updatePaperStoreByStepId = async (req: Request, res: Response) => {
   if (!existing) throw new AppError('PaperStore not found', 404);
 
   const { filterEditableFields } = await import('../utils/fieldEditability');
-  const editableData = filterEditableFields(existing, req.body);
+  const editableData = filterEditableFields(existing, req.body, [
+    'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+    'quantity', 'available', 'sheetSize', 'mill', 'gsm', 'quality', 'extraMargin', 'issuedDate',
+    'holdRemark', 'majorHoldRemark', 'completeRemark',
+  ]);
   if (req.body.status !== undefined) editableData.status = req.body.status;
   const { autoPopulatePaperStoreFields } = await import('../utils/autoPopulateFields');
   const populatedData = await autoPopulatePaperStoreFields(editableData, existing.jobNrcJobNo);

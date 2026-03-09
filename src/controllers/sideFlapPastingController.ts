@@ -225,7 +225,11 @@ export const updateSideFlapPasting = async (req: Request, res: Response) => {
 
     // Filter out non-editable fields (fields that already have data)
     const { filterEditableFields } = await import('../utils/fieldEditability');
-    const editableData = filterEditableFields(existingSideFlap, req.body);
+    const editableData = filterEditableFields(existingSideFlap, req.body, [
+      'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+      'quantity', 'wastage', 'adhesive',
+      'holdRemark', 'majorHoldRemark', 'completeRemark',
+    ]);
 
     // Auto-populate common step fields (date, shift, operator, machine)
     const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
@@ -317,7 +321,11 @@ export const updateSideFlapPastingByStepId = async (req: Request, res: Response)
   }
 
   const { filterEditableFields } = await import('../utils/fieldEditability');
-  const editableData = filterEditableFields(existingSideFlap, req.body);
+  const editableData = filterEditableFields(existingSideFlap, req.body, [
+    'status', 'remarks', 'qcCheckSignBy', 'qcCheckAt',
+    'quantity', 'wastage', 'adhesive',
+    'holdRemark', 'majorHoldRemark', 'completeRemark',
+  ]);
   const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
   const decodedNrcJobNo = existingSideFlap.jobNrcJobNo;
   const populatedData = jobStep
