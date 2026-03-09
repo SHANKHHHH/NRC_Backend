@@ -62,77 +62,80 @@ export const createJobPlanning = async (req: Request, res: Response) => {
     }
   });
 
-  try {
-    // 🔢 Generate monthly sequence + human-readable job plan code (e.g. "JAN26-001")
-    const now = new Date();
-    const year = now.getFullYear();
-    const monthIndex = now.getMonth(); // 0-based
+  // Debug: steps data for Prisma (built once, reused on retry)
+  const stepsData = steps.map((step: any) => ({
+    stepNo: step.stepNo,
+    stepName: step.stepName,
+    status: "planned" as const,
+    machineDetails: step.machineDetails || [],
+  }));
+  console.log("Steps data for Prisma:", JSON.stringify(stepsData, null, 2));
 
-    // Start and end of current month for filtering existing plannings
-    const monthStart = new Date(year, monthIndex, 1);
-    const monthEnd = new Date(year, monthIndex + 1, 1);
+  const now = new Date();
+  const year = now.getFullYear();
+  const monthIndex = now.getMonth();
+  const monthStart = new Date(year, monthIndex, 1);
+  const monthEnd = new Date(year, monthIndex + 1, 1);
+  const monthNames = [
+    "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+  ];
+  const monthCode = monthNames[monthIndex];
+  const yearCode = (year % 100).toString().padStart(2, "0");
 
-    // Count how many plannings already exist in this month to get the next sequence
+  const getNextJobPlanCode = async (): Promise<string> => {
     const existingCount = await prisma.jobPlanning.count({
       where: {
-        createdAt: {
-          gte: monthStart,
-          lt: monthEnd,
-        },
+        createdAt: { gte: monthStart, lt: monthEnd },
       },
     });
-
     const nextSequence = existingCount + 1;
+    const sequenceCode = nextSequence.toString().padStart(3, "0");
+    return `${monthCode}${yearCode}-${sequenceCode}`;
+  };
 
-    const monthNames = [
-      "JAN",
-      "FEB",
-      "MAR",
-      "APR",
-      "MAY",
-      "JUN",
-      "JUL",
-      "AUG",
-      "SEP",
-      "OCT",
-      "NOV",
-      "DEC",
-    ];
+  const maxAttempts = 5;
+  let jobPlanning: any = null;
+  let lastError: unknown = null;
 
-    const monthCode = monthNames[monthIndex];
-    const yearCode = (year % 100).toString().padStart(2, "0"); // 2026 -> "26"
-    const sequenceCode = nextSequence.toString().padStart(3, "0"); // 1 -> "001"
-    const jobPlanCode = `${monthCode}${yearCode}-${sequenceCode}`;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const jobPlanCode = await getNextJobPlanCode();
+      if (attempt > 1) {
+        console.log(`[createJobPlanning] Retry attempt ${attempt}, new jobPlanCode: ${jobPlanCode}`);
+      }
 
-    // Debug: Log the data being passed to Prisma
-    const stepsData = steps.map((step: any) => ({
-      stepNo: step.stepNo,
-      stepName: step.stepName,
-      status: "planned" as const, // All new steps start as planned
-      machineDetails: step.machineDetails || [],
-    }));
-
-    console.log("Steps data for Prisma:", JSON.stringify(stepsData, null, 2));
-
-    // Note: Finished goods are NOT consumed here - they are consumed when dispatch actually uses them
-    // finishedGoodsQuantity in JobPlanning is just a reference/selection, not consumption
-
-    const jobPlanning: any = await (prisma as any).jobPlanning.create({
-      data: {
-        nrcJobNo,
-        jobDemand,
-        purchaseOrderId: purchaseOrderId ? parseInt(purchaseOrderId) : null,
-        finishedGoodsQty: finishedGoodsQuantity,
-        jobPlanCode,
-        steps: {
-          create: stepsData,
+      jobPlanning = await (prisma as any).jobPlanning.create({
+        data: {
+          nrcJobNo,
+          jobDemand,
+          purchaseOrderId: purchaseOrderId ? parseInt(purchaseOrderId) : null,
+          finishedGoodsQty: finishedGoodsQuantity,
+          jobPlanCode,
+          steps: { create: stepsData },
         },
-      },
-      include: {
-        steps: true,
-      },
-    });
+        include: { steps: true },
+      });
+      break;
+    } catch (err: any) {
+      lastError = err;
+      const isJobPlanCodeConflict =
+        err?.code === "P2002" &&
+        Array.isArray(err?.meta?.target) &&
+        err.meta.target.includes("jobPlanCode");
+      if (isJobPlanCodeConflict && attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, 50 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
 
+  if (!jobPlanning) {
+    throw lastError || new Error("Failed to create job planning after retries");
+  }
+
+  try {
     // Log the created job planning to verify finishedGoodsQty was saved
     console.log("✅ [createJobPlanning] Job planning created:", {
       jobPlanId: jobPlanning.jobPlanId,

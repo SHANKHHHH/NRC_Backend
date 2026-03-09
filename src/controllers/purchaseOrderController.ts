@@ -78,7 +78,7 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
   ) {
     throw new AppError(
       "Customer is required and must be a non-empty string",
-      400
+      400,
     );
   }
   // Only pass allowed fields to Prisma
@@ -116,7 +116,10 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
   }
 
   // jobNrcJobNo is a FK to Job.nrcJobNo — ensure no leading/trailing spaces so lookup succeeds
-  if (createData.jobNrcJobNo != null && typeof createData.jobNrcJobNo === "string") {
+  if (
+    createData.jobNrcJobNo != null &&
+    typeof createData.jobNrcJobNo === "string"
+  ) {
     createData.jobNrcJobNo = createData.jobNrcJobNo.trim();
   }
 
@@ -127,7 +130,7 @@ export const createPurchaseOrder = async (req: Request, res: Response) => {
 
   // Calculate shared card diff date
   createData.sharedCardDiffDate = calculateSharedCardDiffDate(
-    data.shadeCardApprovalDate
+    data.shadeCardApprovalDate,
   );
 
   const purchaseOrder = await prisma.purchaseOrder.create({ data: createData });
@@ -179,7 +182,7 @@ export const updatePurchaseOrder = async (req: Request, res: Response) => {
 
   // Calculate shared card diff date
   updateData.sharedCardDiffDate = calculateSharedCardDiffDate(
-    data.shadeCardApprovalDate
+    data.shadeCardApprovalDate,
   );
 
   const purchaseOrder = await prisma.purchaseOrder.update({
@@ -196,7 +199,7 @@ export const updatePurchaseOrder = async (req: Request, res: Response) => {
 
 export const recalculatePurchaseOrderSharedCardDiffDate = async (
   req: Request,
-  res: Response
+  res: Response,
 ) => {
   try {
     // Get all purchase orders that have shadeCardApprovalDate
@@ -217,7 +220,7 @@ export const recalculatePurchaseOrderSharedCardDiffDate = async (
 
     for (const po of purchaseOrders) {
       const sharedCardDiffDate = calculateSharedCardDiffDate(
-        po.shadeCardApprovalDate
+        po.shadeCardApprovalDate,
       );
 
       await prisma.purchaseOrder.update({
@@ -267,7 +270,7 @@ export const deletePurchaseOrder = async (req: Request, res: Response) => {
     if (jobPlanningForThisPO) {
       throw new AppError(
         "Cannot delete purchase order with job planning. Please delete the job planning first.",
-        400
+        400,
       );
     }
 
@@ -296,7 +299,10 @@ export const deletePurchaseOrder = async (req: Request, res: Response) => {
 
 // Manually sync PurchaseOrder id sequence to MAX(id)
 // Useful after legacy imports or data fixes; normally the trigger keeps this in sync.
-export const syncPurchaseOrderSequence = async (req: Request, res: Response) => {
+export const syncPurchaseOrderSequence = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     await prisma.$executeRawUnsafe(`
       SELECT setval(
