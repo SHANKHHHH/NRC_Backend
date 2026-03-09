@@ -83,13 +83,24 @@ export const createJobPlanning = async (req: Request, res: Response) => {
   const monthCode = monthNames[monthIndex];
   const yearCode = (year % 100).toString().padStart(2, "0");
 
+  // Use MAX(sequence from jobPlanCode) so retries see already-inserted rows and get a new code (count() can be stale under concurrency)
   const getNextJobPlanCode = async (): Promise<string> => {
-    const existingCount = await prisma.jobPlanning.count({
+    const plannings = await prisma.jobPlanning.findMany({
       where: {
         createdAt: { gte: monthStart, lt: monthEnd },
       },
+      select: { jobPlanCode: true },
     });
-    const nextSequence = existingCount + 1;
+    const prefix = `${monthCode}${yearCode}-`;
+    let maxSeq = 0;
+    for (const p of plannings) {
+      const code = p.jobPlanCode;
+      if (code && code.startsWith(prefix)) {
+        const num = parseInt(code.slice(prefix.length), 10);
+        if (!Number.isNaN(num) && num > maxSeq) maxSeq = num;
+      }
+    }
+    const nextSequence = maxSeq + 1;
     const sequenceCode = nextSequence.toString().padStart(3, "0");
     return `${monthCode}${yearCode}-${sequenceCode}`;
   };
