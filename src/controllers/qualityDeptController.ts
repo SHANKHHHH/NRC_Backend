@@ -882,9 +882,11 @@ export const updateQualityDept = async (req: Request, res: Response) => {
       : editableData;
 
     // Step 2: Update using its unique id
+    // Prisma update() does not accept id, jobStepId, jobNrcJobNo, createdAt, updatedAt in data
+    const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, ...updateData } = populatedData as any;
     const qualityDept = await prisma.qualityDept.update({
       where: { id: existingQualityDept.id },
-      data: populatedData,
+      data: updateData,
     });
 
     // Optional Logging

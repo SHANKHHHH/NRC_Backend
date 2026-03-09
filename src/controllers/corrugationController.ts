@@ -381,9 +381,11 @@ export const updateCorrugation = async (req: Request, res: Response) => {
     populatedData = await autoPopulateCorrugationFields(populatedData, decodedNrcJobNo);
 
     // Step 2: Update using the unique id
+    // Prisma update() does not accept id, jobStepId, jobNrcJobNo, createdAt, updatedAt in data
+    const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, ...updateData } = populatedData as any;
     const corrugation = await prisma.corrugation.update({
       where: { id: existingCorrugation.id },
-      data: populatedData,
+      data: updateData,
     });
 
   // Auto-update job's machine details flag if machineNo field present

@@ -957,9 +957,11 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
     }
 
     // Step 2: Update using its unique id
+    // Prisma update() does not accept id, jobStepId, jobNrcJobNo, createdAt, updatedAt in data
+    const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, ...updateData } = populatedData as any;
     const dispatchProcess = await prisma.dispatchProcess.update({
       where: { id: existingDispatchProcess.id },
-      data: populatedData,
+      data: updateData,
     });
 
     // Step 3: Log update

@@ -317,9 +317,11 @@ export const updateFluteLaminateBoardConversion = async (req: Request, res: Resp
       : editableData;
 
     // Step 2: Update using the unique ID
+    // Prisma update() does not accept id, jobStepId, jobNrcJobNo, createdAt, updatedAt in data
+    const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, ...updateData } = populatedData as any;
     const fluteLaminateBoardConversion = await prisma.fluteLaminateBoardConversion.update({
       where: { id: existingRecord.id },
-      data: populatedData,
+      data: updateData,
     });
 
     // Auto-update job's machine details flag when machine-related field is present (same as Corrugation)

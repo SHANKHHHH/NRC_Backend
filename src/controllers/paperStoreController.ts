@@ -495,9 +495,11 @@ if (!existing) {
 }
 
 // Step 2: Use its ID to update (since ID is unique)
+// Prisma update() does not accept id, jobStepId, jobNrcJobNo, createdAt, updatedAt in data
+const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, ...updateData } = populatedData as any;
 const updated = await prisma.paperStore.update({
   where: { id: existing.id },
-  data: populatedData,
+  data: updateData,
 });
 
 // Log action

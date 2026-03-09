@@ -307,9 +307,12 @@ export const updatePrintingDetails = async (req: Request, res: Response) => {
     ? await autoPopulateStepFields(editableData, jobStep.id, req.user?.userId, decodedNrcJobNo)
     : editableData;
 
+  // Prisma update() does not accept id, jobStepId, jobNrcJobNo, createdAt, updatedAt in data (primary/relation keys)
+  const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, ...updateData } = populatedData as any;
+
   const printingDetails = await prisma.printingDetails.update({
     where: { id: existingPrintingDetails.id },
-    data: populatedData, 
+    data: updateData,
   });
 
   // Auto-update job's machine details flag if machine field present
