@@ -73,9 +73,8 @@ export const createJobPlanning = async (req: Request, res: Response) => {
 
   const now = new Date();
   const year = now.getFullYear();
-  const monthIndex = now.getMonth();
-  const monthStart = new Date(year, monthIndex, 1);
-  const monthEnd = new Date(year, monthIndex + 1, 1);
+  const monthIndex = now.getMonth(); // 0-11
+  const month = monthIndex + 1; // 1-12 for DB
   const monthNames = [
     "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
     "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
@@ -83,67 +82,44 @@ export const createJobPlanning = async (req: Request, res: Response) => {
   const monthCode = monthNames[monthIndex];
   const yearCode = (year % 100).toString().padStart(2, "0");
 
-  // Use MAX(sequence from jobPlanCode) so retries see already-inserted rows and get a new code (count() can be stale under concurrency)
-  const getNextJobPlanCode = async (): Promise<string> => {
-    const plannings = await prisma.jobPlanning.findMany({
-      where: {
-        createdAt: { gte: monthStart, lt: monthEnd },
-      },
-      select: { jobPlanCode: true },
-    });
-    const prefix = `${monthCode}${yearCode}-`;
-    let maxSeq = 0;
-    for (const p of plannings) {
-      const code = p.jobPlanCode;
-      if (code && code.startsWith(prefix)) {
-        const num = parseInt(code.slice(prefix.length), 10);
-        if (!Number.isNaN(num) && num > maxSeq) maxSeq = num;
-      }
-    }
-    const nextSequence = maxSeq + 1;
-    const sequenceCode = nextSequence.toString().padStart(3, "0");
-    return `${monthCode}${yearCode}-${sequenceCode}`;
-  };
+  // Get next sequence from JobPlanCodeSequence (monthly counter); avoids reusing codes after completed jobs leave JobPlanning
+  const seqResult = await prisma.$queryRawUnsafe<[{ lastUsedSequence: number }]>(
+    `INSERT INTO "JobPlanCodeSequence" ("year", "month", "lastUsedSequence") VALUES ($1, $2, 1)
+     ON CONFLICT ("year", "month") DO UPDATE SET "lastUsedSequence" = "JobPlanCodeSequence"."lastUsedSequence" + 1
+     RETURNING "lastUsedSequence"`,
+    year,
+    month
+  );
+  const nextSequence = seqResult[0]?.lastUsedSequence ?? 1;
+  const sequenceCode = nextSequence.toString().padStart(3, "0");
+  const jobPlanCode = `${monthCode}${yearCode}-${sequenceCode}`;
 
-  const maxAttempts = 5;
   let jobPlanning: any = null;
-  let lastError: unknown = null;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const jobPlanCode = await getNextJobPlanCode();
-      if (attempt > 1) {
-        console.log(`[createJobPlanning] Retry attempt ${attempt}, new jobPlanCode: ${jobPlanCode}`);
-      }
-
-      jobPlanning = await (prisma as any).jobPlanning.create({
-        data: {
-          nrcJobNo,
-          jobDemand,
-          purchaseOrderId: purchaseOrderId ? parseInt(purchaseOrderId) : null,
-          finishedGoodsQty: finishedGoodsQuantity,
-          jobPlanCode,
-          steps: { create: stepsData },
-        },
-        include: { steps: true },
-      });
-      break;
-    } catch (err: any) {
-      lastError = err;
-      const isJobPlanCodeConflict =
-        err?.code === "P2002" &&
-        Array.isArray(err?.meta?.target) &&
-        err.meta.target.includes("jobPlanCode");
-      if (isJobPlanCodeConflict && attempt < maxAttempts) {
-        await new Promise((r) => setTimeout(r, 50 * attempt));
-        continue;
-      }
-      throw err;
+  try {
+    jobPlanning = await (prisma as any).jobPlanning.create({
+      data: {
+        nrcJobNo,
+        jobDemand,
+        purchaseOrderId: purchaseOrderId ? parseInt(purchaseOrderId) : null,
+        finishedGoodsQty: finishedGoodsQuantity,
+        jobPlanCode,
+        steps: { create: stepsData },
+      },
+      include: { steps: true },
+    });
+  } catch (err: any) {
+    const isJobPlanCodeConflict =
+      err?.code === "P2002" &&
+      Array.isArray(err?.meta?.target) &&
+      err.meta.target.includes("jobPlanCode");
+    if (isJobPlanCodeConflict) {
+      // Rare: sequence was used but row insert failed; next create will get next number. Throw so client can retry.
+      throw new AppError(
+        "Job plan code conflict; please try creating the job plan again.",
+        409
+      );
     }
-  }
-
-  if (!jobPlanning) {
-    throw lastError || new Error("Failed to create job planning after retries");
+    throw err;
   }
 
   try {
