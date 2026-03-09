@@ -7,6 +7,7 @@ const router = Router();
 
 router.post('/', authenticateToken, asyncHandler(createDispatchProcess));
 router.get('/by-step-id/:jobStepId', authenticateToken, asyncHandler(getDispatchProcessByJobStepId));
+router.put('/by-step-id/:jobStepId', authenticateToken, asyncHandler(updateDispatchProcess));
 router.get('/by-job/:nrcJobNo', authenticateToken, asyncHandler(getDispatchProcessByNrcJobNo));
 router.get('/', authenticateToken, addMachineFiltering, asyncHandler(getAllDispatchProcesses));
 router.get('/:id', authenticateToken, asyncHandler(getDispatchProcessById));

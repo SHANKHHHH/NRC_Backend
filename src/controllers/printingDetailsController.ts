@@ -352,6 +352,86 @@ export const updatePrintingDetails = async (req: Request, res: Response) => {
   });
 };
 
+/** Update PrintingDetails by job step id (unambiguous when multiple job plans share same nrcJobNo) */
+export const updatePrintingDetailsByStepId = async (req: Request, res: Response) => {
+  const jobStepId = Number(req.params.jobStepId);
+  if (!Number.isInteger(jobStepId)) throw new AppError('Invalid jobStepId', 400);
+  const userRole = req.user?.role;
+
+  if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
+    const allowedFields = ['qcCheckSignBy', 'qcCheckAt', 'remarks'];
+    const bodyKeys = Object.keys(req.body);
+    const restrictedFields = bodyKeys.filter(key => !allowedFields.includes(key));
+    if (restrictedFields.length > 0) {
+      throw new AppError(
+        `Flying Squad can only update QC-related fields. Restricted: ${restrictedFields.join(', ')}. Allowed: ${allowedFields.join(', ')}`,
+        403
+      );
+    }
+    if (req.body.qcCheckSignBy !== undefined) req.body.qcCheckSignBy = req.user?.userId;
+    if (req.body.qcCheckAt !== undefined) req.body.qcCheckAt = new Date();
+  }
+
+  const existingPrintingDetails = await prisma.printingDetails.findUnique({
+    where: { jobStepId },
+  });
+  if (!existingPrintingDetails) throw new AppError('PrintingDetails not found', 404);
+
+  const jobStep = await prisma.jobStep.findUnique({
+    where: { id: jobStepId },
+    select: { id: true, stepName: true }
+  });
+  if (req.user?.userId && req.user?.role && jobStep) {
+    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+    const nrcJobNo = existingPrintingDetails.jobNrcJobNo;
+    const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, nrcJobNo);
+    if (!bypass) {
+      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+      if (!hasAccess) throw new AppError('Access denied: You do not have access to machines for this step', 403);
+    }
+  }
+
+  const { filterEditableFields } = await import('../utils/fieldEditability');
+  const editableData = filterEditableFields(existingPrintingDetails, req.body);
+  const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
+  const populatedData = jobStep
+    ? await autoPopulateStepFields(editableData, jobStep.id, req.user?.userId, existingPrintingDetails.jobNrcJobNo)
+    : editableData;
+
+  const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, operatorName: _opName, machineNo: _mno, ...updateData } = populatedData as any;
+  const printingDetails = await prisma.printingDetails.update({
+    where: { id: existingPrintingDetails.id },
+    data: updateData,
+  });
+
+  try {
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'machine')) {
+      const js = await prisma.jobStep.findFirst({
+        where: { printingDetails: { id: printingDetails.id } },
+        include: { jobPlanning: { select: { nrcJobNo: true } } }
+      });
+      if (js?.jobPlanning?.nrcJobNo) {
+        const { updateJobMachineDetailsFlag } = await import('../utils/machineDetailsTracker');
+        await updateJobMachineDetailsFlag(js.jobPlanning.nrcJobNo);
+      }
+    }
+  } catch (e) {
+    console.warn('Warning: could not update isMachineDetailsFilled after printingDetails update:', e);
+  }
+
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated PrintingDetails step by step id: ${jobStepId}`,
+      'PrintingDetails',
+      existingPrintingDetails.jobNrcJobNo
+    );
+  }
+
+  res.status(200).json({ success: true, data: printingDetails, message: 'PrintingDetails updated' });
+};
+
 
 
 

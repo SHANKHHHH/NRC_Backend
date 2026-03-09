@@ -257,6 +257,79 @@ export const updatePunching = async (req: Request, res: Response) => {
   
 };
 
+/** Update Punching by job step id (unambiguous when multiple job plans share same nrcJobNo) */
+export const updatePunchingByStepId = async (req: Request, res: Response) => {
+  const jobStepId = Number(req.params.jobStepId);
+  if (!Number.isInteger(jobStepId)) throw new AppError('Invalid jobStepId', 400);
+  const userRole = req.user?.role;
+
+  if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
+    const allowedFields = ['qcCheckSignBy', 'qcCheckAt', 'remarks'];
+    const bodyKeys = Object.keys(req.body);
+    const restrictedFields = bodyKeys.filter(key => !allowedFields.includes(key));
+    if (restrictedFields.length > 0) throw new AppError('Flying Squad can only update QC-related fields', 403);
+    if (req.body.qcCheckSignBy !== undefined) req.body.qcCheckSignBy = req.user?.userId;
+    if (req.body.qcCheckAt !== undefined) req.body.qcCheckAt = new Date();
+  }
+
+  const existingPunching = await prisma.punching.findUnique({ where: { jobStepId } });
+  if (!existingPunching) throw new AppError('Punching not found', 404);
+
+  const jobStep = await prisma.jobStep.findFirst({
+    where: { punching: { id: existingPunching.id } },
+    select: { id: true, stepName: true }
+  });
+  if (req.user?.userId && req.user?.role && jobStep) {
+    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+    const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, existingPunching.jobNrcJobNo);
+    if (!bypass) {
+      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+      if (!hasAccess) throw new AppError('Access denied: You do not have access to machines for this step', 403);
+    }
+  }
+
+  const { filterEditableFields } = await import('../utils/fieldEditability');
+  const editableData = filterEditableFields(existingPunching, req.body);
+  const { autoPopulateStepFields, autoPopulatePunchingFields } = await import('../utils/autoPopulateFields');
+  const decodedNrcJobNo = existingPunching.jobNrcJobNo;
+  let populatedData = editableData;
+  if (jobStep) {
+    populatedData = await autoPopulateStepFields(editableData, jobStep.id, req.user?.userId, decodedNrcJobNo);
+  }
+  populatedData = await autoPopulatePunchingFields(populatedData, decodedNrcJobNo);
+
+  const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, oprName: _op, machineNo: _mno, ...updateData } = populatedData as any;
+  const punching = await prisma.punching.update({
+    where: { id: existingPunching.id },
+    data: updateData,
+  });
+
+  try {
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'machine')) {
+      const js = await prisma.jobStep.findFirst({
+        where: { punching: { id: punching.id } },
+        include: { jobPlanning: { select: { nrcJobNo: true } } }
+      });
+      if (js?.jobPlanning?.nrcJobNo) {
+        const { updateJobMachineDetailsFlag } = await import('../utils/machineDetailsTracker');
+        await updateJobMachineDetailsFlag(js.jobPlanning.nrcJobNo);
+      }
+    }
+  } catch (e) {
+    console.warn('Warning: could not update isMachineDetailsFilled after punching update:', e);
+  }
+
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated Punching step by step id: ${jobStepId}`,
+      'Punching',
+      decodedNrcJobNo
+    );
+  }
+  res.status(200).json({ success: true, data: punching, message: 'Punching updated' });
+};
 
 export const deletePunching = async (req: Request, res: Response) => {
   const { id } = req.params;

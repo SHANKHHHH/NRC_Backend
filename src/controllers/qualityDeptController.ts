@@ -920,6 +920,133 @@ export const updateQualityDept = async (req: Request, res: Response) => {
   }
 };
 
+/** Update QualityDept by job step id (unambiguous when multiple job plans share same nrcJobNo) */
+export const updateQualityDeptByStepId = async (req: Request, res: Response) => {
+  const jobStepId = Number(req.params.jobStepId);
+  if (!Number.isInteger(jobStepId)) throw new AppError("Invalid jobStepId", 400);
+
+  const existingQualityDept = await prisma.qualityDept.findUnique({
+    where: { jobStepId },
+  });
+  if (!existingQualityDept) throw new AppError("QualityDept not found", 404);
+
+  const decodedNrcJobNo = existingQualityDept.jobNrcJobNo;
+  const jobStep = await prisma.jobStep.findUnique({
+    where: { id: jobStepId },
+    select: { id: true, stepName: true },
+  });
+  if (req.user?.userId && req.user?.role && jobStep) {
+    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import(
+      "../middleware/machineAccess"
+    );
+    const bypass = await allowHighDemandBypass(
+      req.user.role,
+      jobStep.stepName,
+      decodedNrcJobNo
+    );
+    if (!bypass) {
+      const hasAccess = await checkJobStepMachineAccess(
+        req.user.userId,
+        req.user.role,
+        jobStep.id
+      );
+      if (!hasAccess) {
+        throw new AppError(
+          "Access denied: You do not have access to machines for this step",
+          403
+        );
+      }
+    }
+  }
+
+  const parseRejectionQty = (value: any): number | null => {
+    if (value === null || value === undefined) return null;
+    const strValue = value.toString().trim();
+    if (strValue === "") return null;
+    const parsed = parseInt(strValue, 10);
+    return isNaN(parsed) ? null : parsed;
+  };
+  const rejectionReasonAQty = parseRejectionQty(req.body.rejectionReasonAQty ?? req.body["Rejection Reason A Qty"]);
+  const rejectionReasonBQty = parseRejectionQty(req.body.rejectionReasonBQty ?? req.body["Rejection Reason B Qty"]);
+  const rejectionReasonCQty = parseRejectionQty(req.body.rejectionReasonCQty ?? req.body["Rejection Reason C Qty"]);
+  const rejectionReasonDQty = parseRejectionQty(req.body.rejectionReasonDQty ?? req.body["Rejection Reason D Qty"]);
+  const rejectionReasonEQty = parseRejectionQty(req.body.rejectionReasonEQty ?? req.body["Rejection Reason E Qty"]);
+  const rejectionReasonFQty = parseRejectionQty(req.body.rejectionReasonFQty ?? req.body["Rejection Reason F Qty"]);
+  const rejectionReasonOthersQty = parseRejectionQty(req.body.rejectionReasonOthersQty ?? req.body["Rejection Reason Others Qty"]);
+  const sum =
+    (rejectionReasonAQty ?? 0) +
+    (rejectionReasonBQty ?? 0) +
+    (rejectionReasonCQty ?? 0) +
+    (rejectionReasonDQty ?? 0) +
+    (rejectionReasonEQty ?? 0) +
+    (rejectionReasonFQty ?? 0) +
+    (rejectionReasonOthersQty ?? 0);
+  const hasAnyRejectionReason =
+    rejectionReasonAQty !== null ||
+    rejectionReasonBQty !== null ||
+    rejectionReasonCQty !== null ||
+    rejectionReasonDQty !== null ||
+    rejectionReasonEQty !== null ||
+    rejectionReasonFQty !== null ||
+    rejectionReasonOthersQty !== null;
+  if (hasAnyRejectionReason) {
+    if (sum > 0) req.body.rejectedQty = sum;
+    req.body.rejectionReasonAQty = rejectionReasonAQty;
+    req.body.rejectionReasonBQty = rejectionReasonBQty;
+    req.body.rejectionReasonCQty = rejectionReasonCQty;
+    req.body.rejectionReasonDQty = rejectionReasonDQty;
+    req.body.rejectionReasonEQty = rejectionReasonEQty;
+    req.body.rejectionReasonFQty = rejectionReasonFQty;
+    req.body.rejectionReasonOthersQty = rejectionReasonOthersQty;
+  }
+
+  const { filterEditableFields } = await import("../utils/fieldEditability");
+  const editableData = filterEditableFields(existingQualityDept, req.body, [
+    "status",
+    "remarks",
+    "qcCheckSignBy",
+    "qcCheckAt",
+    "rejectionReasonAQty",
+    "rejectionReasonBQty",
+    "rejectionReasonCQty",
+    "rejectionReasonDQty",
+    "rejectionReasonEQty",
+    "rejectionReasonFQty",
+    "rejectionReasonOthersQty",
+    "rejectedQty",
+  ]);
+  const { autoPopulateStepFields } = await import("../utils/autoPopulateFields");
+  const populatedData = jobStep
+    ? await autoPopulateStepFields(
+        editableData,
+        jobStep.id,
+        req.user?.userId,
+        decodedNrcJobNo
+      )
+    : editableData;
+
+  const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, oprName: _op, machine: _m, machineNo: _mno, ...updateData } = populatedData as any;
+  const qualityDept = await prisma.qualityDept.update({
+    where: { id: existingQualityDept.id },
+    data: updateData,
+  });
+
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated QualityDept step by step id: ${jobStepId}`,
+      "QualityDept",
+      decodedNrcJobNo
+    );
+  }
+  res.status(200).json({
+    success: true,
+    data: qualityDept,
+    message: "QualityDept updated",
+  });
+};
+
 export const deleteQualityDept = async (req: Request, res: Response) => {
   const { id } = req.params;
   await prisma.qualityDept.delete({ where: { id: Number(id) } });

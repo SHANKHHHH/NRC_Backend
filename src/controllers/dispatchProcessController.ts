@@ -447,8 +447,6 @@ export const resumeDispatchProcess = async (req: Request, res: Response) => {
 };
 
 export const updateDispatchProcess = async (req: Request, res: Response) => {
-  const { nrcJobNo } = req.params;
-  const decodedNrcJobNo = decodeURIComponent(nrcJobNo);
   const userRole = req.user?.role;
   // Check if Flying Squad is trying to update non-QC fields
   if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
@@ -474,14 +472,27 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
     }
   }
 
-    try {
-    // Step 1: Find the DispatchProcess record by jobNrcJobNo
-    const existingDispatchProcess: any = await prisma.dispatchProcess.findFirst({
-      where: { jobNrcJobNo: decodedNrcJobNo },
-    });
-
-    if (!existingDispatchProcess) {
-      throw new AppError('DispatchProcess record not found', 404);
+  try {
+    // Resolve existing record: by jobStepId (unambiguous) or by nrcJobNo
+    let existingDispatchProcess: any;
+    let decodedNrcJobNo: string;
+    const jobStepIdParam = req.params.jobStepId;
+    if (jobStepIdParam !== undefined && jobStepIdParam !== '') {
+      const jobStepId = Number(jobStepIdParam);
+      if (!Number.isInteger(jobStepId)) throw new AppError('Invalid jobStepId', 400);
+      existingDispatchProcess = await prisma.dispatchProcess.findUnique({
+        where: { jobStepId },
+      });
+      if (!existingDispatchProcess) throw new AppError('DispatchProcess not found', 404);
+      decodedNrcJobNo = existingDispatchProcess.jobNrcJobNo;
+    } else {
+      const nrcJobNo = req.params.nrcJobNo;
+      if (!nrcJobNo) throw new AppError('nrcJobNo or jobStepId required', 400);
+      decodedNrcJobNo = decodeURIComponent(nrcJobNo);
+      existingDispatchProcess = await prisma.dispatchProcess.findFirst({
+        where: { jobNrcJobNo: decodedNrcJobNo },
+      });
+      if (!existingDispatchProcess) throw new AppError('DispatchProcess not found', 404);
     }
 
     // No machine access enforcement for Dispatch; keep original simple flow

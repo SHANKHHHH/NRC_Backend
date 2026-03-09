@@ -370,6 +370,74 @@ export const updateFluteLaminateBoardConversion = async (req: Request, res: Resp
   }
 };
 
+/** Update FluteLaminateBoardConversion by job step id (unambiguous when multiple job plans share same nrcJobNo) */
+export const updateFluteLaminateBoardConversionByStepId = async (req: Request, res: Response) => {
+  const jobStepId = Number(req.params.jobStepId);
+  if (!Number.isInteger(jobStepId)) throw new AppError('Invalid jobStepId', 400);
+  const userRole = req.user?.role;
+
+  if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
+    const allowedFields = ['qcCheckSignBy', 'qcCheckAt', 'remarks'];
+    const bodyKeys = Object.keys(req.body);
+    const restrictedFields = bodyKeys.filter(key => !allowedFields.includes(key));
+    if (restrictedFields.length > 0) throw new AppError('Flying Squad can only update QC-related fields', 403);
+    if (req.body.qcCheckSignBy !== undefined) req.body.qcCheckSignBy = req.user?.userId;
+    if (req.body.qcCheckAt !== undefined) req.body.qcCheckAt = new Date();
+  }
+
+  const existingRecord = await prisma.fluteLaminateBoardConversion.findUnique({ where: { jobStepId } });
+  if (!existingRecord) throw new AppError('FluteLaminateBoardConversion not found', 404);
+
+  const jobStep = await prisma.jobStep.findUnique({ where: { id: jobStepId }, select: { id: true, stepName: true } });
+  if (req.user?.userId && req.user?.role && jobStep) {
+    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+    const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, existingRecord.jobNrcJobNo);
+    if (!bypass) {
+      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+      if (!hasAccess) throw new AppError('Access denied: You do not have access to machines for this step', 403);
+    }
+  }
+
+  const { filterEditableFields } = await import('../utils/fieldEditability');
+  const editableData = filterEditableFields(existingRecord, req.body);
+  const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
+  const decodedNrcJobNo = existingRecord.jobNrcJobNo;
+  const populatedData = jobStep
+    ? await autoPopulateStepFields(editableData, jobStep.id, req.user?.userId, decodedNrcJobNo)
+    : editableData;
+
+  const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, oprName: _op, machine: _m, machineNo: _mno, ...updateData } = populatedData as any;
+  const fluteLaminateBoardConversion = await prisma.fluteLaminateBoardConversion.update({
+    where: { id: existingRecord.id },
+    data: updateData,
+  });
+
+  try {
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'machineNo') || Object.prototype.hasOwnProperty.call(req.body || {}, 'machineCode')) {
+      const js = await prisma.jobStep.findFirst({
+        where: { flutelam: { id: fluteLaminateBoardConversion.id } },
+        include: { jobPlanning: { select: { nrcJobNo: true } } }
+      });
+      if (js?.jobPlanning?.nrcJobNo) {
+        const { updateJobMachineDetailsFlag } = await import('../utils/machineDetailsTracker');
+        await updateJobMachineDetailsFlag(js.jobPlanning.nrcJobNo);
+      }
+    }
+  } catch (e) {
+    console.warn('Warning: could not update isMachineDetailsFilled after flute lamination update:', e);
+  }
+
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated FluteLaminateBoardConversion step by step id: ${jobStepId}`,
+      'FluteLaminateBoardConversion',
+      decodedNrcJobNo
+    );
+  }
+  res.status(200).json({ success: true, data: fluteLaminateBoardConversion, message: 'FluteLaminateBoardConversion updated' });
+};
 
 export const deleteFluteLaminateBoardConversion = async (req: Request, res: Response) => {
   const { id } = req.params;

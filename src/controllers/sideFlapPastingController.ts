@@ -288,6 +288,75 @@ export const updateSideFlapPasting = async (req: Request, res: Response) => {
   }
 };
 
+/** Update SideFlapPasting by job step id (unambiguous when multiple job plans share same nrcJobNo) */
+export const updateSideFlapPastingByStepId = async (req: Request, res: Response) => {
+  const jobStepId = Number(req.params.jobStepId);
+  if (!Number.isInteger(jobStepId)) throw new AppError('Invalid jobStepId', 400);
+  const userRole = req.user?.role;
+
+  if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
+    const allowedFields = ['qcCheckSignBy', 'qcCheckAt', 'remarks'];
+    const bodyKeys = Object.keys(req.body);
+    const restrictedFields = bodyKeys.filter(key => !allowedFields.includes(key));
+    if (restrictedFields.length > 0) throw new AppError('Flying Squad can only update QC-related fields', 403);
+    if (req.body.qcCheckSignBy !== undefined) req.body.qcCheckSignBy = req.user?.userId;
+    if (req.body.qcCheckAt !== undefined) req.body.qcCheckAt = new Date();
+  }
+
+  const existingSideFlap = await prisma.sideFlapPasting.findUnique({ where: { jobStepId } });
+  if (!existingSideFlap) throw new AppError('SideFlapPasting not found', 404);
+
+  const jobStep = await prisma.jobStep.findUnique({ where: { id: jobStepId }, select: { id: true, stepName: true } });
+  if (req.user?.userId && req.user?.role && jobStep) {
+    const { checkJobStepMachineAccess, allowHighDemandBypass } = await import('../middleware/machineAccess');
+    const bypass = await allowHighDemandBypass(req.user.role, jobStep.stepName, existingSideFlap.jobNrcJobNo);
+    if (!bypass) {
+      const hasAccess = await checkJobStepMachineAccess(req.user.userId, req.user.role, jobStep.id);
+      if (!hasAccess) throw new AppError('Access denied: You do not have access to machines for this step', 403);
+    }
+  }
+
+  const { filterEditableFields } = await import('../utils/fieldEditability');
+  const editableData = filterEditableFields(existingSideFlap, req.body);
+  const { autoPopulateStepFields } = await import('../utils/autoPopulateFields');
+  const decodedNrcJobNo = existingSideFlap.jobNrcJobNo;
+  const populatedData = jobStep
+    ? await autoPopulateStepFields(editableData, jobStep.id, req.user?.userId, decodedNrcJobNo)
+    : editableData;
+
+  const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, oprName: _op, machine: _m, ...updateData } = populatedData as any;
+  const sideFlapPasting = await prisma.sideFlapPasting.update({
+    where: { id: existingSideFlap.id },
+    data: updateData,
+  });
+
+  try {
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'machineNo')) {
+      const js = await prisma.jobStep.findFirst({
+        where: { sideFlapPasting: { id: sideFlapPasting.id } },
+        include: { jobPlanning: { select: { nrcJobNo: true } } }
+      });
+      if (js?.jobPlanning?.nrcJobNo) {
+        const { updateJobMachineDetailsFlag } = await import('../utils/machineDetailsTracker');
+        await updateJobMachineDetailsFlag(js.jobPlanning.nrcJobNo);
+      }
+    }
+  } catch (e) {
+    console.warn('Warning: could not update isMachineDetailsFilled after sideFlapPasting update:', e);
+  }
+
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated SideFlapPasting step by step id: ${jobStepId}`,
+      'SideFlapPasting',
+      decodedNrcJobNo
+    );
+  }
+  res.status(200).json({ success: true, data: sideFlapPasting, message: 'SideFlapPasting updated' });
+};
+
 export const updateSideFlapPastingStatus = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
   const { status, remarks } = req.body;

@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { authenticateToken, requireAdminJWT } from '../middleware/auth';
 import { asyncHandler, addMachineFiltering } from '../middleware';
-import { createPunching, getPunchingById, getPunchingByJobStepId, getAllPunchings, updatePunching, deletePunching, getPunchingByNrcJobNo, updatePunchingStatus } from '../controllers/punchingController';
+import { createPunching, getPunchingById, getPunchingByJobStepId, getAllPunchings, updatePunching, updatePunchingByStepId, deletePunching, getPunchingByNrcJobNo, updatePunchingStatus } from '../controllers/punchingController';
 
 const router = Router();
 
 router.post('/', authenticateToken, asyncHandler(createPunching));
 router.get('/by-step-id/:jobStepId', authenticateToken, asyncHandler(getPunchingByJobStepId));
+router.put('/by-step-id/:jobStepId', authenticateToken, asyncHandler(updatePunchingByStepId));
 router.get('/by-job/:nrcJobNo', authenticateToken, asyncHandler(getPunchingByNrcJobNo));
 router.get('/:id', authenticateToken, asyncHandler(getPunchingById));
 router.get('/', authenticateToken, addMachineFiltering, asyncHandler(getAllPunchings));

@@ -517,6 +517,50 @@ res.status(200).json({ success: true, data: updated, message: 'PaperStore update
 
 };
 
+/** Update PaperStore by job step id (unambiguous when multiple job plans share same nrcJobNo) */
+export const updatePaperStoreByStepId = async (req: Request, res: Response) => {
+  const jobStepId = Number(req.params.jobStepId);
+  if (!Number.isInteger(jobStepId)) throw new AppError('Invalid jobStepId', 400);
+  const userRole = req.user?.role;
+
+  if (userRole && RoleManager.canOnlyPerformQC(userRole)) {
+    const allowedFields = ['qcCheckSignBy', 'qcCheckAt', 'remarks'];
+    const bodyKeys = Object.keys(req.body);
+    const restrictedFields = bodyKeys.filter(key => !allowedFields.includes(key));
+    if (restrictedFields.length > 0) {
+      throw new AppError(`Flying Squad can only update QC-related fields`, 403);
+    }
+    if (req.body.qcCheckSignBy !== undefined) req.body.qcCheckSignBy = req.user?.userId;
+    if (req.body.qcCheckAt !== undefined) req.body.qcCheckAt = new Date();
+  }
+
+  const existing = await prisma.paperStore.findUnique({ where: { jobStepId } });
+  if (!existing) throw new AppError('PaperStore not found', 404);
+
+  const { filterEditableFields } = await import('../utils/fieldEditability');
+  const editableData = filterEditableFields(existing, req.body);
+  if (req.body.status !== undefined) editableData.status = req.body.status;
+  const { autoPopulatePaperStoreFields } = await import('../utils/autoPopulateFields');
+  const populatedData = await autoPopulatePaperStoreFields(editableData, existing.jobNrcJobNo);
+
+  const { id: _id, jobStepId: _js, jobNrcJobNo: _jn, createdAt: _ca, updatedAt: _ua, date: _d, shift: _sh, operatorName: _on, oprName: _op, machine: _m, machineNo: _mno, ...updateData } = populatedData as any;
+  const updated = await prisma.paperStore.update({
+    where: { id: existing.id },
+    data: updateData,
+  });
+
+  if (req.user?.userId) {
+    await logUserActionWithResource(
+      req.user.userId,
+      ActionTypes.JOBSTEP_UPDATED,
+      `Updated PaperStore step by step id: ${jobStepId}`,
+      'PaperStore',
+      existing.jobNrcJobNo
+    );
+  }
+  res.status(200).json({ success: true, data: updated, message: 'PaperStore updated' });
+};
+
 export const updatePaperStoreStatus = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
   const { status, remarks } = req.body;
