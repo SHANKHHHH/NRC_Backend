@@ -1241,12 +1241,6 @@ export const resumeMajorHoldJob = async (req: Request, res: Response) => {
       throw new AppError('User not authenticated', 401);
     }
 
-    // Allow admin, planner, production_head, and printing_manager to resume major holds
-    const allowedResumeRoles = ['admin', 'planner', 'production_head', 'printing_manager'];
-    if (!userRole || !allowedResumeRoles.includes(userRole)) {
-      throw new AppError('Only admin, planner, production head, or printing dept can resume major holds', 403);
-    }
-
     const totalMachinesAffected = await _performMajorHoldResume({
       nrcJobNo,
       resumeRemark,
@@ -1285,11 +1279,6 @@ export const resumeMajorHoldJobPlan = async (req: Request, res: Response) => {
 
     if (!userId) {
       throw new AppError('User not authenticated', 401);
-    }
-
-    const allowedResumeRoles = ['admin', 'planner', 'production_head', 'printing_manager'];
-    if (!userRole || !allowedResumeRoles.includes(userRole)) {
-      throw new AppError('Only admin, planner, production head, or printing dept can resume major holds', 403);
     }
 
     const parsedJobPlanId = parseInt(jobPlanId);
@@ -1681,12 +1670,6 @@ export const adminResumeMajorHold = async (req: Request, res: Response) => {
 
     if (!userId) {
       throw new AppError('User not authenticated', 401);
-    }
-
-    // Allow admin, planner, production_head, and printing_manager to resume major holds
-    const allowedResumeRoles = ['admin', 'planner', 'production_head', 'printing_manager'];
-    if (!userRole || !allowedResumeRoles.includes(userRole)) {
-      throw new AppError('Only admin, planner, production head, or printing dept can resume major holds', 403);
     }
 
     // Find the specific JobStepMachine entry with major_hold status
