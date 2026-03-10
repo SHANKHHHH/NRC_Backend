@@ -1241,9 +1241,10 @@ export const resumeMajorHoldJob = async (req: Request, res: Response) => {
       throw new AppError('User not authenticated', 401);
     }
 
-    // Check if user has admin or planner role
-    if (!userRole || (userRole !== 'admin' && userRole !== 'planner')) {
-      throw new AppError('Only admin or planner can resume major holds', 403);
+    // Allow admin, planner, production_head, and printing_manager to resume major holds
+    const allowedResumeRoles = ['admin', 'planner', 'production_head', 'printing_manager'];
+    if (!userRole || !allowedResumeRoles.includes(userRole)) {
+      throw new AppError('Only admin, planner, production head, or printing dept can resume major holds', 403);
     }
 
     const totalMachinesAffected = await _performMajorHoldResume({
@@ -1286,8 +1287,9 @@ export const resumeMajorHoldJobPlan = async (req: Request, res: Response) => {
       throw new AppError('User not authenticated', 401);
     }
 
-    if (!userRole || (userRole !== 'admin' && userRole !== 'planner')) {
-      throw new AppError('Only admin or planner can resume major holds', 403);
+    const allowedResumeRoles = ['admin', 'planner', 'production_head', 'printing_manager'];
+    if (!userRole || !allowedResumeRoles.includes(userRole)) {
+      throw new AppError('Only admin, planner, production head, or printing dept can resume major holds', 403);
     }
 
     const parsedJobPlanId = parseInt(jobPlanId);
@@ -1681,9 +1683,10 @@ export const adminResumeMajorHold = async (req: Request, res: Response) => {
       throw new AppError('User not authenticated', 401);
     }
 
-    // Check if user has admin or planner role
-    if (!userRole || (userRole !== 'admin' && userRole !== 'planner')) {
-      throw new AppError('Only admin or planner can resume major holds', 403);
+    // Allow admin, planner, production_head, and printing_manager to resume major holds
+    const allowedResumeRoles = ['admin', 'planner', 'production_head', 'printing_manager'];
+    if (!userRole || !allowedResumeRoles.includes(userRole)) {
+      throw new AppError('Only admin, planner, production head, or printing dept can resume major holds', 403);
     }
 
     // Find the specific JobStepMachine entry with major_hold status

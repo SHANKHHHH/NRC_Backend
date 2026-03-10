@@ -9,6 +9,7 @@ import { updateJobMachineDetailsFlag } from "../utils/machineDetailsTracker";
 import { getFilteredJobNumbers } from "../middleware/machineAccess";
 import { RoleManager } from "../utils/roleUtils";
 
+// Re-export for route (getMajorHoldJobPlanningsCount, getMajorHoldJobPlannings are defined below)
 export const createJobPlanning = async (req: Request, res: Response) => {
   const { nrcJobNo, jobDemand, steps, purchaseOrderId, finishedGoodsQty } =
     req.body;
@@ -884,6 +885,98 @@ export const getAllJobPlanningsSimple = async (req: Request, res: Response) => {
     success: true,
     data: jobPlannings,
   });
+};
+
+/** Collect jobPlanIds that have at least one step in major_hold (from any step detail table). */
+async function getJobPlanIdsInMajorHold(): Promise<number[]> {
+  const jobStepIdSets = await Promise.all([
+    (prisma as any).paperStore.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
+    (prisma as any).printingDetails.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
+    (prisma as any).corrugation.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
+    (prisma as any).fluteLaminateBoardConversion.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
+    (prisma as any).punching.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
+    (prisma as any).sideFlapPasting.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
+    (prisma as any).qualityDept.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
+    (prisma as any).dispatchProcess.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
+  ]);
+  const allJobStepIds = jobStepIdSets.flatMap((rows: { jobStepId: number | null }[]) =>
+    rows.map((r) => r.jobStepId).filter((id): id is number => id != null)
+  );
+  if (allJobStepIds.length === 0) return [];
+  const jobSteps = await (prisma as any).jobStep.findMany({
+    where: { id: { in: [...new Set(allJobStepIds)] } },
+    select: { jobPlanningId: true },
+  });
+  const ids: number[] = jobSteps.map((s: { jobPlanningId: number }) => s.jobPlanningId);
+  return [...new Set(ids)];
+}
+
+/** GET /job-planning/major-hold/count – lightweight count for dashboard badge. */
+export const getMajorHoldJobPlanningsCount = async (req: Request, res: Response) => {
+  try {
+    const jobPlanIds = await getJobPlanIdsInMajorHold();
+    res.status(200).json({ success: true, count: jobPlanIds.length });
+  } catch (e) {
+    console.error("getMajorHoldJobPlanningsCount error:", e);
+    res.status(500).json({ success: false, count: 0 });
+  }
+};
+
+/** GET /job-planning/major-hold – all major-hold job plannings with full step details in one call. */
+export const getMajorHoldJobPlannings = async (req: Request, res: Response) => {
+  try {
+    const jobPlanIds = await getJobPlanIdsInMajorHold();
+    if (jobPlanIds.length === 0) {
+      return res.status(200).json({ success: true, count: 0, data: [] });
+    }
+    const jobPlannings = await (prisma as any).jobPlanning.findMany({
+      where: { jobPlanId: { in: jobPlanIds } },
+      include: {
+        steps: {
+          include: {
+            paperStore: true,
+            printingDetails: true,
+            corrugation: true,
+            fluteLaminateBoardConversion: true,
+            punching: true,
+            sideFlapPasting: true,
+            qualityDept: true,
+            dispatchProcess: true,
+          },
+          orderBy: { stepNo: "asc" },
+        },
+      },
+      orderBy: { jobPlanId: "desc" },
+    });
+    const jobNos = [...new Set((jobPlannings as any[]).map((p) => p.nrcJobNo).filter(Boolean))];
+    let boardSizeByJobNo: Record<string, string | null> = {};
+    if (jobNos.length > 0) {
+      const jobs = await prisma.job.findMany({
+        where: { nrcJobNo: { in: jobNos } },
+        select: { nrcJobNo: true, boardSize: true },
+      });
+      boardSizeByJobNo = Object.fromEntries((jobs || []).map((j: any) => [j.nrcJobNo, j.boardSize ?? null]));
+    }
+    (jobPlannings as any[]).forEach((p) => {
+      p.boardSize = boardSizeByJobNo[p.nrcJobNo] ?? null;
+    });
+    // Normalize step status from step detail where applicable (e.g. PaperStore)
+    (jobPlannings as any[]).forEach((planning) => {
+      if (planning.steps && Array.isArray(planning.steps)) {
+        planning.steps.forEach((step: any) => {
+          const detail = step.paperStore || step.printingDetails || step.corrugation
+            || step.fluteLaminateBoardConversion || step.punching || step.sideFlapPasting
+            || step.qualityDept || step.dispatchProcess;
+          if (detail && detail.status) step.status = detail.status;
+          if (!step.stepDetails && detail) step.stepDetails = { data: detail };
+        });
+      }
+    });
+    res.status(200).json({ success: true, count: jobPlannings.length, data: jobPlannings });
+  } catch (e) {
+    console.error("getMajorHoldJobPlannings error:", e);
+    res.status(500).json({ success: false, count: 0, data: [] });
+  }
 };
 
 // Get a JobPlanning by nrcJobNo with steps
