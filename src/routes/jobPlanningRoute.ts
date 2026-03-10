@@ -9,7 +9,7 @@ import {
 } from '../middleware/flyingSquadPermissions';
 import { addMachineFiltering } from '../middleware';
 import { validateStepTransition, autoCorrectStateInconsistencies } from '../middleware/stepValidation';
-import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, getJobPlanningByPurchaseOrderId, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps, updateJobStepById, continueStepByProductionHead } from '../controllers/jobPlanningController';
+import { createJobPlanning, getAllJobPlannings, getJobPlanningByNrcJobNo, getJobPlanningByPurchaseOrderId, updateJobStepStatus, getStepsByNrcJobNo, getStepByNrcJobNoAndStepNo, updateStepByNrcJobNoAndStepNo, updateStepStatusByNrcJobNoAndStepNo, getAllJobPlanningsSimple, getMajorHoldJobPlanningsCount, getMajorHoldJobPlannings, upsertStepByNrcJobNoAndStepNo, bulkUpdateJobSteps, updateJobStepById, continueStepByProductionHead } from '../controllers/jobPlanningController';
 
 const router = Router();
 
@@ -17,6 +17,10 @@ const router = Router();
 router.get('/test', (req, res) => {
   res.json({ message: 'Job planning router is working' });
 });
+
+// Static paths first so they are not matched by /:nrcJobNo (must be before any param route)
+router.get('/major-hold/count', authenticateToken, asyncHandler(getMajorHoldJobPlanningsCount));
+router.get('/major-hold', authenticateToken, asyncHandler(getMajorHoldJobPlannings));
 
 // Place summary route BEFORE any parameterized routes
 router.get('/summary', addMachineFiltering, asyncHandler(getAllJobPlanningsSimple));
