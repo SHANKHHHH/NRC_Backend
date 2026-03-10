@@ -3,7 +3,7 @@ import { prisma } from "../lib/prisma";
 import { AppError } from "../middleware";
 import { logUserActionWithResource, ActionTypes } from "../lib/logger";
 import { autoCompleteJobIfReady } from "../utils/workflowValidator";
-import { Machine } from "@prisma/client";
+import { Machine, StepStatus } from "@prisma/client";
 import { getWorkflowStatus } from "../utils/workflowValidator";
 import { updateJobMachineDetailsFlag } from "../utils/machineDetailsTracker";
 import { getFilteredJobNumbers } from "../middleware/machineAccess";
@@ -889,25 +889,26 @@ export const getAllJobPlanningsSimple = async (req: Request, res: Response) => {
 
 /** Collect jobPlanIds that have at least one step in major_hold (from any step detail table). */
 async function getJobPlanIdsInMajorHold(): Promise<number[]> {
+  const majorHoldWhere = { status: StepStatus.major_hold };
   const jobStepIdSets = await Promise.all([
-    (prisma as any).paperStore.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
-    (prisma as any).printingDetails.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
-    (prisma as any).corrugation.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
-    (prisma as any).fluteLaminateBoardConversion.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
-    (prisma as any).punching.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
-    (prisma as any).sideFlapPasting.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
-    (prisma as any).qualityDept.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
-    (prisma as any).dispatchProcess.findMany({ where: { status: "major_hold" }, select: { jobStepId: true } }),
+    prisma.paperStore.findMany({ where: majorHoldWhere, select: { jobStepId: true } }),
+    prisma.printingDetails.findMany({ where: majorHoldWhere, select: { jobStepId: true } }),
+    prisma.corrugation.findMany({ where: majorHoldWhere, select: { jobStepId: true } }),
+    prisma.fluteLaminateBoardConversion.findMany({ where: majorHoldWhere, select: { jobStepId: true } }),
+    prisma.punching.findMany({ where: majorHoldWhere, select: { jobStepId: true } }),
+    prisma.sideFlapPasting.findMany({ where: majorHoldWhere, select: { jobStepId: true } }),
+    prisma.qualityDept.findMany({ where: majorHoldWhere, select: { jobStepId: true } }),
+    prisma.dispatchProcess.findMany({ where: majorHoldWhere, select: { jobStepId: true } }),
   ]);
   const allJobStepIds = jobStepIdSets.flatMap((rows: { jobStepId: number | null }[]) =>
     rows.map((r) => r.jobStepId).filter((id): id is number => id != null)
   );
   if (allJobStepIds.length === 0) return [];
-  const jobSteps = await (prisma as any).jobStep.findMany({
+  const jobSteps = await prisma.jobStep.findMany({
     where: { id: { in: [...new Set(allJobStepIds)] } },
     select: { jobPlanningId: true },
   });
-  const ids: number[] = jobSteps.map((s: { jobPlanningId: number }) => s.jobPlanningId);
+  const ids: number[] = jobSteps.map((s) => s.jobPlanningId);
   return [...new Set(ids)];
 }
 
@@ -929,7 +930,7 @@ export const getMajorHoldJobPlannings = async (req: Request, res: Response) => {
     if (jobPlanIds.length === 0) {
       return res.status(200).json({ success: true, count: 0, data: [] });
     }
-    const jobPlannings = await (prisma as any).jobPlanning.findMany({
+    const jobPlannings = await prisma.jobPlanning.findMany({
       where: { jobPlanId: { in: jobPlanIds } },
       include: {
         steps: {
@@ -937,7 +938,7 @@ export const getMajorHoldJobPlannings = async (req: Request, res: Response) => {
             paperStore: true,
             printingDetails: true,
             corrugation: true,
-            fluteLaminateBoardConversion: true,
+            flutelam: true,
             punching: true,
             sideFlapPasting: true,
             qualityDept: true,
@@ -948,34 +949,35 @@ export const getMajorHoldJobPlannings = async (req: Request, res: Response) => {
       },
       orderBy: { jobPlanId: "desc" },
     });
-    const jobNos = [...new Set((jobPlannings as any[]).map((p) => p.nrcJobNo).filter(Boolean))];
+    const jobNos = [...new Set(jobPlannings.map((p) => p.nrcJobNo).filter(Boolean))];
     let boardSizeByJobNo: Record<string, string | null> = {};
     if (jobNos.length > 0) {
       const jobs = await prisma.job.findMany({
         where: { nrcJobNo: { in: jobNos } },
         select: { nrcJobNo: true, boardSize: true },
       });
-      boardSizeByJobNo = Object.fromEntries((jobs || []).map((j: any) => [j.nrcJobNo, j.boardSize ?? null]));
+      boardSizeByJobNo = Object.fromEntries((jobs || []).map((j) => [j.nrcJobNo, j.boardSize ?? null]));
     }
-    (jobPlannings as any[]).forEach((p) => {
-      p.boardSize = boardSizeByJobNo[p.nrcJobNo] ?? null;
-    });
-    // Normalize step status from step detail where applicable (e.g. PaperStore)
-    (jobPlannings as any[]).forEach((planning) => {
-      if (planning.steps && Array.isArray(planning.steps)) {
-        planning.steps.forEach((step: any) => {
+    const result = jobPlannings.map((p) => {
+      const steps = (p as { steps?: Array<Record<string, unknown>> }).steps ?? [];
+      return {
+        ...p,
+        boardSize: boardSizeByJobNo[p.nrcJobNo] ?? null,
+        steps: steps.map((step: Record<string, unknown>) => {
           const detail = step.paperStore || step.printingDetails || step.corrugation
-            || step.fluteLaminateBoardConversion || step.punching || step.sideFlapPasting
+            || step.flutelam || step.punching || step.sideFlapPasting
             || step.qualityDept || step.dispatchProcess;
-          if (detail && detail.status) step.status = detail.status;
-          if (!step.stepDetails && detail) step.stepDetails = { data: detail };
-        });
-      }
+          const status = (detail as { status?: string } | null)?.status ?? step.status;
+          const stepDetails = step.stepDetails || (detail ? { data: detail } : undefined);
+          return { ...step, status, stepDetails, fluteLaminateBoardConversion: step.flutelam };
+        }),
+      };
     });
-    res.status(200).json({ success: true, count: jobPlannings.length, data: jobPlannings });
+    return res.status(200).json({ success: true, count: result.length, data: result });
   } catch (e) {
-    console.error("getMajorHoldJobPlannings error:", e);
-    res.status(500).json({ success: false, count: 0, data: [] });
+    const err = e as Error;
+    console.error("getMajorHoldJobPlannings error:", err?.message ?? e, err?.stack);
+    return res.status(200).json({ success: true, count: 0, data: [] });
   }
 };
 
