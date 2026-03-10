@@ -39,7 +39,8 @@ export const getUserMachineIds = async (userId: string, userRole: string): Promi
     }
   }
 
-  // Admins, Planners, Flying Squad members, and QC Managers bypass machine restrictions
+  // Admins, Planners, Flying Squad, QC Managers bypass machine restrictions (see all jobs)
+  // Dispatch goes through step-dependency filter: sees job only when previous steps (e.g. QC) are started
   const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
   if (RoleManager.isAdmin(roleString) || RoleManager.isPlanner(roleString) || RoleManager.isFlyingSquad(roleString) || RoleManager.hasRole(roleString, 'qc_manager')) {
     return null;
@@ -219,7 +220,8 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
 
     console.log('🔍 [MACHINE FILTERING DEBUG] Parsed role:', parsedRole);
 
-    // Admins, Planners, Flying Squad members, QC Managers, QC Head, Production Head, Dispatch Manager, and Printing Manager bypass machine restrictions
+    // Admins, Planners, Flying Squad, QC Managers, QC Head, Production Head, Dispatch Manager, Printing Manager bypass machine restrictions
+    // Dispatch Executive goes through step-dependency: sees job only when previous steps (e.g. QC) are started
     const roleString = Array.isArray(parsedRole) ? parsedRole.join(',') : parsedRole;
     if (userRole && (
       RoleManager.isAdmin(roleString) || 
@@ -231,7 +233,7 @@ export const addMachineFiltering = async (req: Request, res: Response, next: Nex
       RoleManager.hasRole(roleString, 'dispatch_manager') ||
       RoleManager.hasRole(roleString, 'printing_manager')
     )) {
-      console.log('🔍 [MACHINE FILTERING DEBUG] Admin/Planner/Flying Squad/QC Manager/QC Head/Production Head/Dispatch Manager/Printing Manager - bypassing machine restrictions');
+      console.log('🔍 [MACHINE FILTERING DEBUG] Bypass role - bypassing machine restrictions');
       req.userMachineIds = null; // Indicate no filtering needed
       req.userRole = userRole; // Pass user role for high demand filtering
       return next();
@@ -419,56 +421,51 @@ function parseMachineDetails(machineDetails: any): string[] {
   return [];
 }
 
+/** Normalize role string for mapping lookup (e.g. "Dispatch Executive" -> "dispatch_executive") */
+function normalizeRoleForLookup(role: string): string {
+  return role.toLowerCase().replace(/\s+/g, '_').trim();
+}
+
 /**
  * Helper function to check if step matches user's role
- * Enhanced to handle all role formats from database
+ * Enhanced to handle all role formats from database (case-insensitive, spaces as underscores)
  */
 export function isStepForUserRole(stepName: string, userRole: string | string[]): boolean {
-  const roleStepMapping = {
+  const roleStepMapping: Record<string, string | string[]> = {
     'printer': 'PrintingDetails',
     'printing_manager': 'PrintingDetails',
     'printing': 'PrintingDetails',
-    'corrugator': 'Corrugation', 
+    'corrugator': 'Corrugation',
     'punching_operator': ['Punching', 'Die Cutting', 'DispatchProcess'],
     'pasting_operator': 'SideFlapPasting',
     'flutelaminator': 'FluteLaminateBoardConversion',
-    'paperstore': ['PaperStore', 'DispatchProcess'],
+    'paperstore': 'PaperStore',
     'qc_manager': 'QualityDept',
-    'dispatch_executive': ['DispatchProcess', 'PaperStore']
-  } as const;
+    'dispatch_executive': ['DispatchProcess', 'PaperStore'],
+    'dispatch': ['DispatchProcess', 'PaperStore']
+  };
+
+  const matchRole = (r: string): boolean => {
+    const normalized = normalizeRoleForLookup(r);
+    const roleSteps = roleStepMapping[normalized] ?? roleStepMapping[r];
+    if (Array.isArray(roleSteps)) return roleSteps.includes(stepName);
+    return roleSteps === stepName;
+  };
 
   // Handle array roles directly
   if (Array.isArray(userRole)) {
-    return userRole.some(r => {
-      const roleSteps = (roleStepMapping as any)[r];
-      if (Array.isArray(roleSteps)) {
-        return roleSteps.includes(stepName);
-      }
-      return roleSteps === stepName;
-    });
+    return userRole.some(matchRole);
   }
 
   // Handle string roles - try to parse as JSON first
   if (typeof userRole === 'string') {
     try {
       const roles = JSON.parse(userRole);
-      if (Array.isArray(roles)) {
-        return roles.some(r => {
-          const roleSteps = (roleStepMapping as any)[r];
-          if (Array.isArray(roleSteps)) {
-            return roleSteps.includes(stepName);
-          }
-          return roleSteps === stepName;
-        });
-      }
+      if (Array.isArray(roles)) return roles.some(matchRole);
     } catch {
       // Not JSON, treat as single role string
     }
-    const roleSteps = (roleStepMapping as any)[userRole];
-    if (Array.isArray(roleSteps)) {
-      return roleSteps.includes(stepName);
-    }
-    return roleSteps === stepName;
+    return matchRole(userRole);
   }
 
   return false;
@@ -666,9 +663,10 @@ export const getFilteredJobNumbers = async (
     return Array.from(set);
   }
 
-  // Special handling for paperstore users - they can see all jobs (no machine restrictions)
-  // Return union of Job and JobPlanning job numbers (same as bypass users)
-  if (userRole.includes('paperstore')) {
+  // Special handling for paperstore only - they can see all jobs (no machine restrictions)
+  // Dispatch goes through planningLevelFilter: sees Dispatch-only when no previous step; sees Punching→QC→Dispatch only when QC started
+  const roleLower = (typeof userRole === 'string' ? userRole : '').toLowerCase();
+  if (roleLower.includes('paperstore')) {
     const [jobs, plannings] = await Promise.all([
       prisma.job.findMany({
         select: { nrcJobNo: true },
@@ -865,8 +863,9 @@ export const getFilteredJobNumbersCount = async (userMachineIds: string[] | null
     return await prisma.job.count();
   }
 
-  // Special handling for paperstore users - they can see all jobs
-  if (userRole.includes('paperstore')) {
+  // Special handling for paperstore only (same as getFilteredJobNumbers)
+  const roleLowerCount = (typeof userRole === 'string' ? userRole : '').toLowerCase();
+  if (roleLowerCount.includes('paperstore')) {
     return await prisma.job.count();
   }
 

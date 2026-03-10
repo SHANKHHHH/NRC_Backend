@@ -6,7 +6,7 @@ import { autoCompleteJobIfReady } from "../utils/workflowValidator";
 import { Machine, StepStatus } from "@prisma/client";
 import { getWorkflowStatus } from "../utils/workflowValidator";
 import { updateJobMachineDetailsFlag } from "../utils/machineDetailsTracker";
-import { getFilteredJobNumbers } from "../middleware/machineAccess";
+import { getFilteredJobNumbers, isStepForUserRole } from "../middleware/machineAccess";
 import { RoleManager } from "../utils/roleUtils";
 
 // Re-export for route (getMajorHoldJobPlanningsCount, getMajorHoldJobPlannings are defined below)
@@ -202,8 +202,8 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     userRole
   );
 
-  // Bypass branch: Roles that should see ALL plannings without deduplication
-  // Admin, Planner, Flying Squad, QC Manager, PaperStore, Production Head, Printing Manager need to see all versions
+  // Bypass branch: Roles that see ALL plannings without step-dependency filter (admin, planner, paperstore, etc.)
+  // Dispatch Executive does NOT bypass: they go through getFilteredJobNumbers so step-order applies (QC only after Punching, Dispatch only after QC)
   const bypassDeduplicationRoles = [
     "admin",
     "planner",
@@ -213,9 +213,10 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     "production_head",
     "printing_manager",
   ];
+  const userRoleLower = (typeof userRole === "string" ? userRole : "").toLowerCase().replace(/\s+/g, "_");
   const shouldBypassDeduplication =
     userMachineIds === null ||
-    bypassDeduplicationRoles.some((role) => userRole.includes(role));
+    bypassDeduplicationRoles.some((role) => userRoleLower.includes(role.toLowerCase()));
 
   if (shouldBypassDeduplication) {
     const userId = req.user?.userId;
@@ -275,11 +276,24 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
             // Show job if QC is not started or started by current user
             return true;
           }
-          // If no QC step found, show the job (might be in progress)
-          return true;
+          // QC user: hide plannings that have no QualityDept step (e.g. dispatch-only jobs)
+          return false;
         }
         return true;
       });
+    }
+
+    // For bypass roles: only show plannings that have at least one step for this role
+    // (e.g. qc_manager only sees jobs with QC step; dispatch-only jobs stay hidden from QC)
+    const roleSeesAllPlannings = ["admin", "planner", "flyingsquad"].some(
+      (r) => (typeof userRole === "string" ? userRole : "").toLowerCase().includes(r)
+    );
+    if (!roleSeesAllPlannings) {
+      filteredPlannings = filteredPlannings.filter(
+        (planning: any) =>
+          Array.isArray(planning.steps) &&
+          planning.steps.some((s: any) => isStepForUserRole(s.stepName, userRole))
+      );
     }
 
     // Enrich each planning with boardSize from Job (for job card dropdown display)
@@ -291,17 +305,21 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
     if (jobNosForBoardSizeBypass.length > 0) {
       const jobsWithBoardSizeBypass = await prisma.job.findMany({
         where: { nrcJobNo: { in: jobNosForBoardSizeBypass } },
-        select: { nrcJobNo: true, boardSize: true },
+        select: { nrcJobNo: true, boardSize: true, status: true },
       });
-      const boardSizeByJobNoBypass: Record<string, string | null> =
-        Object.fromEntries(
-          (jobsWithBoardSizeBypass || []).map((j: any) => [
-            j.nrcJobNo,
-            j.boardSize ?? null,
-          ])
-        );
+      const jobInfoByNoBypass: Record<string, { boardSize: string | null; status: string }> = {};
+      for (const j of jobsWithBoardSizeBypass || []) {
+        jobInfoByNoBypass[j.nrcJobNo] = {
+          boardSize: j.boardSize ?? null,
+          status: (j.status ?? "UNKNOWN").toString(),
+        };
+      }
       filteredPlannings.forEach((p: any) => {
-        p.boardSize = boardSizeByJobNoBypass[p.nrcJobNo] ?? null;
+        const info = jobInfoByNoBypass[p.nrcJobNo];
+        if (info) {
+          p.boardSize = info.boardSize;
+          p.jobStatus = info.status;
+        }
       });
     }
 
@@ -426,16 +444,21 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
   if (jobNosForBoardSize.length > 0) {
     const jobsWithBoardSize = await prisma.job.findMany({
       where: { nrcJobNo: { in: jobNosForBoardSize } },
-      select: { nrcJobNo: true, boardSize: true },
+      select: { nrcJobNo: true, boardSize: true, status: true },
     });
-    const boardSizeByJobNo: Record<string, string | null> = Object.fromEntries(
-      (jobsWithBoardSize || []).map((j: any) => [
-        j.nrcJobNo,
-        j.boardSize ?? null,
-      ])
-    );
+    const jobInfoByNo: Record<string, { boardSize: string | null; status: string }> = {};
+    for (const j of jobsWithBoardSize || []) {
+      jobInfoByNo[j.nrcJobNo] = {
+        boardSize: j.boardSize ?? null,
+        status: (j.status ?? "UNKNOWN").toString(),
+      };
+    }
     filteredJobPlannings.forEach((p: any) => {
-      p.boardSize = boardSizeByJobNo[p.nrcJobNo] ?? null;
+      const info = jobInfoByNo[p.nrcJobNo];
+      if (info) {
+        p.boardSize = info.boardSize;
+        p.jobStatus = info.status;
+      }
     });
   }
 
@@ -517,13 +540,13 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
   // ALSO filter machines to only show machines the user has access to
   // For urgent jobs: filter based on startedByMachineId (exclusive to starting machine once started)
 
-  // Fetch JobStepMachine records for urgent job steps to check startedByMachineId
+  // Fetch JobStepMachine records for urgent job steps to check startedByMachineId (exclude first step in plan — dynamic, not fixed step 1)
   const urgentJobStepIds = new Set<number>();
   for (const planning of filteredJobPlannings) {
-    if (planning.jobDemand === "high") {
+    if (planning.jobDemand === "high" && Array.isArray(planning.steps) && planning.steps.length > 0) {
+      const firstStepNoInPlan = Math.min(...planning.steps.map((s: any) => s.stepNo));
       for (const step of planning.steps) {
-        if (step.stepNo !== 1) {
-          // Exclude PaperStore (step 1)
+        if (step.stepNo !== firstStepNoInPlan) {
           urgentJobStepIds.add(step.id);
         }
       }
@@ -638,10 +661,12 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
 
   for (const planning of filteredJobPlannings) {
     const isUrgentJob = planning.jobDemand === "high";
+    const steps = Array.isArray(planning.steps) ? planning.steps : [];
+    const firstStepNoInPlan = steps.length > 0 ? Math.min(...steps.map((s: any) => s.stepNo)) : null;
     console.log(
       `🔍 [getAllJobPlannings] Job ${planning.nrcJobNo}: jobDemand=${
         planning.jobDemand
-      }, isUrgentJob=${isUrgentJob}, steps count=${planning.steps?.length || 0}`
+      }, isUrgentJob=${isUrgentJob}, steps count=${steps.length}`
     );
 
     for (const step of planning.steps) {
@@ -651,8 +676,9 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
         (step as any).status = (step as any).paperStore.status || step.status;
       }
 
-      // For urgent jobs: populate machineDetails based on whether step has been started
-      if (isUrgentJob && step.stepNo !== 1) {
+      // For urgent jobs: populate machineDetails based on whether step has been started (skip first step in plan)
+      const isFirstStepInPlan = firstStepNoInPlan != null && step.stepNo === firstStepNoInPlan;
+      if (isUrgentJob && !isFirstStepInPlan) {
         // Check if this step has been started by a specific machine
         const startedByMachineId = urgentStepMachineMap.get(step.id);
         const originalMachineDetailsCount = Array.isArray(step.machineDetails)
@@ -769,7 +795,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
       if (Array.isArray(step.machineDetails)) {
         // Check if this urgent step has been started by a specific machine
         const startedByMachineId =
-          isUrgentJob && step.stepNo !== 1
+          isUrgentJob && !isFirstStepInPlan
             ? urgentStepMachineMap.get(step.id)
             : null;
 
@@ -788,8 +814,8 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
           .filter((md: any) => {
             const machineId = md.id || md.machineId;
 
-            // For urgent jobs (excluding PaperStore):
-            if (isUrgentJob && step.stepNo !== 1) {
+            // For urgent jobs (excluding first step in plan):
+            if (isUrgentJob && !isFirstStepInPlan) {
               // If step has been started by a machine, only show that machine
               if (startedByMachineId) {
                 const isStartingMachine = machineId === startedByMachineId;
@@ -808,7 +834,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
             // 🎯 NEW: For regular jobs: show on ALL machines (like urgent jobs)
             // When a worker starts the job on a machine, it will be removed from other machines
             // Check if step has been started by a machine (for regular jobs too)
-            if (step.stepNo !== 1 && startedByMachineId) {
+            if (!isFirstStepInPlan && startedByMachineId) {
               const isStartingMachine = machineId === startedByMachineId;
               console.log(`🔍 [Regular Job Filter] Step ${step.stepName} (${step.id}), Machine ${machineId}, Started by: ${startedByMachineId}, Show: ${isStartingMachine}`);
               return isStartingMachine;
@@ -819,7 +845,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
           });
 
         // Debug: Log final machineDetails count for urgent job steps
-        if (isUrgentJob && step.stepNo !== 1) {
+        if (isUrgentJob && !isFirstStepInPlan) {
           console.log(
             `🔍 [Final Check] Step ${step.stepName} (${
               step.id
@@ -1002,9 +1028,18 @@ export const getJobPlanningByNrcJobNo = async (req: Request, res: Response) => {
       throw new AppError("JobPlanning not found for that NRC Job No", 404);
     }
 
+    // Enrich each step with isFirstStep and previousStepNo so frontend just fetches and shows
+    const steps = Array.isArray(jobPlanning.steps) ? jobPlanning.steps : [];
+    const enrichedSteps = steps.map((step: any, index: number) => ({
+      ...step,
+      isFirstStep: index === 0,
+      previousStepNo: index > 0 ? (steps[index - 1]?.stepNo ?? null) : null,
+    }));
+    const data = { ...jobPlanning, steps: enrichedSteps };
+
     res.status(200).json({
       success: true,
-      data: jobPlanning,
+      data,
     });
   } catch (error) {
     console.error("Error in getJobPlanningByNrcJobNo:", error);
@@ -2409,6 +2444,29 @@ export const updateJobStepById = async (req: Request, res: Response) => {
       throw new AppError(`Database update failed: ${prismaError.message}`, 500);
     }
 
+    // When step is set to 'stop', try auto-complete only if job is ready (e.g. total dispatched >= PO).
+    // Do NOT force DispatchProcess to 'accept' here — storeStepFormData sets accept only when newTotal >= jobQuantity.
+    const status = (updateData.status ?? updatedStep.status)?.toString()?.toLowerCase();
+    if (status === "stop" && updatedStep.jobPlanningId) {
+      try {
+        const completionResult = await autoCompleteJobIfReady(
+          updatedStep.jobPlanningId,
+          req.user?.userId
+        );
+        if (completionResult.completed) {
+          return res.status(200).json({
+            success: true,
+            data: updatedStep,
+            message: `Job step updated to ${status} and job automatically completed`,
+            autoCompleted: true,
+            completedJob: completionResult.completedJob,
+          });
+        }
+      } catch (err) {
+        console.error("Error checking auto-completion:", err);
+      }
+    }
+
     // Skip machine details flag update for now to avoid 500 errors
     // TODO: Fix updateJobMachineDetailsFlag function
 
@@ -3092,9 +3150,11 @@ async function storeStepFormData(
         );
       }
 
-      // Use user input for quantity, fallback to null if not provided
+      // Use user input for quantity (frontend may send quantity or noOfBoxes)
       const quantity =
-        formData.noOfBoxes || formData["No of Boxes"]
+        formData.quantity != null
+          ? parseInt(formData.quantity) || null
+          : formData.noOfBoxes || formData["No of Boxes"]
           ? parseInt(formData.noOfBoxes || formData["No of Boxes"]) || null
           : null;
 
@@ -3200,12 +3260,12 @@ async function storeStepFormData(
         const remainingPOQuantity = Math.max(0, jobQuantity - currentTotal);
         const maxDispatchable = remainingPOQuantity + finishedGoodsQty;
 
-        // Actual quantity to dispatch (capped at max dispatchable, but also check against QC quantity)
+        // Actual quantity to dispatch: with QC cap by QC+FG; dispatch-only (no QC) cap by remaining PO only
         const maxFromQC = qcQuantity + finishedGoodsQty;
-        const actualDispatchQty = Math.min(
-          quantity,
-          Math.min(maxDispatchable, maxFromQC)
-        );
+        const actualDispatchQty =
+          qcQuantity > 0
+            ? Math.min(quantity, Math.min(maxDispatchable, maxFromQC))
+            : Math.min(quantity, maxDispatchable);
 
         // Calculate excess quantity (if user tried to dispatch more than allowed)
         const excessQuantity = Math.max(0, quantity - actualDispatchQty);

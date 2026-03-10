@@ -513,7 +513,8 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
 
     // Handle partial dispatch tracking
     let populatedData = editableData;
-    const dispatchedQty = editableData.quantity || 0;
+    // Always use request body for dispatch quantity so it is not dropped by filterEditableFields (existing quantity can make field read-only)
+    const dispatchedQty = Number(req.body.quantity ?? editableData.quantity ?? 0) || 0;
     
     // Also check if dispatch is already complete (even if no new quantity is being dispatched)
     // This handles cases where the dispatch was already completed but status wasn't updated
@@ -521,7 +522,8 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
     const currentTotalDispatched = existingDispatchProcess.totalDispatchedQty || 0;
     let newTotalDispatched = currentTotalDispatched; // Default to current total
     
-    // Get job total quantity (PO quantity) - needed for both dispatch and finished goods storage
+    // Get job total quantity (PO quantity).
+    // Dispatch-only jobs: same completion as other jobs. Only step is Dispatch (first step), so no previous step required; user enters quantity → totalDispatchedQty; PO qty comes from outer sources, we just dispatch from factory.
     // First try to get the specific PO linked to this job planning
     let jobQuantity = 0;
     let purchaseOrderId: number | null = null;
@@ -616,13 +618,19 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
         console.error('⚠️ [updateDispatchProcess] Error fetching QC quantity:', error);
       }
       
-      // Calculate how much can be dispatched (remaining PO quantity + finished goods)
+      // Dispatch-only: PO quantity = quantity to dispatch (from outer sources; we just dispatch from factory). Cap = remaining PO (+ any finished goods on plan).
+      // With QC: cap also by QC+finishedGoods so we don't dispatch more than produced.
       const remainingPOQuantity = Math.max(0, jobQuantity - currentTotalDispatched);
-      const maxDispatchable = remainingPOQuantity + finishedGoodsQty;
+      let maxDispatchable = remainingPOQuantity + finishedGoodsQty;
+      // Dispatch-only with no PO linked: allow entered dispatch qty to go to totalDispatchedQty, not to finished goods
+      if (qcQuantity === 0 && jobQuantity === 0) {
+        maxDispatchable = Math.max(maxDispatchable, dispatchedQty);
+      }
       
-      // Actual quantity to dispatch (capped at max dispatchable, but also check against QC quantity)
+      // Actual quantity to dispatch: cap by maxDispatchable. Only cap by QC when plan has QC (dispatch-only: full PO qty → totalDispatchedQty, never to finished goods)
       const maxFromQC = qcQuantity + finishedGoodsQty;
-      const actualDispatchQty = Math.min(dispatchedQty, Math.min(maxDispatchable, maxFromQC));
+      const effectiveMax = qcQuantity > 0 ? Math.min(maxDispatchable, maxFromQC) : maxDispatchable;
+      const actualDispatchQty = Math.min(dispatchedQty, effectiveMax);
       
       // Calculate excess quantity (if user tried to dispatch more than allowed)
       const excessQuantity = Math.max(0, dispatchedQty - actualDispatchQty);
@@ -687,8 +695,9 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
       
       console.log(`🔍 [updateDispatchProcess] Final finishedGoodsQtyToStore: ${finishedGoodsQtyToStore}, jobQuantity: ${jobQuantity}`);
       
-      // Update totalDispatchedQty
+      // Update totalDispatchedQty and quantity (quantity may be filtered out by editableData; set from actual dispatch)
       populatedData.totalDispatchedQty = newTotalDispatched;
+      populatedData.quantity = actualDispatchQty;
       
       // Update dispatch history with actual dispatched quantity
       const dispatchHistory = existingDispatchProcess.dispatchHistory 
@@ -715,8 +724,8 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
         purchaseOrderId = firstPO?.id || null;
       }
       
-      // Consume finished goods if dispatch exceeds QC quantity
-      // Example: PO=1000, QC=600, Dispatch=1000 → 600 from QC, 400 from finished goods
+      // Consume finished goods if dispatch exceeds QC quantity (same logic for all jobs including dispatch-only)
+      // Example: PO=1000, QC=600, Dispatch=1000 → 600 from QC, 400 from finished goods; dispatch-only can also consume from existing FG
       if (finishedGoodsUsed > 0) {
         try {
           // Get jobPlanId for linking consumed finished goods
@@ -795,10 +804,11 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
         }
       }
       
-      // Store finished goods quantity in FinishQuantity table (if user entered any)
-      // This is for leftover finished goods from production (e.g., PO 500, produced 1000, store 500)
-      console.log(`🔍 [updateDispatchProcess] Checking if should store finished goods: finishedGoodsQtyToStore=${finishedGoodsQtyToStore}, jobQuantity=${jobQuantity}`);
-      if (finishedGoodsQtyToStore > 0 && jobQuantity > 0) {
+      // Store finished goods quantity in FinishQuantity table (if user entered any) — same logic for all jobs including dispatch-only
+      // Leftover/extra FG from production or from outer source; never store the main dispatch qty as FG (misrouting guard)
+      const isMainDispatchQtyAsFinishedGoods = (finishedGoodsQtyToStore === actualDispatchQty || finishedGoodsQtyToStore === dispatchedQty);
+      console.log(`🔍 [updateDispatchProcess] Checking if should store finished goods: finishedGoodsQtyToStore=${finishedGoodsQtyToStore}, jobQuantity=${jobQuantity}, skipStore=${isMainDispatchQtyAsFinishedGoods}`);
+      if (finishedGoodsQtyToStore > 0 && jobQuantity > 0 && !isMainDispatchQtyAsFinishedGoods) {
         // Check if there's an existing available FinishQuantity record for this job
         const existingFinishQty = await prisma.finishQuantity.findFirst({
           where: {
@@ -836,8 +846,10 @@ export const updateDispatchProcess = async (req: Request, res: Response) => {
         }
       }
       
-      // If excess quantity exists (from dispatch exceeding limits), also add to FinishQuantity
-      if (excessQuantity > 0 && jobQuantity > 0) {
+      // If excess quantity exists (from dispatch exceeding limits), also add to FinishQuantity — same logic for jobs with production
+      // Only add when job has QC/production (qcQuantity > 0); skip when "excess" is the full dispatch (misrouting)
+      const excessIsFullDispatch = excessQuantity >= dispatchedQty;
+      if (excessQuantity > 0 && jobQuantity > 0 && qcQuantity > 0 && !excessIsFullDispatch) {
         // Check if there's an existing available FinishQuantity record for this job
         const existingFinishQty = await prisma.finishQuantity.findFirst({
           where: {

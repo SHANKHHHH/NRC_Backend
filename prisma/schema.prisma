@@ -566,6 +566,7 @@ model CompletedJob {
   id                   Int       @id @default(autoincrement())
   nrcJobNo             String
   jobPlanId            Int
+  jobPlanCode          String?   // e.g. MAR26-116, for display in Your Activity
   jobDemand            JobDemand
   jobDetails           Json
   purchaseOrderDetails Json?

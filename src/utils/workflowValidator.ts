@@ -554,6 +554,7 @@ export const autoCompleteJobIfReady = async (identifier: number | string, userId
       data: {
         nrcJobNo,
         jobPlanId: jobPlanning.jobPlanId,
+        jobPlanCode: jobPlanning.jobPlanCode ?? null,
         jobDemand: jobPlanning.jobDemand,
         jobDetails: job,
         purchaseOrderDetails: purchaseOrder ? JSON.parse(JSON.stringify(purchaseOrder)) : null,

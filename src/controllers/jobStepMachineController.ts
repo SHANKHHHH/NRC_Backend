@@ -11,6 +11,32 @@ type PlanningIdentifiers = {
   jobStepId?: number;
 };
 
+/** Single source of truth: statuses that mean "step is started" (can allow next step to start). */
+const PREVIOUS_STEP_STARTED = ['start', 'stop', 'stopped', 'accept', 'completed'];
+/** Single source of truth: statuses that mean "step is completed" (can allow next step to stop/complete). */
+const PREVIOUS_STEP_COMPLETED = ['stop', 'stopped', 'accept', 'completed'];
+
+/**
+ * One place for previous-step validation. Throws AppError if any previous step in plan is not in the required set.
+ * @param jobStep - step with jobPlanning.steps included
+ * @param currentStepNo - current step number
+ * @param requireCompleted - if true, previous steps must be in PREVIOUS_STEP_COMPLETED; else PREVIOUS_STEP_STARTED
+ */
+function assertPreviousStepsInPlan(jobStep: any, currentStepNo: number, requireCompleted: boolean): void {
+  const allSteps = jobStep?.jobPlanning?.steps as any[] | undefined;
+  if (!allSteps?.length || currentStepNo <= 1) return;
+  const set = requireCompleted ? PREVIOUS_STEP_COMPLETED : PREVIOUS_STEP_STARTED;
+  const previousSteps = allSteps.filter((s: any) => (s.stepNo ?? 0) < currentStepNo);
+  const bad = previousSteps.filter((s: any) => !set.includes((s.status ?? '').toString().toLowerCase()));
+  if (bad.length > 0) {
+    const names = bad.map((s: any) => `${s.stepName ?? 'Step ' + s.stepNo} (status: ${s.status})`).join(', ');
+    const msg = requireCompleted
+      ? `Cannot proceed. Previous step(s) must be completed first: ${names}`
+      : `Cannot start. Previous step(s) must be started first: ${names}`;
+    throw new AppError(msg, 400);
+  }
+}
+
 /** Resolve machine ID from machineDetail (top-level or nested machine object). Returns null if invalid. */
 function resolveMachineIdFromDetail(machineInfo: any): string | null {
   if (!machineInfo || typeof machineInfo !== 'object') return null;
@@ -345,22 +371,8 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
       }
     );
 
-    // CRITICAL: Validate that previous steps are started before allowing this step to start
     const currentStepNo = parseInt(stepNo);
-    if (currentStepNo > 1) {
-      const allSteps = (jobStep as any).jobPlanning.steps;
-      const previousSteps = allSteps.filter((s: any) => s.stepNo < currentStepNo);
-      
-      for (const prevStep of previousSteps) {
-        // Previous step must be started (status = 'start' or 'stop') - allows parallel work
-        if (prevStep.status !== 'start' && prevStep.status !== 'stop') {
-          throw new AppError(
-            `Cannot start ${jobStep.stepName} (step ${currentStepNo}). Previous step "${prevStep.stepName}" (step ${prevStep.stepNo}) must be started first. Current status: ${prevStep.status}`,
-            400
-          );
-        }
-      }
-    }
+    assertPreviousStepsInPlan(jobStep, currentStepNo, false);
 
     // CRITICAL: Create JobStepMachine entries for ALL machines in this step (if not already created)
     // This ensures the allFinished check works correctly for multi-machine steps
@@ -412,8 +424,13 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
       throw new AppError('Machine is not available', 400);
     }
 
+    // First step in plan has no "startedByMachineId" (dynamic: whichever step is first by plan order, not fixed step 1)
+    const stepNoInt = parseInt(stepNo);
+    const planSteps = Array.isArray((jobStep as any).jobPlanning?.steps) ? (jobStep as any).jobPlanning.steps : [];
+    const firstStepNoInPlan = planSteps.length > 0 ? Math.min(...planSteps.map((s: any) => s.stepNo)) : stepNoInt;
+    const isFirstStepInPlan = stepNoInt === firstStepNoInPlan;
+
     // Update machine status to in_progress and assign to user
-    // For urgent jobs (excluding PaperStore), set startedByMachineId to make step exclusive to this machine
     const updateData: any = {
       status: 'in_progress',
       userId: userId,
@@ -421,12 +438,9 @@ export const startWorkOnMachine = async (req: Request, res: Response) => {
       formData: formData || null
     };
     
-    // For urgent jobs (excluding PaperStore), set startedByMachineId to make step exclusive
     let jobStepUpdateData: any = {};
-    const stepNoInt = parseInt(stepNo);
-    // 🎯 NEW: For both urgent and regular jobs, set startedByMachineId and update machineDetails
-    // This ensures the job is removed from other machines when started on one machine
-    if (stepNoInt !== 1) { // Step 1 is PaperStore
+    // Set startedByMachineId for any step that is not the first in the plan (job removed from other machines when started)
+    if (!isFirstStepInPlan) {
       console.log(`🔍 [StartWork] Urgent job detected! Setting startedByMachineId=${machineId} for step ${stepNoInt} (${jobStep.stepName})`);
       console.log(`🔍 [StartWork] JobStepMachine ID: ${jobStepMachine.id}, Current machineId: ${jobStepMachine.machineId}, Requested machineId: ${machineId}`);
       updateData.startedByMachineId = machineId;
@@ -685,27 +699,8 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
 
     console.log(`\n🎯 Completion check result:`, completionCheck);
 
-    // If step should be completed, validate previous steps before proceeding
     if (completionCheck.shouldComplete) {
-      console.log(`\n🎯 [VALIDATION] Checking if previous steps are completed before allowing step completion`);
-      
-      // Get all steps for validation
-      const allStepsForValidation = jobStep.jobPlanning.steps as any[];
-      const previousStepsForValidation = allStepsForValidation.filter((s: any) => s.stepNo < stepNoInt);
-      
-      // For COMPLETION: All previous steps must have status = 'stop'
-      const notCompletedPreviousSteps = previousStepsForValidation.filter(s => s.status !== 'stop');
-      
-      if (notCompletedPreviousSteps.length > 0) {
-        const notCompletedNames = notCompletedPreviousSteps.map(s => `${s.stepName} (step ${s.stepNo}, status: ${s.status})`).join(', ');
-        console.log(`❌ [VALIDATION] Cannot complete step ${stepNoInt} - previous steps not completed: ${notCompletedNames}`);
-        throw new AppError(
-          `Cannot complete step ${stepNoInt}. Previous steps must be completed first: ${notCompletedNames}`,
-          400
-        );
-      }
-      
-      console.log(`✅ [VALIDATION] All previous steps completed. Allowing step ${stepNoInt} to complete.`);
+      assertPreviousStepsInPlan(jobStep, stepNoInt, true);
       
       console.log(`\n🎉 STEP COMPLETION TRIGGERED!`);
       console.log(`Reason: ${completionCheck.reason}`);
@@ -746,8 +741,8 @@ export const completeWorkOnMachine = async (req: Request, res: Response) => {
         status: combinedFormData.status
       });
       
-      // Update individual step table with status 'accept'
-      await _updateIndividualStepWithFormData(stepNoInt, nrcJobNo, combinedFormData, jobStep.id, allMachines, jobStep.user || undefined);
+      // Update individual step table with status 'accept' (use stepName for flexible plans where stepNo varies)
+      await _updateIndividualStepWithFormData(stepNoInt, nrcJobNo, combinedFormData, jobStep.id, allMachines, jobStep.user || undefined, (jobStep as any).stepName);
       
       // Collect all unique users who completed work on machines for this step
       // A machine is considered "completed" if it has formData (work was completed)
@@ -2391,11 +2386,18 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
       }
     }
 
-    // Get the job step
+    // Get the job step with plan steps so we can validate previous step is at stop
     const jobStep = await findJobStepForOperation(
       nrcJobNo,
       parseInt(stepNo),
-      identifiers
+      identifiers,
+      {
+        jobPlanning: {
+          include: {
+            steps: { orderBy: { stepNo: 'asc' as const } }
+          }
+        }
+      }
     );
 
     // Find JobStepMachine entry
@@ -2415,6 +2417,9 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
     if (jobStepMachine.status === 'stop') {
       throw new AppError('Machine is already stopped', 400);
     }
+
+    const stepNoInt = parseInt(stepNo);
+    assertPreviousStepsInPlan(jobStep, stepNoInt, true);
 
     console.log(`🛑 Stopping machine ${machineId} (current status: ${jobStepMachine.status}) - changing status to 'stop' ONLY (no data save)`);
 
@@ -2458,21 +2463,23 @@ export const stopWorkOnMachine = async (req: Request, res: Response) => {
       data: {
         jobStepMachineId: updatedJobStepMachine.id,
         machineId: updatedJobStepMachine.machineId,
-        machineCode: updatedJobStepMachine.machine.machineCode,
-        jobPlanId: jobStep.jobPlanningId,
+        machineCode: (updatedJobStepMachine as any).machine?.machineCode ?? '',
+        jobPlanId: (jobStep as any).jobPlanningId ?? (jobStep as any).jobPlanning?.jobPlanId,
         status: updatedJobStepMachine.status,
         completedAt: updatedJobStepMachine.completedAt,
         updatedAt: updatedJobStepMachine.updatedAt,
         userId: updatedJobStepMachine.userId,
-        userName: updatedJobStepMachine.user?.name
+        userName: (updatedJobStepMachine as any).user?.name
       }
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Error stopping work on machine:', error);
-    res.status(500).json({
+    const statusCode = error?.statusCode && typeof error.statusCode === 'number' ? error.statusCode : 500;
+    const message = error?.message ?? 'Failed to stop work on machine';
+    res.status(statusCode).json({
       success: false,
-      message: 'Failed to stop work on machine',
+      message: statusCode >= 500 ? 'Failed to stop work on machine' : message,
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
@@ -3210,12 +3217,14 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
 
     const prevStep = planSteps[currentIndex - 1] as { id: number; stepNo: number; stepName: string };
     const prevStepId = prevStep.id;
-    const prevStepName = prevStep.stepName ?? '';
+    const prevStepName = (prevStep.stepName ?? '').trim();
+    const prevStepNameLower = prevStepName.toLowerCase();
 
     const getPaperStoreQuantity = async (stepId?: number) => {
       if (stepId) {
         const record = await prisma.paperStore.findUnique({ where: { jobStepId: stepId } });
         if (record) return record.available ?? record.quantity ?? 0;
+        return 0; // This plan's previous step has no record yet - do not use another plan's data
       }
       const fallback = await prisma.paperStore.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3232,6 +3241,7 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
           const r = record as any;
           return r.quantity ?? r.quantityOK ?? r.okQuantity ?? 0;
         }
+        return 0; // This plan's previous step has no record yet
       }
       const fallback = await prisma.printingDetails.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3246,6 +3256,7 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
       if (stepId) {
         const record = await (prisma as any).corrugation.findUnique({ where: { jobStepId: stepId } });
         if (record) return record.quantity ?? 0;
+        return 0; // This plan's previous step has no record yet
       }
       const fallback = await (prisma as any).corrugation.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3259,6 +3270,7 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
       if (stepId) {
         const record = await prisma.fluteLaminateBoardConversion.findUnique({ where: { jobStepId: stepId } });
         if (record) return record.quantity ?? 0;
+        return 0; // This plan's previous step has no record yet
       }
       const fallback = await prisma.fluteLaminateBoardConversion.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3272,6 +3284,7 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
       if (stepId) {
         const record = await prisma.punching.findUnique({ where: { jobStepId: stepId } });
         if (record) return record.quantity ?? 0;
+        return 0; // This plan's previous step has no record yet
       }
       const fallback = await prisma.punching.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3284,7 +3297,23 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
     const getFlapQuantity = async (stepId?: number) => {
       if (stepId) {
         const record = await prisma.sideFlapPasting.findUnique({ where: { jobStepId: stepId } });
-        if (record) return record.quantity ?? 0;
+        if (record && (record.quantity != null && record.quantity > 0)) return record.quantity;
+        // Fallback: SideFlapPasting row may be missing if step was completed before stepName-based upsert fix.
+        // Read quantity from JobStepMachine formData for this step.
+        const machines = await (prisma as any).jobStepMachine.findMany({
+          where: { jobStepId: stepId },
+          select: { formData: true }
+        });
+        for (const m of machines) {
+          const fd = m.formData as Record<string, unknown> | null;
+          if (!fd || typeof fd !== 'object') continue;
+          const q = fd.quantity ?? fd.Quantity ?? fd.okQuantity ?? fd['OK Quantity'] ?? fd['Quantity OK'];
+          if (q != null) {
+            const n = typeof q === 'number' ? q : parseInt(String(q), 10);
+            if (!Number.isNaN(n) && n > 0) return n;
+          }
+        }
+        return 0;
       }
       const fallback = await prisma.sideFlapPasting.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3298,6 +3327,7 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
       if (stepId) {
         const record = await prisma.qualityDept.findUnique({ where: { jobStepId: stepId } });
         if (record) return record.quantity ?? 0;
+        return 0; // This plan's previous step has no record yet
       }
       const fallback = await prisma.qualityDept.findFirst({
         where: { jobNrcJobNo: nrcJobNo },
@@ -3307,25 +3337,20 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
       return fallback?.quantity ?? 0;
     };
 
-    switch (prevStepName) {
-      case 'PaperStore':
-        return await getPaperStoreQuantity(prevStepId);
-      case 'PrintingDetails':
-        return await getPrintingQuantity(prevStepId);
-      case 'Corrugation':
-        return await getCorrugationQuantity(prevStepId);
-      case 'FluteLaminateBoardConversion':
-        return await getFluteQuantity(prevStepId);
-      case 'Punching':
-      case 'Die Cutting':
-        return await getPunchingQuantity(prevStepId);
-      case 'SideFlapPasting':
-        return await getFlapQuantity(prevStepId);
-      case 'QualityDept':
-        return await getQualityQuantity(prevStepId);
-      default:
-        return 0;
+    // Match by exact name or normalized name (flexible step names from plan selection)
+    if (prevStepName === 'PaperStore' || prevStepNameLower === 'paperstore') return await getPaperStoreQuantity(prevStepId);
+    if (prevStepName === 'PrintingDetails' || prevStepNameLower === 'printingdetails') return await getPrintingQuantity(prevStepId);
+    if (prevStepName === 'Corrugation' || prevStepNameLower === 'corrugation') return await getCorrugationQuantity(prevStepId);
+    if (prevStepName === 'FluteLaminateBoardConversion' || prevStepNameLower === 'flutelaminateboardconversion') return await getFluteQuantity(prevStepId);
+    if (prevStepName === 'Punching' || prevStepName === 'Die Cutting' || prevStepNameLower === 'punching' || prevStepNameLower === 'die cutting') return await getPunchingQuantity(prevStepId);
+    // Pasting / Flap Pasting: support all common step name variants (QC previous step)
+    if (prevStepName === 'SideFlapPasting' || prevStepName === 'FlapPasting' ||
+        prevStepNameLower === 'sideflappasting' || prevStepNameLower === 'flappasting' || prevStepNameLower === 'pasting' ||
+        (prevStepNameLower.includes('flap') && prevStepNameLower.includes('past'))) {
+      return await getFlapQuantity(prevStepId);
     }
+    if (prevStepName === 'QualityDept' || prevStepNameLower === 'qualitydept' || prevStepNameLower.includes('quality')) return await getQualityQuantity(prevStepId);
+    return 0;
   } catch (error) {
     console.error(`❌ Error getting previous step quantity:`, error);
     return 0;
@@ -3478,9 +3503,25 @@ async function _checkStepCompletionCriteria(
   }
 }
 
-async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: string, formData: any, jobStepId: number, allMachines?: any[], jobStepUser?: string) {
+/** Maps step name to logical case number (1–8) for table upsert. Used when plan has flexible step numbers. */
+function _getStepCaseFromName(stepName: string | null | undefined): number | null {
+  if (!stepName || typeof stepName !== 'string') return null;
+  const n = stepName.toLowerCase().trim();
+  if (n.includes('paper') && n.includes('store')) return 1;
+  if (n.includes('printing')) return 2;
+  if (n.includes('corrugat')) return 3;
+  if (n.includes('flute') && n.includes('lam')) return 4;
+  if (n.includes('punch') || n.includes('die') && n.includes('cut')) return 5;
+  if (n.includes('flap') && n.includes('past') || n === 'pasting' || n.includes('sideflappasting')) return 6;
+  if (n.includes('quality') || n.includes('qc')) return 7;
+  if (n.includes('dispatch')) return 8;
+  return null;
+}
+
+async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: string, formData: any, jobStepId: number, allMachines?: any[], jobStepUser?: string, stepName?: string | null) {
+  const effectiveCase = (stepName != null && _getStepCaseFromName(stepName) != null) ? _getStepCaseFromName(stepName)! : stepNo;
   console.log(`🚨 [CRITICAL DEBUG] _updateIndividualStepWithFormData FUNCTION CALLED!`);
-  console.log(`🔍 [DEBUG] Step: ${stepNo}, Job: ${nrcJobNo}, JobStepId: ${jobStepId}`);
+  console.log(`🔍 [DEBUG] Step: ${stepNo}, stepName: ${stepName ?? 'n/a'}, effectiveCase: ${effectiveCase}, Job: ${nrcJobNo}, JobStepId: ${jobStepId}`);
   console.log(`🔍 [DEBUG] FormData received:`, JSON.stringify(formData, null, 2));
   console.log(`🔍 [DEBUG] Status to set: ${formData.status || 'accept'}`);
   console.log(`🔍 [DEBUG] Quantity: ${formData.quantity}, Wastage: ${formData.wastage}`);
@@ -3534,8 +3575,8 @@ async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: strin
   }
   
   try {
-    // Update the appropriate step table based on step number
-    switch (stepNo) {
+    // Update the appropriate step table (use effectiveCase so flexible plans with stepName still hit correct table)
+    switch (effectiveCase) {
       case 1: // PaperStore
         console.log(`🔧 [PaperStore] Upserting with jobStepId: ${jobStepId}`);
         // 🎯 AUTO-POPULATE from job details
@@ -3784,10 +3825,10 @@ async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: strin
           console.log(`✅ [Punching] Record upserted successfully`);
         }
         break;
-      case 6: // Flap Pasting (stepNo 6 in database)
+      case 6: // Flap Pasting (stepNo 6 in database) - SideFlapPasting
         {
-          // Handle field name variations - user only enters quantity and wastage
-          const quantity = formData.quantity || formData.Quantity || formData.finalQuantity;
+          // Handle field name variations - user enters OK quantity and wastage (frontend may send "OK Quantity")
+          const quantity = formData.quantity || formData.Quantity || formData.finalQuantity || formData['OK Quantity'] || formData['Quantity OK'];
           const wastage = formData.wastage || formData.Wastage;
           
           // 🎯 AUTO-POPULATE from job details (removed from form UI)
@@ -3895,19 +3936,23 @@ async function _updateIndividualStepWithFormData(stepNo: number, nrcJobNo: strin
         break;
       case 8: // Dispatch
         console.log(`🔧 [DispatchProcess] Upserting with jobStepId: ${jobStepId}`);
+        const dispatchQty = formData.quantity || formData.finalQuantity || 0;
+        const dispatchStatus = formData.status || 'accept';
         await prisma.dispatchProcess.upsert({
           where: { jobStepId: jobStepId },
           update: {
-            quantity: formData.quantity || formData.finalQuantity,
+            quantity: dispatchQty,
+            totalDispatchedQty: dispatchStatus === 'accept' ? dispatchQty : undefined,
             remarks: formData.remarks,
-            status: formData.status || 'accept'
+            status: dispatchStatus
           },
           create: {
             jobNrcJobNo: nrcJobNo,
             jobStepId: jobStepId,
-            quantity: formData.quantity || formData.finalQuantity,
+            quantity: dispatchQty,
+            totalDispatchedQty: dispatchStatus === 'accept' ? dispatchQty : 0,
             remarks: formData.remarks,
-            status: formData.status || 'accept'
+            status: dispatchStatus
           }
         });
         console.log(`✅ [DispatchProcess] Record upserted successfully`);

@@ -180,6 +180,7 @@ export const completeJob = async (req: Request, res: Response) => {
       data: {
         nrcJobNo,
         jobPlanId: jobPlanning.jobPlanId,
+        jobPlanCode: jobPlanning.jobPlanCode ?? null,
         jobDemand: jobPlanning.jobDemand,
         jobDetails: job,
         purchaseOrderDetails: purchaseOrder ?? Prisma.JsonNull,

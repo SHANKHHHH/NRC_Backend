@@ -133,6 +133,41 @@ export const getActivityLogs = async (req: Request, res: Response) => {
     jobPlanId: log.jobPlanId ?? extractJobPlanIdFromDetails(log.details),
   }));
 
+  // Enrich jobPlanCode for logs that have jobPlanId: first JobPlanning, then CompletedJob (job may be completed and removed from JobPlanning)
+  const planIdsToEnrich = [...new Set(
+    logsWithPlan
+      .filter((log: any) => log.jobPlanId != null && !log.jobPlanCode)
+      .map((log: any) => Number(log.jobPlanId))
+      .filter((id: number) => !Number.isNaN(id))
+  )];
+  if (planIdsToEnrich.length > 0) {
+    const planRows = await prisma.jobPlanning.findMany({
+      where: { jobPlanId: { in: planIdsToEnrich } },
+      select: { jobPlanId: true, jobPlanCode: true }
+    });
+    const planCodeById: Record<number, string | null> = Object.fromEntries(
+      (planRows || []).map((r: any) => [r.jobPlanId, r.jobPlanCode ?? null])
+    );
+    const missingPlanIds = planIdsToEnrich.filter((id: number) => !(planCodeById[id] != null && (planCodeById[id] as string) !== ''));
+    if (missingPlanIds.length > 0) {
+      const completedRows = await prisma.completedJob.findMany({
+        where: { jobPlanId: { in: missingPlanIds } }
+      });
+      for (const r of completedRows) {
+        const code = (r as { jobPlanId: number; jobPlanCode?: string | null }).jobPlanCode;
+        if (r.jobPlanId != null && code != null && String(code).trim() !== '') {
+          planCodeById[r.jobPlanId] = code;
+        }
+      }
+    }
+    logsWithPlan.forEach((log: any) => {
+      if (log.jobPlanId != null && !log.jobPlanCode) {
+        const code = planCodeById[Number(log.jobPlanId)];
+        log.jobPlanCode = (code != null && code !== '') ? code : `Plan-${log.jobPlanId}`;
+      }
+    });
+  }
+
   // Sanitize data to ensure it's UTF-8 compatible and remove replacement characters
   const sanitizedLogs = logsWithPlan.map(log => ({
     ...log,
@@ -195,7 +230,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
   // Get JobStepMachine entries for this user (both started and completed)
   // We need both to show started actions on start date and completed actions on completion date
   const [startedMachines, completedMachines] = await Promise.all([
-    // Get started machines - use startedAt for the date
+    // Get started machines - use startedAt for the date (include machine for display name)
     (prisma as any).jobStepMachine.findMany({
       where: {
         userId: userId,
@@ -213,6 +248,12 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
             }
           }
         },
+        machine: {
+          select: {
+            machineCode: true,
+            description: true
+          }
+        },
         user: {
           select: {
             id: true,
@@ -227,7 +268,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       },
       take: 1000
     }),
-    // Get completed machines - use completedAt/updatedAt for the date
+    // Get completed machines - use completedAt/updatedAt for the date (include machine for display name)
     (prisma as any).jobStepMachine.findMany({
       where: {
         userId: userId,
@@ -244,6 +285,12 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
                 jobPlanCode: true
               }
             }
+          }
+        },
+        machine: {
+          select: {
+            machineCode: true,
+            description: true
           }
         },
         user: {
@@ -333,6 +380,12 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     const jobPlanId = machine.jobStep?.jobPlanning?.jobPlanId || machine.jobStep?.jobPlanningId || null;
     const jobPlanCode = machine.jobStep?.jobPlanning?.jobPlanCode ?? null;
     const startedAt = machine.startedAt;
+    const machineName = machine.machine?.description || machine.machine?.machineCode || machine.machineId || '';
+    const machineCode = machine.machine?.machineCode || '';
+    const stepLabel = `${machine.stepNo || 'N/A'} (${machine.jobStep?.stepName || 'Unknown'})`;
+    const message = machineName
+      ? `Step ${stepLabel} started - ${machineName}`
+      : `Step ${stepLabel} started`;
 
     // Create a synthetic activity log entry for started action
     return {
@@ -340,13 +393,15 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       userId: machine.userId,
       action: 'Production Step Started',
       details: JSON.stringify({
-        message: `Step ${machine.stepNo || 'N/A'} (${machine.jobStep?.stepName || 'Unknown'}) started`,
+        message,
         nrcJobNo: nrcJobNo,
         jobPlanId: jobPlanId,
         jobPlanCode: jobPlanCode,
         stepNo: machine.stepNo,
         stepName: machine.jobStep?.stepName || 'Unknown',
         machineId: machine.machineId,
+        machineCode: machineCode,
+        machineName: machineName,
         startDate: startedAt
       }),
       nrcJobNo: nrcJobNo,
@@ -368,27 +423,35 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     const nrcJobNo = machine.nrcJobNo || machine.jobStep?.jobPlanning?.nrcJobNo || '';
     const jobPlanId = machine.jobStep?.jobPlanning?.jobPlanId || machine.jobStep?.jobPlanningId || null;
     const jobPlanCode = machine.jobStep?.jobPlanning?.jobPlanCode ?? null;
+    const machineName = machine.machine?.description || machine.machine?.machineCode || machine.machineId || '';
+    const machineCode = machine.machine?.machineCode || '';
+    const stepLabel = `${machine.stepNo || 'N/A'} (${machine.jobStep?.stepName || 'Unknown'})`;
+    const message = machineName
+      ? `Step ${stepLabel} completed - ${machineName}`
+      : `Step ${stepLabel} completed`;
     // Use completedAt first (when step was completed), then updatedAt, then createdAt as fallback
-    // This ensures activities appear on the completion date, not the last update date
     const activityDate = machine.completedAt || machine.updatedAt || machine.createdAt;
 
-    // Create a synthetic activity log entry
+    // Create a synthetic activity log entry (quantity/totalOK = issued quantity for next step)
     return {
       id: `machine_${machine.id}`,
       userId: machine.userId,
       action: 'Production Step Completed',
       details: JSON.stringify({
-        message: `Step ${machine.stepNo || 'N/A'} (${machine.jobStep?.stepName || 'Unknown'}) completed`,
+        message,
         nrcJobNo: nrcJobNo,
         jobPlanId: jobPlanId,
         jobPlanCode: jobPlanCode,
         stepNo: machine.stepNo,
         stepName: machine.jobStep?.stepName || 'Unknown',
         totalOK: okQuantity,
+        quantity: okQuantity,
         totalWastage: wastage,
         completedBy: machine.userId,
         endDate: completedAt,
-        machineId: machine.machineId
+        machineId: machine.machineId,
+        machineCode: machineCode,
+        machineName: machineName
       }),
       nrcJobNo: nrcJobNo,
       jobPlanId: jobPlanId,
@@ -400,14 +463,62 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     };
   });
 
+  // ✅ Build planId -> dispatch quantity from live DispatchProcess for fallback (when CompletedJob snapshot has no qty)
+  const completedPlanIds = (completedJobs || []).map((j: any) => j.jobPlanId).filter((id: number) => id != null);
+  let dispatchQtyByPlanId: Record<number, number> = {};
+  if (completedPlanIds.length > 0) {
+    const dispatchSteps = await prisma.jobStep.findMany({
+      where: {
+        jobPlanningId: { in: completedPlanIds },
+        stepName: 'DispatchProcess'
+      },
+      include: {
+        dispatchProcess: { select: { totalDispatchedQty: true, quantity: true } }
+      }
+    });
+    dispatchSteps.forEach((step: any) => {
+      const qty = step.dispatchProcess?.totalDispatchedQty ?? step.dispatchProcess?.quantity ?? 0;
+      if (step.jobPlanningId != null) {
+        dispatchQtyByPlanId[step.jobPlanningId] = qty;
+      }
+    });
+  }
+
   // ✅ Convert completed jobs to activity log format
   const completedJobActivityLogs = completedJobs.map((completedJob: any) => {
     const nrcJobNo = completedJob.nrcJobNo || '';
     const jobPlanId = completedJob.jobPlanId || null;
     const completedAt = completedJob.completedAt || completedJob.createdAt || new Date();
     const completedBy = completedJob.completedBy || userId;
+    // Get dispatch quantity: first from snapshot at completion (allStepDetails.dispatchProcess), then fallback to live DispatchProcess
+    let quantity = 0;
+    try {
+      const details = completedJob.allStepDetails as Record<string, unknown> | null;
+      const dpList = details?.dispatchProcess as Array<{ quantity?: number; totalDispatchedQty?: number }> | undefined;
+      if (Array.isArray(dpList) && dpList.length > 0) {
+        const first = dpList[0];
+        quantity = first?.quantity ?? first?.totalDispatchedQty ?? 0;
+      }
+    } catch (_) {
+      // ignore
+    }
+    if (quantity <= 0 && jobPlanId != null) {
+      quantity = dispatchQtyByPlanId[jobPlanId] ?? 0;
+    }
+    // Last resort: use PO quantity from purchaseOrderDetails so we don't show 0
+    if (quantity <= 0) {
+      try {
+        const po = completedJob.purchaseOrderDetails as { totalPOQuantity?: number } | null | undefined;
+        if (po && typeof po.totalPOQuantity === 'number' && po.totalPOQuantity > 0) {
+          quantity = po.totalPOQuantity;
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
 
-    // Create a synthetic activity log entry for job completion
+    // Create a synthetic activity log entry for job completion (include quantity and jobPlanCode for "Your Activity")
+    const jobPlanCode = completedJob.jobPlanCode ?? null;
     return {
       id: `completed_job_${completedJob.id}`,
       userId: completedBy,
@@ -416,13 +527,17 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
         message: `Job ${nrcJobNo} completed`,
         nrcJobNo: nrcJobNo,
         jobPlanId: jobPlanId,
+        jobPlanCode: jobPlanCode,
         completedBy: completedBy,
         completedAt: completedAt,
         finalStatus: completedJob.finalStatus || 'completed',
-        totalDuration: completedJob.totalDuration
+        totalDuration: completedJob.totalDuration,
+        quantity: quantity,
+        totalOK: quantity
       }),
       nrcJobNo: nrcJobNo,
       jobPlanId: jobPlanId,
+      jobPlanCode: jobPlanCode,
       completedAt: completedAt, // Add completedAt at root level for frontend filtering
       createdAt: completedAt, // Use completedAt so it shows in the activity on the day it was completed
       updatedAt: completedJob.updatedAt || completedAt,
@@ -452,6 +567,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
     let additionalDetails: any = {};
     
     if (step.stepName?.toLowerCase().includes('paperstore') && step.paperStore) {
+      // PaperStore: issued quantity = quantity passed to next step (available after accept)
       quantity = step.paperStore.available ?? step.paperStore.quantity ?? 0;
       additionalDetails = {
         available: step.paperStore.available,
@@ -465,8 +581,10 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
         rejectedQty: step.qualityDept.rejectedQty
       };
     } else if (step.stepName?.toLowerCase().includes('dispatch') && step.dispatchProcess) {
-      // Dispatch: issued quantity is total dispatched (totalDispatchedQty), not the single-batch quantity field
-      quantity = step.dispatchProcess.totalDispatchedQty ?? step.dispatchProcess.quantity ?? 0;
+      // Dispatch: issued quantity = total dispatched; use quantity when totalDispatchedQty is 0 (e.g. dispatch-only completed via form)
+      const total = step.dispatchProcess.totalDispatchedQty ?? 0;
+      const qty = step.dispatchProcess.quantity ?? 0;
+      quantity = (total > 0 ? total : qty) || 0;
       additionalDetails = {
         quantity: step.dispatchProcess.quantity,
         totalDispatchedQty: step.dispatchProcess.totalDispatchedQty
@@ -538,7 +656,7 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
 
   const allLogs = Array.from(logMap.values());
 
-  // Enrich logs that have jobPlanId but no jobPlanCode (e.g. raw ActivityLog, CompletedJob) from JobPlanning table
+  // Enrich logs that have jobPlanId but no jobPlanCode: first from JobPlanning, then from CompletedJob (job may be completed and removed from JobPlanning)
   const planIdsToLookup = [...new Set(
     allLogs
       .filter((log: any) => log.jobPlanId != null && !log.jobPlanCode)
@@ -550,12 +668,26 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       where: { jobPlanId: { in: planIdsToLookup } },
       select: { jobPlanId: true, jobPlanCode: true }
     });
-    const planCodeById = Object.fromEntries(
-      (planRows || []).map((r: any) => [r.jobPlanId, r.jobPlanCode])
+    const planCodeById: Record<number, string | null> = Object.fromEntries(
+      (planRows || []).map((r: any) => [r.jobPlanId, r.jobPlanCode ?? null])
     );
+    // Fallback: when job is completed it moves to CompletedJob and may be removed from JobPlanning — fetch jobPlanCode from CompletedJob
+    const missingPlanIds = planIdsToLookup.filter((id: number) => !(planCodeById[id] != null && (planCodeById[id] as string) !== ''));
+    if (missingPlanIds.length > 0) {
+      const completedRows = await prisma.completedJob.findMany({
+        where: { jobPlanId: { in: missingPlanIds } }
+      });
+      for (const r of completedRows) {
+        const code = (r as { jobPlanId: number; jobPlanCode?: string | null }).jobPlanCode;
+        if (r.jobPlanId != null && code != null && String(code).trim() !== '') {
+          planCodeById[r.jobPlanId] = code;
+        }
+      }
+    }
     allLogs.forEach((log: any) => {
-      if (log.jobPlanId != null && !log.jobPlanCode && planCodeById[Number(log.jobPlanId)] != null) {
-        log.jobPlanCode = planCodeById[Number(log.jobPlanId)];
+      if (log.jobPlanId != null && !log.jobPlanCode) {
+        const code = planCodeById[Number(log.jobPlanId)];
+        log.jobPlanCode = (code != null && code !== '') ? code : `Plan-${log.jobPlanId}`;
       }
     });
   }
