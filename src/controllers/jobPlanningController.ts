@@ -895,13 +895,14 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
   res.status(200).json(response);
 };
 
-// Get all JobPlannings with steps
+// Get all JobPlannings with steps (includes jobPlanCode for list display)
 export const getAllJobPlanningsSimple = async (req: Request, res: Response) => {
   const jobPlannings = await prisma.jobPlanning.findMany({
     select: {
       jobPlanId: true,
       nrcJobNo: true,
       jobDemand: true,
+      jobPlanCode: true,
       createdAt: true,
       updatedAt: true,
     },

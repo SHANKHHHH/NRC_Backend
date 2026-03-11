@@ -293,7 +293,7 @@ export const completeJob = async (req: Request, res: Response) => {
 };
 
 /**
- * Get all completed jobs
+ * Get all completed jobs (enriched with jobPlanCode from JobPlanning for list display).
  */
 export const getAllCompletedJobs = async (req: Request, res: Response) => {
   try {
@@ -301,12 +301,24 @@ export const getAllCompletedJobs = async (req: Request, res: Response) => {
       orderBy: { completedAt: 'desc' }
     });
 
+    const jobPlanIds = [...new Set(completedJobs.map((c) => c.jobPlanId))];
+    const plannings = await prisma.jobPlanning.findMany({
+      where: { jobPlanId: { in: jobPlanIds } },
+      select: { jobPlanId: true, jobPlanCode: true },
+    });
+    const codeByPlanId: Record<number, string | null> = Object.fromEntries(
+      plannings.map((p) => [p.jobPlanId, p.jobPlanCode ?? null])
+    );
+    const data = completedJobs.map((c) => ({
+      ...c,
+      jobPlanCode: codeByPlanId[c.jobPlanId] ?? null,
+    }));
+
     res.status(200).json({
       success: true,
-      count: completedJobs.length,
-      data: completedJobs
+      count: data.length,
+      data,
     });
-
   } catch (error) {
     res.status(500).json({ success: false, message: 'Internal Server Error' });
   }

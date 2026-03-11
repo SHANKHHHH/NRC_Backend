@@ -1,44 +1,64 @@
-import { Request, Response } from 'express';
-import { prisma } from '../lib/prisma';
-import { AppError } from '../middleware';
-import { logUserActionWithResource, ActionTypes } from '../lib/logger';
-import { getFilteredJobNumbers } from '../middleware/machineAccess';
-import { calculateSharedCardDiffDate } from '../utils/dateUtils';
-import { RoleManager } from '../utils/roleUtils';
-
-
+import { Request, Response } from "express";
+import { prisma } from "../lib/prisma";
+import { AppError } from "../middleware";
+import { logUserActionWithResource, ActionTypes } from "../lib/logger";
+import { getFilteredJobNumbers } from "../middleware/machineAccess";
+import { calculateSharedCardDiffDate } from "../utils/dateUtils";
+import { RoleManager } from "../utils/roleUtils";
 
 export const createJob = async (req: Request, res: Response) => {
   // Authorization Check - Now supports multiple roles
   const userRole = req.user?.role;
   if (!userRole || !RoleManager.canPerformPlannerAction(userRole)) {
-    throw new AppError('You are not authorized to perform this action. Required roles: admin or planner', 403);
+    throw new AppError(
+      "You are not authorized to perform this action. Required roles: admin or planner",
+      403,
+    );
   }
 
   const { nrcJobNo, styleItemSKU, customerName, imageURL, ...rest } = req.body; //datasets
 
   if (!styleItemSKU || !customerName) {
-    throw new AppError('Style Item SKU and Customer Name are required', 400);
+    throw new AppError("Style Item SKU and Customer Name are required", 400);
   }
 
   // Optional: Validate imageURL if present
-  if (imageURL && typeof imageURL !== 'string') {
-    throw new AppError('imageURL must be a string', 400);
+  if (imageURL && typeof imageURL !== "string") {
+    throw new AppError("imageURL must be a string", 400);
   }
 
   // Always generate nrcJobNo (ignore if provided in request)
   // Format: first three letters of customer name (uppercase) + '-' + styleItemSKU (as provided)
-  const customerPrefix = customerName.replace(/\s+/g, '').substring(0, 3).toUpperCase();
+  const customerPrefix = customerName
+    .replace(/\s+/g, "")
+    .substring(0, 3)
+    .toUpperCase();
   const styleSuffix = styleItemSKU.trim();
   const generatedNrcJobNo = `${customerPrefix}-${styleSuffix}`;
 
   // Ensure uniqueness before attempting creation to provide a clearer error message
   const existingJob = await prisma.job.findUnique({
-    where: { nrcJobNo: generatedNrcJobNo }
+    where: { nrcJobNo: generatedNrcJobNo },
   });
 
   if (existingJob) {
-    throw new AppError(`Job with number ${generatedNrcJobNo} already exists`, 409);
+    throw new AppError(
+      `Job with number ${generatedNrcJobNo} already exists`,
+      409,
+    );
+  }
+
+  // Sync Job id sequence so next id is MAX(id)+1 (avoids unique constraint on id after manual inserts or out-of-sync sequence)
+  try {
+    await prisma.$executeRawUnsafe(`
+      SELECT setval(
+        pg_get_serial_sequence('"Job"', 'id'),
+        COALESCE((SELECT MAX(id) FROM "Job"), 1),
+        false
+      );
+    `);
+  } catch (syncErr) {
+    console.warn("Job sequence sync failed (create may still succeed):", syncErr);
   }
 
   const job = await prisma.job.create({
@@ -47,7 +67,9 @@ export const createJob = async (req: Request, res: Response) => {
       styleItemSKU,
       customerName,
       imageURL: imageURL || null,
-      sharedCardDiffDate: calculateSharedCardDiffDate(rest.shadeCardApprovalDate),
+      sharedCardDiffDate: calculateSharedCardDiffDate(
+        rest.shadeCardApprovalDate,
+      ),
       ...rest,
     },
   });
@@ -58,20 +80,20 @@ export const createJob = async (req: Request, res: Response) => {
       req.user.userId,
       ActionTypes.JOB_CREATED,
       JSON.stringify({
-        message: 'Job created',
+        message: "Job created",
         jobNo: generatedNrcJobNo,
         customerName,
-        styleItemSKU
+        styleItemSKU,
       }),
-      'Job',
-      generatedNrcJobNo
+      "Job",
+      generatedNrcJobNo,
     );
   }
 
   return res.status(201).json({
     success: true,
     data: job,
-    message: 'Job created successfully',
+    message: "Job created successfully",
   });
 };
 
@@ -87,44 +109,48 @@ export const syncJobSequence = async (req: Request, res: Response) => {
     `);
     return res.status(200).json({
       success: true,
-      message: 'Job id sequence synchronized; next id will be MAX(id)+1',
+      message: "Job id sequence synchronized; next id will be MAX(id)+1",
     });
   } catch (error) {
-    console.error('Error syncing job sequence:', error);
+    console.error("Error syncing job sequence:", error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to sync job sequence',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      message: "Failed to sync job sequence",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
-
 
 //get all jobs
 export const getAllJobs = async (req: Request, res: Response) => {
   try {
     const userMachineIds = req.userMachineIds; // From middleware
-    
+
     // Get pagination parameters from query (opt-in - only paginate if page param is provided)
-    const page = req.query.page ? parseInt(req.query.page as string) : undefined;
+    const page = req.query.page
+      ? parseInt(req.query.page as string)
+      : undefined;
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 500;
     const isPaginated = page !== undefined;
     const skip = isPaginated ? (page - 1) * limit : 0;
-    
+
     // Get job numbers that are accessible to the user based on machine assignments
-    const userRole = req.user?.role || '';
-    const accessibleJobNumbers = await getFilteredJobNumbers(userMachineIds || null, userRole);
-    
+    const userRole = req.user?.role || "";
+    const accessibleJobNumbers = await getFilteredJobNumbers(
+      userMachineIds || null,
+      userRole,
+    );
+
     // Paginate the accessible job numbers only if pagination is requested
-    const jobNumbers = isPaginated 
+    const jobNumbers = isPaginated
       ? accessibleJobNumbers.slice(skip, skip + limit)
       : accessibleJobNumbers;
-    
+
     const jobs = await prisma.job.findMany({
       where: {
-        nrcJobNo: { in: jobNumbers }
+        nrcJobNo: { in: jobNumbers },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       include: {
         // Include all relations to get actual data instead of empty arrays
         purchaseOrders: true,
@@ -141,73 +167,84 @@ export const getAllJobs = async (req: Request, res: Response) => {
           select: {
             id: true,
             name: true,
-            role: true
-          }
+            role: true,
+          },
         },
         machine: {
           select: {
             id: true,
             description: true,
-            status: true
-          }
-        }
-      }
+            status: true,
+          },
+        },
+      },
     });
 
     // Get unified role-based job data
-    const { UnifiedJobDataHelper } = await import('../utils/unifiedJobDataHelper');
-    const safeJobs = await UnifiedJobDataHelper.getRoleBasedJobData(userMachineIds || null, userRole);
-    
+    const { UnifiedJobDataHelper } =
+      await import("../utils/unifiedJobDataHelper");
+    const safeJobs = await UnifiedJobDataHelper.getRoleBasedJobData(
+      userMachineIds || null,
+      userRole,
+    );
+
     // Filter safe jobs to match the job numbers (paginated or all)
-    const filteredSafeJobs = safeJobs.filter(job => jobNumbers.includes(job.nrcJobNo));
-    
+    const filteredSafeJobs = safeJobs.filter((job) =>
+      jobNumbers.includes(job.nrcJobNo),
+    );
+
     // Build response
     const response: any = {
       success: true,
       count: filteredSafeJobs.length,
-      data: filteredSafeJobs
+      data: filteredSafeJobs,
     };
-    
+
     // Only include pagination metadata if pagination was requested
     if (isPaginated && page !== undefined) {
       const totalJobs = accessibleJobNumbers.length;
       const totalPages = Math.ceil(totalJobs / limit);
-      
+
       response.pagination = {
         currentPage: page,
         totalPages: totalPages,
         totalJobs: totalJobs,
         jobsPerPage: limit,
         hasNextPage: page < totalPages,
-        hasPrevPage: page > 1
+        hasPrevPage: page > 1,
       };
     }
 
     res.status(200).json(response);
   } catch (error) {
-    console.error('Error fetching jobs:', error);
-    
+    console.error("Error fetching jobs:", error);
+
     // Handle the specific Prisma error
-    if (error instanceof Error && error.message.includes('type \'Null\' is not a subtype of type \'List<dynamic>\'')) {
+    if (
+      error instanceof Error &&
+      error.message.includes(
+        "type 'Null' is not a subtype of type 'List<dynamic>'",
+      )
+    ) {
       res.status(500).json({
         success: false,
-        message: 'Failed to load jobs: Database schema mismatch detected. Please contact administrator.',
-        error: 'SCHEMA_MISMATCH'
+        message:
+          "Failed to load jobs: Database schema mismatch detected. Please contact administrator.",
+        error: "SCHEMA_MISMATCH",
       });
     } else {
       res.status(500).json({
         success: false,
-        message: 'Failed to load jobs',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        message: "Failed to load jobs",
+        error: error instanceof Error ? error.message : "Unknown error",
       });
     }
   }
 };
 
-
 export const getJobByNrcJobNo = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
-  
+
   const job = await prisma.job.findUnique({
     where: { nrcJobNo },
     include: {
@@ -223,14 +260,14 @@ export const getJobByNrcJobNo = async (req: Request, res: Response) => {
           shadeCardApprovalDate: true,
           sharedCardDiffDate: true,
           createdAt: true,
-          updatedAt: true
-        }
-      }
-    }
+          updatedAt: true,
+        },
+      },
+    },
   });
 
   if (!job) {
-    throw new AppError('Job not found with that NRC Job No', 404);
+    throw new AppError("Job not found with that NRC Job No", 404);
   }
 
   res.status(200).json({
@@ -247,11 +284,11 @@ export const getJobByNrcJobNo = async (req: Request, res: Response) => {
 // Any authenticated user can view (workers need this for Job Details modal); create/edit stays restricted.
 export const getJobWithPODetails = async (req: Request, res: Response) => {
   if (!req.user?.userId) {
-    throw new AppError('You must be logged in to view job details', 401);
+    throw new AppError("You must be logged in to view job details", 401);
   }
 
   const { nrcJobNo } = req.params;
-  
+
   try {
     const job = await prisma.job.findUnique({
       where: { nrcJobNo },
@@ -262,14 +299,14 @@ export const getJobWithPODetails = async (req: Request, res: Response) => {
             id: true,
             name: true,
             email: true,
-            role: true
-          }
-        }
-      }
+            role: true,
+          },
+        },
+      },
     });
 
     if (!job) {
-      throw new AppError('Job not found with that NRC Job No', 404);
+      throw new AppError("Job not found with that NRC Job No", 404);
     }
 
     // Fetch all job plannings for this job (now PO-specific)
@@ -278,28 +315,29 @@ export const getJobWithPODetails = async (req: Request, res: Response) => {
       include: {
         steps: {
           orderBy: {
-            stepNo: 'asc'
-          }
-        }
-      }
+            stepNo: "asc",
+          },
+        },
+      },
     });
-
 
     // Create PO-specific job plannings using the new schema
     const poJobPlannings = [];
-    
+
     for (const po of job.purchaseOrders) {
       // Find job planning for this specific PO
-      const poJobPlanning = jobPlannings.find((jp: any) => jp.purchaseOrderId === po.id);
-      
+      const poJobPlanning = jobPlannings.find(
+        (jp: any) => jp.purchaseOrderId === po.id,
+      );
+
       // Check if this PO has any machine assignments
       const poMachines = await prisma.purchaseOrderMachine.findMany({
         where: { purchaseOrderId: po.id },
-        select: { machineId: true }
+        select: { machineId: true },
       });
-      
-      const poMachineIds = poMachines.map(pom => pom.machineId);
-      
+
+      const poMachineIds = poMachines.map((pom) => pom.machineId);
+
       if (poJobPlanning) {
         // PO has job planning
         poJobPlannings.push({
@@ -312,10 +350,12 @@ export const getJobWithPODetails = async (req: Request, res: Response) => {
           jobPlanId: poJobPlanning.jobPlanId,
           steps: poJobPlanning.steps || [],
           assignedMachines: poMachineIds,
-          completedSteps: (poJobPlanning.steps || []).filter((step: any) => step.status === 'stop').length,
+          completedSteps: (poJobPlanning.steps || []).filter(
+            (step: any) => step.status === "stop",
+          ).length,
           totalSteps: (poJobPlanning.steps || []).length,
           createdAt: poJobPlanning.createdAt,
-          updatedAt: poJobPlanning.updatedAt
+          updatedAt: poJobPlanning.updatedAt,
         });
       } else {
         // PO has no job planning
@@ -332,7 +372,7 @@ export const getJobWithPODetails = async (req: Request, res: Response) => {
           completedSteps: 0,
           totalSteps: 0,
           createdAt: null,
-          updatedAt: null
+          updatedAt: null,
         });
       }
     }
@@ -382,18 +422,19 @@ export const getJobWithPODetails = async (req: Request, res: Response) => {
       machineId: job.machineId,
       clientId: job.clientId,
       styleId: job.styleId,
-      
+
       // PO-specific job plannings
       poJobPlannings: poJobPlannings,
-      
+
       // All purchase orders
       hasPurchaseOrders: job.purchaseOrders.length > 0,
       purchaseOrders: job.purchaseOrders,
-      
+
       // Summary statistics
       totalPOs: job.purchaseOrders.length,
       totalJobPlannings: jobPlannings.length,
-      completedJobPlannings: poJobPlannings.filter(po => po.hasJobPlanning).length
+      completedJobPlannings: poJobPlannings.filter((po) => po.hasJobPlanning)
+        .length,
     };
 
     res.status(200).json({
@@ -401,34 +442,32 @@ export const getJobWithPODetails = async (req: Request, res: Response) => {
       data: response,
     });
   } catch (error) {
-    console.error('Error fetching job with PO details:', error);
+    console.error("Error fetching job with PO details:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch job details',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      message: "Failed to fetch job details",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 };
 
-
 export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
-
   const { nrcJobNo } = req.params;
   const { imageURL, ...rest } = req.body;
 
   // Optional: Validate imageURL if present
-  if (imageURL && typeof imageURL !== 'string') {
-    throw new AppError('imageURL must be a string', 400);
+  if (imageURL && typeof imageURL !== "string") {
+    throw new AppError("imageURL must be a string", 400);
   }
 
   try {
     // First check if job exists
     const existingJob = await prisma.job.findUnique({
-      where: { nrcJobNo }
+      where: { nrcJobNo },
     });
 
     if (!existingJob) {
-      throw new AppError('Job not found with that NRC Job No', 404);
+      throw new AppError("Job not found with that NRC Job No", 404);
     }
 
     // Now update the job
@@ -437,7 +476,9 @@ export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
       data: {
         ...rest,
         ...(imageURL !== undefined ? { imageURL } : {}),
-        sharedCardDiffDate: calculateSharedCardDiffDate(rest.shadeCardApprovalDate),
+        sharedCardDiffDate: calculateSharedCardDiffDate(
+          rest.shadeCardApprovalDate,
+        ),
       },
     });
 
@@ -447,91 +488,103 @@ export const updateJobByNrcJobNo = async (req: Request, res: Response) => {
         req.user.userId,
         ActionTypes.JOB_UPDATED,
         JSON.stringify({
-          message: 'Job updated',
+          message: "Job updated",
           jobNo: nrcJobNo,
-          updatedFields: Object.keys(req.body)
+          updatedFields: Object.keys(req.body),
         }),
-        'Job',
-        nrcJobNo
+        "Job",
+        nrcJobNo,
       );
     }
 
     res.status(200).json({
       success: true,
       data: job,
-      message: 'Job updated successfully',
+      message: "Job updated successfully",
     });
   } catch (error) {
     // If it's already an AppError, re-throw it
     if (error instanceof AppError) {
       throw error;
     }
-    
+
     // Handle Prisma errors
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2025') {
-      throw new AppError('Job not found with that NRC Job No', 404);
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "P2025"
+    ) {
+      throw new AppError("Job not found with that NRC Job No", 404);
     }
-    
+
     // Log unexpected errors
-    console.error('Error updating job:', error);
-    throw new AppError('Failed to update job', 500);
+    console.error("Error updating job:", error);
+    throw new AppError("Failed to update job", 500);
   }
 };
 
-export const recalculateSharedCardDiffDate = async (req: Request, res: Response) => {
+export const recalculateSharedCardDiffDate = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     // Get all jobs that have shadeCardApprovalDate
     const jobs = await prisma.job.findMany({
       where: {
         shadeCardApprovalDate: {
-          not: null
-        }
+          not: null,
+        },
       },
       select: {
         id: true,
         nrcJobNo: true,
-        shadeCardApprovalDate: true
-      }
+        shadeCardApprovalDate: true,
+      },
     });
 
     let updatedCount = 0;
-    
+
     for (const job of jobs) {
-      const sharedCardDiffDate = calculateSharedCardDiffDate(job.shadeCardApprovalDate);
-      
+      const sharedCardDiffDate = calculateSharedCardDiffDate(
+        job.shadeCardApprovalDate,
+      );
+
       await prisma.job.update({
         where: { id: job.id },
-        data: { sharedCardDiffDate }
+        data: { sharedCardDiffDate },
       });
-      
+
       updatedCount++;
     }
 
     res.status(200).json({
       success: true,
       message: `Successfully recalculated shared card diff date for ${updatedCount} jobs`,
-      updatedCount
+      updatedCount,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error recalculating shared card diff dates'
+      message: "Error recalculating shared card diff dates",
     });
   }
 };
 
-
 export const deleteJobByNrcJobNo = async (req: Request, res: Response) => {
   const userRole = req.user?.role;
   if (!userRole || !RoleManager.canPerformAdminAction(userRole)) {
-    throw new AppError('You are not authorized to perform this action. Required role: admin', 403);
+    throw new AppError(
+      "You are not authorized to perform this action. Required role: admin",
+      403,
+    );
   }
 
   const { nrcJobNo } = req.params;
-  
+
   const job = await prisma.job.update({
     where: { nrcJobNo },
-    data: { status: 'INACTIVE' },
+    data: { status: "INACTIVE" },
   });
 
   // Log the job deletion action
@@ -540,32 +593,31 @@ export const deleteJobByNrcJobNo = async (req: Request, res: Response) => {
       req.user.userId,
       ActionTypes.JOB_DELETED,
       JSON.stringify({
-        message: 'Job deactivated',
-        jobNo: nrcJobNo
+        message: "Job deactivated",
+        jobNo: nrcJobNo,
       }),
-      'Job',
-      nrcJobNo
+      "Job",
+      nrcJobNo,
     );
   }
 
   res.status(200).json({
     success: true,
     data: job,
-    message: 'Job deactivated successfully',
+    message: "Job deactivated successfully",
   });
 };
 
 export const holdJobByNrcJobNo = async (req: Request, res: Response) => {
-
   const { nrcJobNo } = req.params;
 
   const job = await prisma.job.update({
     where: { nrcJobNo },
-    data: { status: 'HOLD' },
+    data: { status: "HOLD" },
   });
 
   if (!job) {
-    throw new AppError('Job not found with that NRC Job No', 404);
+    throw new AppError("Job not found with that NRC Job No", 404);
   }
 
   // Log the job hold action
@@ -574,20 +626,20 @@ export const holdJobByNrcJobNo = async (req: Request, res: Response) => {
       req.user.userId,
       ActionTypes.JOB_HOLD,
       JSON.stringify({
-        message: 'Job put on hold',
-        jobNo: nrcJobNo
+        message: "Job put on hold",
+        jobNo: nrcJobNo,
       }),
-      'Job',
-      nrcJobNo
+      "Job",
+      nrcJobNo,
     );
   }
 
   res.status(200).json({
     success: true,
     data: job,
-    message: 'Job put on hold successfully',
+    message: "Job put on hold successfully",
   });
-}; 
+};
 
 // Check if job has job planning and machine details
 export const checkJobPlanningStatus = async (req: Request, res: Response) => {
@@ -600,12 +652,12 @@ export const checkJobPlanningStatus = async (req: Request, res: Response) => {
       select: {
         nrcJobNo: true,
         customerName: true,
-        status: true
-      }
+        status: true,
+      },
     });
 
     if (!job) {
-      throw new AppError('Job not found', 404);
+      throw new AppError("Job not found", 404);
     }
 
     // Check if job planning exists for this job
@@ -613,7 +665,7 @@ export const checkJobPlanningStatus = async (req: Request, res: Response) => {
       where: { nrcJobNo },
       include: {
         steps: {
-          orderBy: { stepNo: 'asc' },
+          orderBy: { stepNo: "asc" },
           select: {
             id: true,
             stepNo: true,
@@ -621,34 +673,40 @@ export const checkJobPlanningStatus = async (req: Request, res: Response) => {
             status: true,
             machineDetails: true,
             createdAt: true,
-            updatedAt: true
-          }
-        }
-      }
+            updatedAt: true,
+          },
+        },
+      },
     });
 
     const hasJobPlanning = !!jobPlanning;
 
     // Analyze machine details for each step
-    const stepsWithMachineDetails = jobPlanning?.steps.map(step => {
-      const hasMachineDetails = step.machineDetails && 
-        Array.isArray(step.machineDetails) && 
-        step.machineDetails.length > 0;
-      
-      return {
-        stepNo: step.stepNo,
-        stepName: step.stepName,
-        status: step.status,
-        hasMachineDetails,
-        machineDetailsCount: hasMachineDetails ? step.machineDetails.length : 0,
-        machineDetails: hasMachineDetails ? step.machineDetails : null,
-        createdAt: step.createdAt,
-        updatedAt: step.updatedAt
-      };
-    }) || [];
+    const stepsWithMachineDetails =
+      jobPlanning?.steps.map((step) => {
+        const hasMachineDetails =
+          step.machineDetails &&
+          Array.isArray(step.machineDetails) &&
+          step.machineDetails.length > 0;
+
+        return {
+          stepNo: step.stepNo,
+          stepName: step.stepName,
+          status: step.status,
+          hasMachineDetails,
+          machineDetailsCount: hasMachineDetails
+            ? step.machineDetails.length
+            : 0,
+          machineDetails: hasMachineDetails ? step.machineDetails : null,
+          createdAt: step.createdAt,
+          updatedAt: step.updatedAt,
+        };
+      }) || [];
 
     const totalSteps = stepsWithMachineDetails.length;
-    const stepsWithMachines = stepsWithMachineDetails.filter(step => step.hasMachineDetails).length;
+    const stepsWithMachines = stepsWithMachineDetails.filter(
+      (step) => step.hasMachineDetails,
+    ).length;
     const stepsWithoutMachines = totalSteps - stepsWithMachines;
 
     res.status(200).json({
@@ -657,29 +715,30 @@ export const checkJobPlanningStatus = async (req: Request, res: Response) => {
         job: {
           nrcJobNo: job.nrcJobNo,
           customerName: job.customerName,
-          status: job.status
+          status: job.status,
         },
         hasJobPlanning,
-        jobPlanning: hasJobPlanning ? {
-          jobPlanId: jobPlanning.jobPlanId,
-          jobDemand: jobPlanning.jobDemand,
-          totalSteps,
-          stepsWithMachines,
-          stepsWithoutMachines,
-          createdAt: jobPlanning.createdAt,
-          updatedAt: jobPlanning.updatedAt,
-          steps: stepsWithMachineDetails
-        } : null
+        jobPlanning: hasJobPlanning
+          ? {
+              jobPlanId: jobPlanning.jobPlanId,
+              jobDemand: jobPlanning.jobDemand,
+              totalSteps,
+              stepsWithMachines,
+              stepsWithoutMachines,
+              createdAt: jobPlanning.createdAt,
+              updatedAt: jobPlanning.updatedAt,
+              steps: stepsWithMachineDetails,
+            }
+          : null,
       },
-      message: hasJobPlanning 
-        ? `Job planning exists with ${totalSteps} steps (${stepsWithMachines} with machines, ${stepsWithoutMachines} without machines)` 
-        : 'No job planning found for this job'
+      message: hasJobPlanning
+        ? `Job planning exists with ${totalSteps} steps (${stepsWithMachines} with machines, ${stepsWithoutMachines} without machines)`
+        : "No job planning found for this job",
     });
-
   } catch (error) {
     if (error instanceof AppError) {
       throw error;
     }
-    throw new AppError('Failed to check job planning status', 500);
+    throw new AppError("Failed to check job planning status", 500);
   }
 };
