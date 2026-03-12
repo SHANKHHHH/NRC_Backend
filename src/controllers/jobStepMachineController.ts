@@ -2133,6 +2133,7 @@ export const getAllHeldMachines = async (req: Request, res: Response) => {
         // Enhanced job planning details
         const enhancedJobPlanningDetails = shouldIncludeJobPlanningDetails ? {
           jobPlanningId: jobPlanning?.jobPlanId,
+          jobPlanCode: jobPlanning?.jobPlanCode ?? null,
           jobDemand: jobPlanning?.jobDemand,
           createdAt: jobPlanning?.createdAt,
           updatedAt: jobPlanning?.updatedAt,
@@ -2216,6 +2217,7 @@ export const getAllHeldMachines = async (req: Request, res: Response) => {
         } : null;
 
         jobsMap.set(nrcJobNo, {
+          jobPlanCode: jobPlanning?.jobPlanCode ?? null,
           jobDetails: {
             nrcJobNo: hm.job?.nrcJobNo,
             customerName: hm.job?.customerName,
