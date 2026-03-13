@@ -48,13 +48,14 @@ export const createJob = async (req: Request, res: Response) => {
     );
   }
 
-  // Sync Job id sequence so next id is MAX(id)+1 (avoids unique constraint on id after manual inserts or out-of-sync sequence)
+  // Sync Job id sequence so next nextval() returns MAX(id)+1 (avoids unique constraint on id)
+  // setval(..., is_called=true) means next nextval() = value+1; use COALESCE(MAX(id),0) so empty table gets id=1
   try {
     await prisma.$executeRawUnsafe(`
       SELECT setval(
         pg_get_serial_sequence('"Job"', 'id'),
-        COALESCE((SELECT MAX(id) FROM "Job"), 1),
-        false
+        COALESCE((SELECT MAX(id) FROM "Job"), 0),
+        true
       );
     `);
   } catch (syncErr) {
@@ -97,14 +98,14 @@ export const createJob = async (req: Request, res: Response) => {
   });
 };
 
-/** Sync Job id sequence to MAX(id) so next insert gets MAX(id)+1. Use after bulk imports (e.g. Excel). */
+/** Sync Job id sequence so next insert gets MAX(id)+1. Use after bulk imports (e.g. Excel). */
 export const syncJobSequence = async (req: Request, res: Response) => {
   try {
     await prisma.$executeRawUnsafe(`
       SELECT setval(
         pg_get_serial_sequence('"Job"', 'id'),
-        COALESCE((SELECT MAX(id) FROM "Job"), 1),
-        false
+        COALESCE((SELECT MAX(id) FROM "Job"), 0),
+        true
       );
     `);
     return res.status(200).json({
