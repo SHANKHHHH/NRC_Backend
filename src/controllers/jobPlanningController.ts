@@ -330,15 +330,24 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
       });
     }
 
-    // Enrich PaperStore steps with PaperStore table status
-    // For PaperStore steps, use the PaperStore.status instead of JobStep.status
+    // Enrich step statuses from their own tables where appropriate
+    // 1) For PaperStore steps, use the PaperStore.status instead of JobStep.status
+    // 2) For Punching steps, use the Punching.status instead of JobStep.status
     for (const planning of filteredPlannings) {
       if (planning.steps && Array.isArray(planning.steps)) {
-        // Enrich PaperStore status
+        // Enrich PaperStore & Punching status
         for (const step of planning.steps) {
           if (step.stepName === "PaperStore" && step.paperStore) {
             // Use PaperStore.status if available (e.g., 'accept'), otherwise use JobStep.status
             step.status = step.paperStore.status || step.status;
+          }
+          // For Punching: when the punching table has a status (e.g. 'accept'),
+          // use that as the step status; if no punching row yet, keep existing JobStep.status.
+          if (step.stepName === "Punching" && (step as any).punching) {
+            const punching = (step as any).punching;
+            if (punching && typeof punching.status === "string") {
+              (step as any).status = punching.status || step.status;
+            }
           }
         }
       }
@@ -383,6 +392,7 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
       steps: {
         include: {
           paperStore: true, // Full PaperStore details for step details display and PDF
+          sideFlapPasting: true, // Pasting details so QC can see previous-step status correctly
           qualityDept: {
             select: {
               id: true,
@@ -486,6 +496,44 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
       }
     });
   });
+
+  // Fetch JobStepMachine records for all steps to enrich machineDetails for started/used steps,
+  // including first steps where planner may not have assigned a machine in planning.
+  const allStepIds: number[] = [];
+  for (const planning of filteredJobPlannings) {
+    if (Array.isArray(planning.steps)) {
+      for (const step of planning.steps) {
+        if (typeof step.id === "number") {
+          allStepIds.push(step.id);
+        }
+      }
+    }
+  }
+
+  let jobStepMachinesByStepId = new Map<number, any[]>();
+  if (allStepIds.length > 0) {
+    const jobStepMachines = await (prisma as any).jobStepMachine.findMany({
+      where: { jobStepId: { in: allStepIds } },
+      include: {
+        machine: {
+          select: {
+            id: true,
+            machineCode: true,
+            machineType: true,
+            unit: true,
+            status: true,
+          },
+        },
+      },
+    });
+    for (const jsm of jobStepMachines || []) {
+      const sid = jsm.jobStepId as number | null;
+      if (!sid) continue;
+      const arr = jobStepMachinesByStepId.get(sid) || [];
+      arr.push(jsm);
+      jobStepMachinesByStepId.set(sid, arr);
+    }
+  }
 
   // Fetch machines in a single query if needed
   let machines: any[] = [];
@@ -676,11 +724,64 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
       }, isUrgentJob=${isUrgentJob}, steps count=${steps.length}`
     );
 
-    for (const step of planning.steps) {
+    for (let stepIndex = 0; stepIndex < planning.steps.length; stepIndex++) {
+      const step = planning.steps[stepIndex];
+      // Enrich each step with isFirstStep and previousStepNo (any step can be first in plan)
+      (step as any).isFirstStep = firstStepNoInPlan != null && step.stepNo === firstStepNoInPlan;
+      (step as any).previousStepNo = stepIndex > 0 ? planning.steps[stepIndex - 1].stepNo : null;
+
+      // Enrich machineDetails for started/used steps based on JobStepMachine records,
+      // especially when planner did not assign a machine (Not Assigned / empty machineDetails).
+      const stepMachines = jobStepMachinesByStepId.get(step.id as number) || [];
+      if (stepMachines.length > 0) {
+        const hasRealAssignment =
+          Array.isArray(step.machineDetails) &&
+          step.machineDetails.some((md: any) => {
+            if (!md || typeof md !== "object") return false;
+            const mid =
+              md.machineId ||
+              md.id ||
+              (md.machine && (md.machine.machineId || md.machine.id));
+            const code =
+              md.machineCode ||
+              (md.machine && (md.machine.machineCode as string | undefined));
+            return !!(mid && String(mid).trim()) || !!(code && code.trim());
+          });
+
+        if (!hasRealAssignment) {
+          (step as any).machineDetails = stepMachines.map((jsm: any) => {
+            const m = jsm.machine || {};
+            const mid = jsm.machineId || m.id;
+            return {
+              id: mid,
+              machineId: mid,
+              machineCode: m.machineCode ?? null,
+              machineType: m.machineType ?? null,
+              unit: m.unit ?? null,
+              machine: m,
+            };
+          });
+        }
+      }
+
       // Enrich PaperStore steps with PaperStore table status
       if (step.stepName === "PaperStore" && (step as any).paperStore) {
         // Use PaperStore.status if available (e.g., 'accept'), otherwise use JobStep.status
         (step as any).status = (step as any).paperStore.status || step.status;
+      }
+      // Enrich SideFlapPasting step status from sideFlapPasting table
+      if (step.stepName === "SideFlapPasting" && (step as any).sideFlapPasting) {
+        const sf = (step as any).sideFlapPasting;
+        if (sf && typeof sf.status === "string") {
+          (step as any).status = sf.status || step.status;
+        }
+      }
+      // Enrich QualityDept step status from qualityDept table (so QC completed = accept is visible to frontend)
+      if (step.stepName === "QualityDept" && (step as any).qualityDept) {
+        const qd = (step as any).qualityDept;
+        if (qd && typeof qd.status === "string") {
+          (step as any).status = qd.status || step.status;
+        }
       }
 
       // For urgent jobs: populate machineDetails based on whether step has been started (skip first step in plan)
@@ -1036,11 +1137,12 @@ export const getJobPlanningByNrcJobNo = async (req: Request, res: Response) => {
       throw new AppError("JobPlanning not found for that NRC Job No", 404);
     }
 
-    // Enrich each step with isFirstStep and previousStepNo so frontend just fetches and shows
+    // Enrich each step with isFirstStep and previousStepNo (any step can be first in plan)
     const steps = Array.isArray(jobPlanning.steps) ? jobPlanning.steps : [];
+    const firstStepNoInPlan = steps.length > 0 ? Math.min(...steps.map((s: any) => s.stepNo)) : null;
     const enrichedSteps = steps.map((step: any, index: number) => ({
       ...step,
-      isFirstStep: index === 0,
+      isFirstStep: firstStepNoInPlan != null && step.stepNo === firstStepNoInPlan,
       previousStepNo: index > 0 ? (steps[index - 1]?.stepNo ?? null) : null,
     }));
     const data = { ...jobPlanning, steps: enrichedSteps };

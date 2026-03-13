@@ -2556,30 +2556,30 @@ async function _updateIndividualStepStatus(stepNo: number, jobStepId: number, nr
         break;
       case 5: // Punching
         {
-          const result = await prisma.punching.updateMany({
+          // Ensure a Punching record always exists and is linked by jobStepId
+          await prisma.punching.upsert({
             where: { jobStepId },
-            data: { status: status as any }
+            update: { status: status as any },
+            create: {
+              jobStepId,
+              jobNrcJobNo: nrcJobNo,
+              status: status as any
+            }
           });
-          if (result.count === 0) {
-            await prisma.punching.updateMany({
-              where: { jobNrcJobNo: nrcJobNo },
-              data: { status: status as any }
-            });
-          }
         }
         break;
       case 6: // Flap Pasting
         {
-          const result = await prisma.sideFlapPasting.updateMany({
+          // Ensure a SideFlapPasting record always exists and is linked by jobStepId
+          await prisma.sideFlapPasting.upsert({
             where: { jobStepId },
-            data: { status: status as any }
+            update: { status: status as any },
+            create: {
+              jobStepId,
+              jobNrcJobNo: nrcJobNo,
+              status: status as any
+            }
           });
-          if (result.count === 0) {
-            await prisma.sideFlapPasting.updateMany({
-              where: { jobNrcJobNo: nrcJobNo },
-              data: { status: status as any }
-            });
-          }
         }
         break;
       case 7: // Quality Control
@@ -3202,7 +3202,8 @@ async function _updateIndividualStepHoldRemark(stepNo: number, nrcJobNo: string,
 // IMPORTANT: This should ONLY be called when ALL machines for the step are completed!
 // Helper function to get previous step's available/OK quantity.
 // Uses plan order: previous step = the step immediately before this one in the plan (flexible step selection).
-async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJobNo: string): Promise<number> {
+// Returns null for the first step in the plan (no previous step).
+async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJobNo: string): Promise<number | null> {
   try {
     console.log(`🔍 [GET_PREV_QTY] Getting previous step quantity for step ${stepNo}, job ${nrcJobNo}, jobPlanId ${jobPlanId}`);
 
@@ -3214,7 +3215,8 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
 
     const currentIndex = planSteps.findIndex((s: any) => s.stepNo === stepNo);
     if (currentIndex <= 0) {
-      return 0;
+      console.log(`🔍 [GET_PREV_QTY] First step in plan (index ${currentIndex}) - no previous step, returning null`);
+      return null;
     }
 
     const prevStep = planSteps[currentIndex - 1] as { id: number; stepNo: number; stepName: string };
@@ -3355,13 +3357,14 @@ async function _getPreviousStepQuantity(stepNo: number, jobPlanId: number, nrcJo
     return 0;
   } catch (error) {
     console.error(`❌ Error getting previous step quantity:`, error);
-    return 0;
+    return null;
   }
 }
 
 /**
  * GET handler: previous step available quantity for a step in plan order (flexible step selection).
  * Params: nrcJobNo. Query: stepNo, jobPlanId (both required).
+ * Returns previousStepQuantity: number | null — null for first step in plan (no previous step).
  */
 export const getPreviousStepQuantity = async (req: Request, res: Response) => {
   const nrcJobNo = req.params.nrcJobNo;
@@ -3374,7 +3377,7 @@ export const getPreviousStepQuantity = async (req: Request, res: Response) => {
     });
   }
   const qty = await _getPreviousStepQuantity(stepNo, jobPlanId, nrcJobNo);
-  return res.status(200).json({ success: true, previousStepQuantity: qty });
+  return res.status(200).json({ success: true, previousStepQuantity: qty ?? null });
 };
 
 // Helper function to check if step completion criteria is met
@@ -3435,8 +3438,8 @@ async function _checkStepCompletionCriteria(
     console.log(`📋 Previous step quantity: ${previousStepQuantity}`);
     console.log(`🔍 [DEBUG] previousStepQuantity assigned at line 1585: ${previousStepQuantity}`);
     
-    // Check criteria 1: Total submitted >= Previous step quantity
-    if (previousStepQuantity > 0 && totalSubmitted >= previousStepQuantity) {
+    // Check criteria 1: Total submitted >= Previous step quantity (skip when first step, previousStepQuantity is null)
+    if (previousStepQuantity != null && previousStepQuantity > 0 && totalSubmitted >= previousStepQuantity) {
       console.log(`✅ CRITERIA MET: Total submitted (${totalSubmitted}) >= Previous quantity (${previousStepQuantity})`);
       return {
         shouldComplete: true,
@@ -3465,6 +3468,17 @@ async function _checkStepCompletionCriteria(
     if (stoppedMachines.length === allMachines.length && 
         availableMachines.length === 0 && 
         stoppedMachines.length > 0) {
+      // First step in plan (no previous quantity): require quantity > 0 so we don't complete with 0
+      const isFirstStepInPlan = previousStepQuantity == null || previousStepQuantity === 0;
+      if (isFirstStepInPlan && totalOK <= 0) {
+        console.log(`⚠️ First step requires quantity > 0 to complete (totalOK=${totalOK})`);
+        return {
+          shouldComplete: false,
+          reason: 'First step requires quantity > 0',
+          totalOK,
+          totalWastage
+        };
+      }
       console.log(`✅ CRITERIA MET: All ${allMachines.length} machines explicitly stopped`);
       return {
         shouldComplete: true,

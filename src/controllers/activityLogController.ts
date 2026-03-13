@@ -268,12 +268,14 @@ export const getUserActivityLogs = async (req: Request, res: Response) => {
       },
       take: 1000
     }),
-    // Get completed machines - use completedAt/updatedAt for the date (include machine for display name)
+    // Get completed machines - only when parent JobStep is actually completed (status 'stop')
+    // So machine stop without step completion (e.g. first step 0 qty) does not show as "completed" in Your activity
     (prisma as any).jobStepMachine.findMany({
       where: {
         userId: userId,
         status: 'stop',
-        completedAt: { not: null }
+        completedAt: { not: null },
+        jobStep: { status: 'stop' }
       },
       include: {
         jobStep: {
