@@ -285,7 +285,14 @@ export const getAllJobPlannings = async (req: Request, res: Response) => {
 
     // For bypass roles: only show plannings that have at least one step for this role
     // (e.g. qc_manager only sees jobs with QC step; dispatch-only jobs stay hidden from QC)
-    const roleSeesAllPlannings = ["admin", "planner", "flyingsquad"].some(
+    // Production Head and Printing Manager should behave like Admin/Planner here and see ALL plannings.
+    const roleSeesAllPlannings = [
+      "admin",
+      "planner",
+      "flyingsquad",
+      "production_head",
+      "printing_manager",
+    ].some(
       (r) => (typeof userRole === "string" ? userRole : "").toLowerCase().includes(r)
     );
     if (!roleSeesAllPlannings) {
