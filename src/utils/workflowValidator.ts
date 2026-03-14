@@ -549,7 +549,7 @@ export const autoCompleteJobIfReady = async (identifier: number | string, userId
       status: dispatchProcess?.status
     });
 
-    // Create completed job record
+    // Create completed job record (createdAt = when job plan was created, not when it entered completed table)
     const completedJob = await prisma.completedJob.create({
       data: {
         nrcJobNo,
@@ -580,7 +580,8 @@ export const autoCompleteJobIfReady = async (identifier: number | string, userId
         completedBy: userId || 'system',
         totalDuration,
         remarks: 'Automatically completed by system',
-        finalStatus: 'completed'
+        finalStatus: 'completed',
+        createdAt: jobPlanning.createdAt
       }
     });
 

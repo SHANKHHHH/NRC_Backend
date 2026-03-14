@@ -175,7 +175,7 @@ export const completeJob = async (req: Request, res: Response) => {
       ? Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) // days
       : null;
 
-    // Create completed job record
+    // Create completed job record (createdAt = when job plan was created, not when it entered completed table)
     const completedJob = await prisma.completedJob.create({
       data: {
         nrcJobNo,
@@ -206,7 +206,8 @@ export const completeJob = async (req: Request, res: Response) => {
         completedBy: userId,
         totalDuration,
         remarks,
-        finalStatus: 'completed'
+        finalStatus: 'completed',
+        createdAt: jobPlanning.createdAt
       }
     });
 
@@ -309,6 +310,7 @@ export const getAllCompletedJobs = async (req: Request, res: Response) => {
     const codeByPlanId: Record<number, string | null> = Object.fromEntries(
       plannings.map((p) => [p.jobPlanId, p.jobPlanCode ?? null])
     );
+    // createdAt on CompletedJob is set at create-time to jobPlanning.createdAt (see completeJob / autoCompleteJobIfReady)
     const data = completedJobs.map((c) => ({
       ...c,
       jobPlanCode: codeByPlanId[c.jobPlanId] ?? null,
