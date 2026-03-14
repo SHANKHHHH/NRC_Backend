@@ -1903,17 +1903,6 @@ export const resumeWorkOnMachine = async (req: Request, res: Response) => {
 // Get all held machines organized by jobs with enhanced job planning details
 export const getAllHeldMachines = async (req: Request, res: Response) => {
   try {
-    // Role-based access control - only admin and planner can access
-    const userRole = req.user?.role?.toLowerCase();
-    
-    if (!userRole || (userRole !== 'admin' && userRole !== 'planner')) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Only admin and planner roles can view held machines.',
-        error: 'Insufficient permissions'
-      });
-    }
-
     // Get optional query parameters
     const { poNumber, includeJobPlanningDetails = 'true' } = req.query;
     const shouldIncludeJobPlanningDetails = includeJobPlanningDetails === 'true';
