@@ -281,6 +281,147 @@ export const getJobByNrcJobNo = async (req: Request, res: Response) => {
   });
 };
 
+/** Same payload as GET /api/jobs/:nrcJobNo/with-po-details — used by batch dashboard route. */
+export async function buildJobWithPODetailsPayload(nrcJobNo: string) {
+  const job = await prisma.job.findUnique({
+    where: { nrcJobNo },
+    include: {
+      purchaseOrders: true,
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
+  });
+
+  if (!job) {
+    return null;
+  }
+
+  const jobPlannings = await prisma.jobPlanning.findMany({
+    where: { nrcJobNo },
+    include: {
+      steps: {
+        orderBy: {
+          stepNo: "asc",
+        },
+      },
+    },
+  });
+
+  const poJobPlannings = [];
+
+  for (const po of job.purchaseOrders) {
+    const poJobPlanning = jobPlannings.find(
+      (jp: any) => jp.purchaseOrderId === po.id,
+    );
+
+    const poMachines = await prisma.purchaseOrderMachine.findMany({
+      where: { purchaseOrderId: po.id },
+      select: { machineId: true },
+    });
+
+    const poMachineIds = poMachines.map((pom) => pom.machineId);
+
+    if (poJobPlanning) {
+      poJobPlannings.push({
+        poId: po.id,
+        poNumber: po.poNumber,
+        poQuantity: po.totalPOQuantity,
+        poStatus: po.status,
+        poDate: po.poDate,
+        hasJobPlanning: true,
+        jobPlanId: poJobPlanning.jobPlanId,
+        steps: poJobPlanning.steps || [],
+        assignedMachines: poMachineIds,
+        completedSteps: (poJobPlanning.steps || []).filter(
+          (step: any) => step.status === "stop",
+        ).length,
+        totalSteps: (poJobPlanning.steps || []).length,
+        createdAt: poJobPlanning.createdAt,
+        updatedAt: poJobPlanning.updatedAt,
+      });
+    } else {
+      poJobPlannings.push({
+        poId: po.id,
+        poNumber: po.poNumber,
+        poQuantity: po.totalPOQuantity,
+        poStatus: po.status,
+        poDate: po.poDate,
+        hasJobPlanning: false,
+        jobPlanId: null,
+        steps: [],
+        assignedMachines: poMachineIds,
+        completedSteps: 0,
+        totalSteps: 0,
+        createdAt: null,
+        updatedAt: null,
+      });
+    }
+  }
+
+  const response = {
+    nrcJobNo: job.nrcJobNo,
+    styleItemSKU: job.styleItemSKU,
+    customerName: job.customerName,
+    fluteType: job.fluteType,
+    status: job.status,
+    latestRate: job.latestRate,
+    preRate: job.preRate,
+    length: job.length,
+    width: job.width,
+    height: job.height,
+    boxDimensions: job.boxDimensions,
+    diePunchCode: job.diePunchCode,
+    boardCategory: job.boardCategory,
+    noOfColor: job.noOfColor,
+    processColors: job.processColors,
+    specialColor1: job.specialColor1,
+    specialColor2: job.specialColor2,
+    specialColor3: job.specialColor3,
+    specialColor4: job.specialColor4,
+    overPrintFinishing: job.overPrintFinishing,
+    topFaceGSM: job.topFaceGSM,
+    flutingGSM: job.flutingGSM,
+    bottomLinerGSM: job.bottomLinerGSM,
+    decalBoardX: job.decalBoardX,
+    lengthBoardY: job.lengthBoardY,
+    boardSize: job.boardSize,
+    noUps: job.noUps,
+    artworkReceivedDate: job.artworkReceivedDate,
+    artworkApprovedDate: job.artworkApprovedDate,
+    shadeCardApprovalDate: job.shadeCardApprovalDate,
+    sharedCardDiffDate: job.sharedCardDiffDate,
+    srNo: job.srNo,
+    jobDemand: job.jobDemand,
+    imageURL: job.imageURL,
+    noOfSheets: job.noOfSheets,
+    isMachineDetailsFilled: job.isMachineDetailsFilled,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    userId: job.userId,
+    machineId: job.machineId,
+    clientId: job.clientId,
+    styleId: job.styleId,
+
+    poJobPlannings: poJobPlannings,
+
+    hasPurchaseOrders: job.purchaseOrders.length > 0,
+    purchaseOrders: job.purchaseOrders,
+
+    totalPOs: job.purchaseOrders.length,
+    totalJobPlannings: jobPlannings.length,
+    completedJobPlannings: poJobPlannings.filter((po) => po.hasJobPlanning)
+      .length,
+  };
+
+  return response;
+}
+
 // New function: Get job details with comprehensive PO details
 // Any authenticated user can view (workers need this for Job Details modal); create/edit stays restricted.
 export const getJobWithPODetails = async (req: Request, res: Response) => {
@@ -291,158 +432,20 @@ export const getJobWithPODetails = async (req: Request, res: Response) => {
   const { nrcJobNo } = req.params;
 
   try {
-    const job = await prisma.job.findUnique({
-      where: { nrcJobNo },
-      include: {
-        purchaseOrders: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-          },
-        },
-      },
-    });
+    const response = await buildJobWithPODetailsPayload(nrcJobNo);
 
-    if (!job) {
+    if (!response) {
       throw new AppError("Job not found with that NRC Job No", 404);
     }
-
-    // Fetch all job plannings for this job (now PO-specific)
-    const jobPlannings = await prisma.jobPlanning.findMany({
-      where: { nrcJobNo },
-      include: {
-        steps: {
-          orderBy: {
-            stepNo: "asc",
-          },
-        },
-      },
-    });
-
-    // Create PO-specific job plannings using the new schema
-    const poJobPlannings = [];
-
-    for (const po of job.purchaseOrders) {
-      // Find job planning for this specific PO
-      const poJobPlanning = jobPlannings.find(
-        (jp: any) => jp.purchaseOrderId === po.id,
-      );
-
-      // Check if this PO has any machine assignments
-      const poMachines = await prisma.purchaseOrderMachine.findMany({
-        where: { purchaseOrderId: po.id },
-        select: { machineId: true },
-      });
-
-      const poMachineIds = poMachines.map((pom) => pom.machineId);
-
-      if (poJobPlanning) {
-        // PO has job planning
-        poJobPlannings.push({
-          poId: po.id,
-          poNumber: po.poNumber,
-          poQuantity: po.totalPOQuantity,
-          poStatus: po.status,
-          poDate: po.poDate,
-          hasJobPlanning: true,
-          jobPlanId: poJobPlanning.jobPlanId,
-          steps: poJobPlanning.steps || [],
-          assignedMachines: poMachineIds,
-          completedSteps: (poJobPlanning.steps || []).filter(
-            (step: any) => step.status === "stop",
-          ).length,
-          totalSteps: (poJobPlanning.steps || []).length,
-          createdAt: poJobPlanning.createdAt,
-          updatedAt: poJobPlanning.updatedAt,
-        });
-      } else {
-        // PO has no job planning
-        poJobPlannings.push({
-          poId: po.id,
-          poNumber: po.poNumber,
-          poQuantity: po.totalPOQuantity,
-          poStatus: po.status,
-          poDate: po.poDate,
-          hasJobPlanning: false,
-          jobPlanId: null,
-          steps: [],
-          assignedMachines: poMachineIds,
-          completedSteps: 0,
-          totalSteps: 0,
-          createdAt: null,
-          updatedAt: null,
-        });
-      }
-    }
-
-    // Format the response with job details and PO-specific plannings
-    const response = {
-      // Job details
-      nrcJobNo: job.nrcJobNo,
-      styleItemSKU: job.styleItemSKU,
-      customerName: job.customerName,
-      fluteType: job.fluteType,
-      status: job.status,
-      latestRate: job.latestRate,
-      preRate: job.preRate,
-      length: job.length,
-      width: job.width,
-      height: job.height,
-      boxDimensions: job.boxDimensions,
-      diePunchCode: job.diePunchCode,
-      boardCategory: job.boardCategory,
-      noOfColor: job.noOfColor,
-      processColors: job.processColors,
-      specialColor1: job.specialColor1,
-      specialColor2: job.specialColor2,
-      specialColor3: job.specialColor3,
-      specialColor4: job.specialColor4,
-      overPrintFinishing: job.overPrintFinishing,
-      topFaceGSM: job.topFaceGSM,
-      flutingGSM: job.flutingGSM,
-      bottomLinerGSM: job.bottomLinerGSM,
-      decalBoardX: job.decalBoardX,
-      lengthBoardY: job.lengthBoardY,
-      boardSize: job.boardSize,
-      noUps: job.noUps,
-      artworkReceivedDate: job.artworkReceivedDate,
-      artworkApprovedDate: job.artworkApprovedDate,
-      shadeCardApprovalDate: job.shadeCardApprovalDate,
-      sharedCardDiffDate: job.sharedCardDiffDate,
-      srNo: job.srNo,
-      jobDemand: job.jobDemand,
-      imageURL: job.imageURL,
-      noOfSheets: job.noOfSheets,
-      isMachineDetailsFilled: job.isMachineDetailsFilled,
-      createdAt: job.createdAt,
-      updatedAt: job.updatedAt,
-      userId: job.userId,
-      machineId: job.machineId,
-      clientId: job.clientId,
-      styleId: job.styleId,
-
-      // PO-specific job plannings
-      poJobPlannings: poJobPlannings,
-
-      // All purchase orders
-      hasPurchaseOrders: job.purchaseOrders.length > 0,
-      purchaseOrders: job.purchaseOrders,
-
-      // Summary statistics
-      totalPOs: job.purchaseOrders.length,
-      totalJobPlannings: jobPlannings.length,
-      completedJobPlannings: poJobPlannings.filter((po) => po.hasJobPlanning)
-        .length,
-    };
 
     res.status(200).json({
       success: true,
       data: response,
     });
   } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
     console.error("Error fetching job with PO details:", error);
     res.status(500).json({
       success: false,
