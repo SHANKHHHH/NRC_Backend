@@ -313,7 +313,9 @@ export const getAllCompletedJobs = async (req: Request, res: Response) => {
     // createdAt on CompletedJob is set at create-time to jobPlanning.createdAt (see completeJob / autoCompleteJobIfReady)
     const data = completedJobs.map((c) => ({
       ...c,
-      jobPlanCode: codeByPlanId[c.jobPlanId] ?? null,
+      // Keep CompletedJob.jobPlanCode as source of truth when present.
+      // Fall back to JobPlanning lookup only if snapshot value is empty.
+      jobPlanCode: c.jobPlanCode ?? codeByPlanId[c.jobPlanId] ?? null,
     }));
 
     res.status(200).json({
