@@ -9,8 +9,12 @@ import {
   setUserRoles,
   getUserMachines
 } from '../controllers/userController';
+import { getUserRecord } from '../controllers/userRecordController';
 
 const router = Router();
+
+// Public endpoint: anyone can call it for dashboard filter insights
+router.get('/user-record', asyncHandler(getUserRecord));
 
 // All routes require authentication
 router.use(authenticateToken);

@@ -10,7 +10,8 @@ import {
   updateMachine,
   updateMachineStatus,
   deleteMachine,
-  getMachineStats
+  getMachineStats,
+  getMachineRecord
 } from '../controllers/machineController';
 
 const router = express.Router();
@@ -23,6 +24,7 @@ router.get('/', asyncHandler(getAllMachines));
 router.get('/available', asyncHandler(getAvailableMachines));
 router.get('/busy', asyncHandler(getBusyMachines));
 router.get('/stats', asyncHandler(getMachineStats));
+router.get('/record', asyncHandler(getMachineRecord));
 router.get('/:id', asyncHandler(getMachineById));
 
 // Admin and Production Head routes
