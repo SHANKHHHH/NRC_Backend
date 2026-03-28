@@ -636,25 +636,17 @@ function arePreviousStepsCompleted(steps: any[], targetStepName: string): boolea
 export const getFilteredJobNumbers = async (
   userMachineIds: string[] | null, 
   userRole: string,
-  options: { limit?: number; offset?: number } = {}
+  _options: { limit?: number; offset?: number } = {}
 ): Promise<string[]> => {
-  const { limit = 7000, offset = 0 } = options;
-
   if (userMachineIds === null) {
-    // Admin/Planner/Flying Squad/QC Manager (bypass): return union of Job and JobPlanning job numbers
-    // (some plannings may not have Jobs yet)
+    // Admin/Planner/Flying Squad/QC Manager (bypass): full union of Job + JobPlanning NRC numbers.
+    // No row cap — a fixed take (previously 7000) excluded older jobs and broke bulk PO style→job matching.
     const [jobs, plannings] = await Promise.all([
       prisma.job.findMany({
         select: { nrcJobNo: true },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset
       }),
       prisma.jobPlanning.findMany({
         select: { nrcJobNo: true },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset
       })
     ]);
     const set = new Set<string>();
@@ -670,15 +662,9 @@ export const getFilteredJobNumbers = async (
     const [jobs, plannings] = await Promise.all([
       prisma.job.findMany({
         select: { nrcJobNo: true },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset
       }),
       prisma.jobPlanning.findMany({
         select: { nrcJobNo: true },
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset
       })
     ]);
     const set = new Set<string>();

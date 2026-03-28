@@ -125,7 +125,9 @@ export const syncJobSequence = async (req: Request, res: Response) => {
 //get all jobs
 export const getAllJobs = async (req: Request, res: Response) => {
   try {
-    const userMachineIds = req.userMachineIds; // From middleware
+    // Full job list for every authenticated caller (bulk PO style→NRC matching, planners, etc.).
+    // Machine-scoped lists excluded older jobs (7000 cap) and non–bypass roles from the map used at upload time.
+    const userRole = req.user?.role || "";
 
     // Get pagination parameters from query (opt-in - only paginate if page param is provided)
     const page = req.query.page
@@ -135,12 +137,7 @@ export const getAllJobs = async (req: Request, res: Response) => {
     const isPaginated = page !== undefined;
     const skip = isPaginated ? (page - 1) * limit : 0;
 
-    // Get job numbers that are accessible to the user based on machine assignments
-    const userRole = req.user?.role || "";
-    const accessibleJobNumbers = await getFilteredJobNumbers(
-      userMachineIds || null,
-      userRole,
-    );
+    const accessibleJobNumbers = await getFilteredJobNumbers(null, userRole);
 
     // Paginate the accessible job numbers only if pagination is requested
     const jobNumbers = isPaginated
@@ -185,7 +182,7 @@ export const getAllJobs = async (req: Request, res: Response) => {
     const { UnifiedJobDataHelper } =
       await import("../utils/unifiedJobDataHelper");
     const safeJobs = await UnifiedJobDataHelper.getRoleBasedJobData(
-      userMachineIds || null,
+      null,
       userRole,
     );
 
